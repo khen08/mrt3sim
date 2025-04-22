@@ -1,6 +1,6 @@
 import pandas as pd
 from datetime import datetime, time, timezone
-
+import json
 from ..config import DEFAULT_SCHEME, DEFAULT_SERVICE_PERIODS
 from .connect import db
 class InitializeDB_Data:
@@ -17,13 +17,13 @@ class InitializeDB_Data:
         # Create a new simulation record and capture the returned object
         simulation_entry = db.simulations.create(
             data={
-                'start_time': self.start_time,
-                'end_time': self.end_time,
-                'dwell_time': self.config['dwellTime'],
-                'turnaround_time': self.config['turnaroundTime'],
-                'scheme_type': scheme_type,
-                'service_periods': DEFAULT_SERVICE_PERIODS,
-                'passenger_data_file': self.file_path
+                'START_TIME': self.start_time,
+                'END_TIME': self.end_time,
+                'DWELL_TIME': self.config['dwellTime'],
+                'TURNAROUND_TIME': self.config['turnaroundTime'],
+                'SCHEME_TYPE': scheme_type,
+                'SERVICE_PERIODS': json.dumps(DEFAULT_SERVICE_PERIODS),
+                'PASSENGER_DATA_FILE': self.file_path
             }
         )
         
@@ -74,6 +74,7 @@ class InitializeDB_Data:
             # Convert to integer first to avoid type issues with pd.to_datetime if columns have mixed types
             try:
                 first_datetime = datetime(int(year), int(month), int(day))
+                
             except (ValueError, TypeError):
                 print(f"Error: Invalid date values in the first row of '{self.file_path}'.")
                 return None
