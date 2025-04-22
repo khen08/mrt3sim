@@ -1,0 +1,179 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "sync" // Use synchronous interface for standard Flask
+  recursive_type_depth = 5 // Default or adjust as needed
+}
+
+datasource db {
+  provider = "mysql"
+  // The URL should ideally be set via an environment variable
+  // e.g., url = env("DATABASE_URL")
+  // For now, using a placeholder typical for Docker Compose setups
+  url      = env("DATABASE_URL") // Use the environment variable
+}
+
+// --- Models based on schema.sql --- //
+
+model SIMULATIONS {
+  SIMULATION_ID       Int      @id @default(autoincrement())
+  START_TIME          DateTime @db.DateTime
+  END_TIME            DateTime @db.DateTime
+  DWELL_TIME          Int
+  TURNAROUND_TIME     Int
+  SCHEME_TYPE         String   @db.VarChar(15)
+  SERVICE_PERIODS     Json     @db.Json // Assumes appropriate JSON structure
+  PASSENGER_DATA_FILE String   @db.VarChar(255)
+
+  // Relations
+  train_specs     TRAIN_SPECS[]
+  stations        STATIONS[]
+  track_segments  TRACK_SEGMENTS[]
+  trains          TRAINS[]
+  train_movements TRAIN_MOVEMENTS[]
+  passengers      PASSENGERS[]
+}
+
+model TRAIN_SPECS {
+  SPEC_ID           Int     @id @default(autoincrement())
+  SIMULATION_ID     Int
+  SPEC_NAME         String? @db.VarChar(50) // Optional as per SQL (nullable)
+  MAX_CAPACITY      Int
+  CRUISING_SPEED    Float
+  PASSTHROUGH_SPEED Float
+  ACCEL_RATE        Float
+  DECEL_RATE        Float
+
+  // Relation back to SIMULATIONS
+  simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
+
+  // Relation to TRAINS
+  trains TRAINS[]
+
+  // Unique constraint: spec name unique per simulation
+  @@unique([SIMULATION_ID, SPEC_NAME], name: "IDX_SIMULATION_SPEC_NAME")
+  // Composite unique key needed for the foreign key reference from TRAINS
+  @@unique([SIMULATION_ID, SPEC_ID], name: "UNQ_SIMULATION_SPEC_ID")
+}
+
+model STATIONS {
+  SIMULATION_ID  Int
+  STATION_ID     Int
+  STATION_NUMBER Int // Sequential number
+  STATION_NAME   String  @db.VarChar(255)
+  STATION_TYPE   String  @db.VarChar(10) // A, B, AB
+  IS_TERMINUS    Boolean
+
+  // Relation back to SIMULATIONS
+  simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
+
+  // Relations for Track Segments
+  track_segments_start TRACK_SEGMENTS[] @relation("SegmentStart")
+  track_segments_end   TRACK_SEGMENTS[] @relation("SegmentEnd")
+
+  // Relations for Train Movements and Passengers
+  train_movements        TRAIN_MOVEMENTS[]
+  passengers_origin      PASSENGERS[]      @relation("PassengerOrigin")
+  passengers_destination PASSENGERS[]      @relation("PassengerDestination")
+
+  // Composite primary key
+  @@id([SIMULATION_ID, STATION_ID])
+  // Unique sequential number per simulation
+  @@unique([SIMULATION_ID, STATION_NUMBER], name: "IDX_SIMULATION_STATION_NUMBER")
+}
+
+model TRACK_SEGMENTS {
+  SIMULATION_ID    Int
+  START_STATION_ID Int
+  END_STATION_ID   Int
+  DIRECTION        String @db.VarChar(10) // northbound, southbound
+  DISTANCE         Float
+
+  // Relation back to SIMULATIONS
+  simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
+
+  // Relations to STATIONS for start and end points
+  start_station STATIONS @relation("SegmentStart", fields: [SIMULATION_ID, START_STATION_ID], references: [SIMULATION_ID, STATION_ID], onDelete: Cascade)
+  end_station   STATIONS @relation("SegmentEnd", fields: [SIMULATION_ID, END_STATION_ID], references: [SIMULATION_ID, STATION_ID], onDelete: Cascade)
+
+  // Composite primary key
+  @@id([SIMULATION_ID, START_STATION_ID, END_STATION_ID, DIRECTION])
+}
+
+model TRAINS {
+  SIMULATION_ID Int
+  TRAIN_ID      Int
+  TRAIN_NUMBER  Int // Sequential number
+  SERVICE_TYPE  String @db.VarChar(10) // A, B, AB
+  SPEC_ID       Int // Links to TRAIN_SPECS
+
+  // Relation back to SIMULATIONS
+  simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
+
+  // Relation to simulation-specific TRAIN_SPECS
+  specs TRAIN_SPECS @relation(fields: [SIMULATION_ID, SPEC_ID], references: [SIMULATION_ID, SPEC_ID], onDelete: Cascade)
+
+  // Relations for Train Movements and Passengers
+  train_movements      TRAIN_MOVEMENTS[]
+  passengers_completed PASSENGERS[] // Passengers who completed their journey on this train
+
+  // Composite primary key
+  @@id([SIMULATION_ID, TRAIN_ID])
+  // Unique train number per simulation
+  @@unique([SIMULATION_ID, TRAIN_NUMBER], name: "IDX_SIMULATION_TRAIN_NUMBER")
+}
+
+model TRAIN_MOVEMENTS {
+  MOVEMENT_ID             Int       @id @default(autoincrement())
+  SIMULATION_ID           Int
+  TRAIN_ID                Int
+  STATION_ID              Int
+  DIRECTION               String    @db.VarChar(10)
+  ARRIVAL_TIME            DateTime  @db.DateTime
+  DEPARTURE_TIME          DateTime? @db.DateTime // Nullable
+  PASSENGERS_BOARDED      Int       @default(0)
+  PASSENGERS_ALIGHTED     Int       @default(0)
+  CURRENT_PASSENGER_COUNT Int       @default(0)
+  TRIP_COUNT              Int       @default(0)
+
+  // Relation back to SIMULATIONS
+  simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
+
+  // Relations to TRAINS and STATIONS
+  train   TRAINS   @relation(fields: [SIMULATION_ID, TRAIN_ID], references: [SIMULATION_ID, TRAIN_ID], onDelete: Cascade)
+  station STATIONS @relation(fields: [SIMULATION_ID, STATION_ID], references: [SIMULATION_ID, STATION_ID], onDelete: Cascade)
+
+  @@index([SIMULATION_ID, ARRIVAL_TIME], name: "IDX_TRAIN_MOVEMENTS_TIME")
+}
+
+model PASSENGERS {
+  PASSENGER_ID           Int
+  SIMULATION_ID          Int
+  ORIGIN_STATION_ID      Int
+  DESTINATION_STATION_ID Int
+  ARRIVAL_TIME_AT_ORIGIN DateTime  @db.DateTime
+  BOARDING_TIME          DateTime? @db.DateTime
+  COMPLETION_TIME        DateTime? @db.DateTime
+  STATUS                 String    @db.VarChar(20) // waiting, in_transit, completed
+  TRIP_TYPE              String    @db.VarChar(10) // direct, transfer
+  FINAL_TRAIN_ID         Int? // Nullable
+
+  // Relation back to SIMULATIONS
+  simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
+
+  // Relations to STATIONS for origin and destination
+  origin_station      STATIONS @relation("PassengerOrigin", fields: [SIMULATION_ID, ORIGIN_STATION_ID], references: [SIMULATION_ID, STATION_ID], onDelete: Cascade)
+  destination_station STATIONS @relation("PassengerDestination", fields: [SIMULATION_ID, DESTINATION_STATION_ID], references: [SIMULATION_ID, STATION_ID], onDelete: Cascade)
+
+  // Relation to the final TRAIN
+  // Note: Relation field name is lowercase `train` to match Prisma conventions
+  train TRAINS? @relation(fields: [SIMULATION_ID, FINAL_TRAIN_ID], references: [SIMULATION_ID, TRAIN_ID], onDelete: Cascade)
+
+  // Composite primary key
+  @@id([SIMULATION_ID, PASSENGER_ID])
+  @@index([SIMULATION_ID, STATUS], name: "IDX_PASSENGERS_STATUS")
+  @@index([SIMULATION_ID, ORIGIN_STATION_ID], name: "IDX_PASSENGERS_ORIGIN")
+  @@index([SIMULATION_ID, DESTINATION_STATION_ID], name: "IDX_PASSENGERS_DESTINATION")
+}

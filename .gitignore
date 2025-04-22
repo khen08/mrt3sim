@@ -6,7 +6,7 @@
 
 # backend
 /backend/.venv
-
+/backend/uploads/
 
 # misc
 .DS_Store
