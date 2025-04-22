@@ -173,7 +173,7 @@ DEFAULT_STATIONS = [
 ]
 
 DEFAULT_SETTINGS = {
-    "dwellTime": 30,
+    "dwellTime": 60,
     "turnaroundTime": 180,
     "acceleration": 0.8,
     "deceleration": 0.8,

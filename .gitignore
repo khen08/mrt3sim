@@ -2,7 +2,7 @@
 
 # dependencies
 /frontend/node_modules
-/frontend/.next # next.js
+/frontend/.next
 
 # backend
 /backend/.venv

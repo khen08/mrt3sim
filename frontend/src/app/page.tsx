@@ -452,12 +452,44 @@ export default function Home() {
     setSimulationResult(null); // Clear previous results
 
     // Ensure the config in simulationInput is up-to-date
-    const payload: SimulationInput = {
+    // const payload: SimulationInput = {
+    //   filename: simulationInput.filename,
+    //   config: simulationSettings, // Use the current settings state
+    // };
+
+    // --- Transform settings for backend payload --- //
+    if (!simulationSettings) {
+      // This check is technically redundant due to earlier checks, but good practice
+      toast({
+        title: "Error",
+        description: "Settings are missing.",
+        variant: "destructive",
+      });
+      setIsSimulating(false);
+      return;
+    }
+
+    const stationNames = simulationSettings.stations.map(
+      (station) => station.name
+    );
+    const stationDistances = simulationSettings.stations.map(
+      (station) => station.distance
+    );
+
+    // Create the payload with the new structure for config
+    const payload = {
       filename: simulationInput.filename,
-      config: simulationSettings, // Use the current settings state
+      config: {
+        // Spread other settings from simulationSettings
+        ...simulationSettings,
+        // Remove the original 'stations' array
+        station_names: stationNames,
+        station_distances: stationDistances,
+      },
     };
+
     // Update the main simulationInput state just in case (optional)
-    // setSimulationInput(payload);
+    // setSimulationInput(payload); // This might be incorrect now due to type mismatch if SimulationInput type isn't updated
 
     console.log("Sending request to /run_simulation API...");
     console.log("Payload (JSON):", payload);
@@ -564,7 +596,7 @@ export default function Home() {
           isSidebarCollapsed ? "w-0 p-0 overflow-hidden" : "w-[500px]"
         )}
       >
-        {/* Only render sidebar content if not collapsed */} P
+        {/* Only render sidebar content if not collapsed */}
         {!isSidebarCollapsed && (
           <>
             <div className="p-4 border-b">
