@@ -2,14 +2,11 @@
 
 # dependencies
 /frontend/node_modules
+/frontend/.next/ # next.js
 
-# testing
-/coverage
+# backend
+/backend/.venv
 
-# next.js
-/frontend/.next/
-
-# production
 
 # misc
 .DS_Store
