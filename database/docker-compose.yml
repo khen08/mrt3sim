@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  mysql_db:
+    image: mysql:9.0
+    container_name: mrt3_simulation_db
+    environment:
+      MYSQL_ROOT_PASSWORD: mrt3-root
+      MYSQL_DATABASE: mrt3_simulation
+      MYSQL_USER: mrt3-user
+      MYSQL_PASSWORD: mrt3-password
+    ports:
+      - "3306:3306" 
+    volumes:
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "mrt3-user", "-pmrt3-password"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    command: --lower_case_table_names=1
+
+volumes: 
+  db_data:
