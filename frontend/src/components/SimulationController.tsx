@@ -320,7 +320,10 @@ const SimulationController = ({
         {/* Current Time Display & Manual Input */}
         {/* Manual Time Input - Only show when simulation is NOT running */}
         {!isRunning && (
-          <div className="flex items-center gap-2 ml-4 relative w-32">
+          <div className="flex items-center gap-2 ml-4 relative w-auto">
+            {timeInputError && (
+              <p className="text-xs text-red-600">{timeInputError}</p>
+            )}
             <Input
               type="text"
               value={manualTimeInput}
@@ -328,16 +331,11 @@ const SimulationController = ({
               onKeyDown={handleManualTimeKeyDown}
               onBlur={handleManualTimeBlur}
               placeholder="HH:MM:SS"
-              className={`h-8 text-sm font-mono ${
+              className={`h-8 text-sm font-mono w-24 ${
                 timeInputError ? "border-red-500" : ""
               }`}
               title={`Set time within ${viewStartTime} - ${viewEndTime}`}
             />
-            {timeInputError && (
-              <p className="absolute top-full left-0 mt-1 text-xs text-red-600">
-                {timeInputError}
-              </p>
-            )}
           </div>
         )}
       </div>

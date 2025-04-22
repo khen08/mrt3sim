@@ -51,3 +51,4 @@ next-env.d.ts
 
 # Windows thumbnail cache
 Thumbs.db
+node_modules
