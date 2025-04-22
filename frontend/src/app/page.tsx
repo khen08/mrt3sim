@@ -476,17 +476,22 @@ export default function Home() {
       (station) => station.distance
     );
 
+    // Destructure settings to exclude the original 'stations' key
+    const { stations, ...otherSettings } = simulationSettings;
+
     // Create the payload with the new structure for config
     const payload = {
       filename: simulationInput.filename,
       config: {
-        // Spread other settings from simulationSettings
-        ...simulationSettings,
-        // Remove the original 'stations' array
+        // Spread the other settings
+        ...otherSettings,
+        // Add the new separated arrays
         station_names: stationNames,
         station_distances: stationDistances,
       },
     };
+    // Remove the undefined stations key cleanly - NO LONGER NEEDED
+    // delete payload.config.stations;
 
     // Update the main simulationInput state just in case (optional)
     // setSimulationInput(payload); // This might be incorrect now due to type mismatch if SimulationInput type isn't updated
