@@ -61,7 +61,6 @@ model TRAIN_SPECS {
 model STATIONS {
   SIMULATION_ID  Int
   STATION_ID     Int
-  STATION_NUMBER Int // Sequential number
   STATION_NAME   String  @db.VarChar(255)
   STATION_TYPE   String  @db.VarChar(10) // A, B, AB
   IS_TERMINUS    Boolean
@@ -80,8 +79,6 @@ model STATIONS {
 
   // Composite primary key
   @@id([SIMULATION_ID, STATION_ID])
-  // Unique sequential number per simulation
-  @@unique([SIMULATION_ID, STATION_NUMBER], name: "IDX_SIMULATION_STATION_NUMBER")
 }
 
 model TRACK_SEGMENTS {
@@ -105,7 +102,6 @@ model TRACK_SEGMENTS {
 model TRAINS {
   SIMULATION_ID Int
   TRAIN_ID      Int
-  TRAIN_NUMBER  Int // Sequential number
   SERVICE_TYPE  String @db.VarChar(10) // A, B, AB
   SPEC_ID       Int // Links to TRAIN_SPECS
 
@@ -121,8 +117,6 @@ model TRAINS {
 
   // Composite primary key
   @@id([SIMULATION_ID, TRAIN_ID])
-  // Unique train number per simulation
-  @@unique([SIMULATION_ID, TRAIN_NUMBER], name: "IDX_SIMULATION_TRAIN_NUMBER")
 }
 
 model TRAIN_MOVEMENTS {
