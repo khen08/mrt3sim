@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
   IconUpload,
@@ -6,78 +6,110 @@ import {
   IconX,
   IconCheck,
   IconDownload,
+  IconLoader2,
 } from "@tabler/icons-react";
-import Papa from "papaparse";
 import { toast } from "@/components/ui/use-toast";
 
 interface CsvUploadProps {
-  onFileUpload: (
-    file: File,
-    data: { header: string[]; rows: string[][] }
-  ) => void;
+  onFileSelect: (file: File | null) => void;
+  initialFileName?: string | null;
 }
 
-const CsvUpload = ({ onFileUpload }: CsvUploadProps) => {
-  const [file, setFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadComplete, setUploadComplete] = useState(false);
+const CsvUpload = ({
+  onFileSelect,
+  initialFileName = null,
+}: CsvUploadProps) => {
+  const [fileName, setFileName] = useState<string | null>(initialFileName);
+  const [isFileSelected, setIsFileSelected] = useState<boolean>(
+    !!initialFileName
+  );
+  const [isUploading, setIsUploading] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = event.target.files?.[0];
-    if (selectedFile) {
-      setFile(selectedFile);
+  const uploadFile = useCallback(
+    async (selectedFile: File) => {
       setIsUploading(true);
-      setUploadComplete(false);
+      setFileName(selectedFile.name);
+      setIsFileSelected(true);
 
-      // Let the parent component handle the file reading and processing
-      // Parse CSV locally only to prepare data format, but don't trigger external toast
-      Papa.parse(selectedFile, {
-        header: false,
-        complete: (results) => {
-          const rows = results.data as string[][];
-          if (rows.length > 0) {
-            const header = rows[0];
-            const dataRows = rows.slice(1).filter((row) => row.length > 1);
+      const formData = new FormData();
+      formData.append("passenger_data_file", selectedFile);
 
-            console.log("CSV Parsed Data (local):", {
-              header,
-              rowCount: dataRows.length,
-            });
-
-            // Prepare the data for the parent component
-            const processedHeader = header.map((col, index) => {
-              if (index === 0) return "DateTime";
-              return col.replace(";", ",");
-            });
-
-            // Call the callback with file and *unparsed* data reference for parent to handle API
-            // The parent (`page.tsx`) will handle the actual upload and toast notifications
-            onFileUpload(selectedFile, {
-              header: processedHeader,
-              rows: dataRows,
-            }); // Pass parsed structure if needed by parent, or just the file
-
-            // Update local state
-            setIsUploading(false); // Assume parent starts processing immediately
-            setUploadComplete(true); // Visually mark as complete here
-          } else {
-            console.error("Error parsing CSV: No rows found");
-            // Don't toast here, let parent handle potential errors during its processing
-            setIsUploading(false);
-          }
-        },
-        error: (error) => {
-          console.error("Error parsing CSV locally:", error);
-          // Don't toast here, let parent handle errors
-          setIsUploading(false);
-        },
+      console.log("Uploading file to /upload_csv:", selectedFile.name);
+      toast({
+        title: "Uploading File...",
+        description: `Uploading '${selectedFile.name}'. Please wait.`,
       });
+
+      try {
+        const response = await fetch("http://localhost:5001/upload_csv", {
+          method: "POST",
+          body: formData,
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            result.error || `HTTP error! status: ${response.status}`
+          );
+        }
+
+        console.log("File uploaded successfully:", result);
+        setFileName(result.filename);
+        setIsFileSelected(true);
+        onFileSelect(selectedFile);
+
+        toast({
+          title: "Upload Successful",
+          description: `File '${result.filename}' uploaded successfully.`,
+          variant: "default",
+        });
+      } catch (error: any) {
+        console.error("Error uploading file:", error);
+        setFileName(null);
+        setIsFileSelected(false);
+        onFileSelect(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+        toast({
+          title: "Upload Failed",
+          description:
+            error.message || "Could not upload the file. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [onFileSelect]
+  );
+
+  const handleFileChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const selectedFile = event.target.files?.[0];
+      if (selectedFile) {
+        console.log("File selected locally:", selectedFile.name);
+        uploadFile(selectedFile);
+      } else {
+        console.log("File selection cancelled or failed.");
+      }
+    },
+    [uploadFile]
+  );
+
+  const handleRemoveFile = useCallback(() => {
+    console.log("Removing file selection in CsvUpload");
+    setFileName(null);
+    setIsFileSelected(false);
+    onFileSelect(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
     }
-  };
+  }, [onFileSelect]);
 
   const handleDownloadSample = () => {
-    // Create a link to download the sample CSV file
     const link = document.createElement("a");
     link.href = "/sample_passenger_flow.csv";
     link.download = "sample_passenger_flow.csv";
@@ -92,6 +124,11 @@ const CsvUpload = ({ onFileUpload }: CsvUploadProps) => {
       variant: "default",
     });
   };
+
+  const displayFileName = fileName;
+  const showUploadUI = !isFileSelected && !isUploading;
+  const showSelectedUI = isFileSelected && !isUploading;
+  const showUploadingUI = isUploading;
 
   return (
     <div className="space-y-6">
@@ -109,15 +146,28 @@ const CsvUpload = ({ onFileUpload }: CsvUploadProps) => {
         </div>
       </div>
 
-      <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+      <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center min-h-[200px] flex items-center justify-center">
         <input
           type="file"
           accept=".csv"
           className="hidden"
           ref={fileInputRef}
           onChange={handleFileChange}
+          disabled={isUploading}
         />
-        {!file ? (
+        {showUploadingUI && (
+          <div className="space-y-4 text-center">
+            <IconLoader2
+              size={48}
+              className="text-gray-400 mx-auto animate-spin"
+            />
+            <p className="text-lg font-medium">
+              Uploading {displayFileName}...
+            </p>
+            <p className="text-sm text-gray-500 mt-1">Please wait</p>
+          </div>
+        )}
+        {showUploadUI && (
           <div className="space-y-4">
             <div className="flex justify-center">
               <IconUpload size={48} className="text-gray-400" />
@@ -131,61 +181,41 @@ const CsvUpload = ({ onFileUpload }: CsvUploadProps) => {
             <Button
               variant="outline"
               onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
             >
               Browse Files
             </Button>
           </div>
-        ) : (
+        )}
+        {showSelectedUI && displayFileName && (
           <div className="space-y-4">
             <div className="flex justify-center">
-              {isUploading ? (
-                <div className="animate-pulse">
-                  <IconFile size={48} className="text-gray-400" />
-                </div>
-              ) : uploadComplete ? (
-                <IconCheck size={48} className="text-green-500" />
-              ) : (
-                <IconFile size={48} className="text-mrt-blue" />
-              )}
+              <IconFile size={48} className="text-mrt-blue" />
             </div>
             <div>
-              <p className="text-lg font-medium">{file.name}</p>
-              <p className="text-sm text-gray-500 mt-1">
-                {isUploading
-                  ? "Processing..."
-                  : uploadComplete
-                  ? "Upload complete!"
-                  : `${(file.size / 1024).toFixed(2)} KB`}
+              <p className="text-lg font-medium">{displayFileName}</p>
+              <p className="text-sm text-green-600 font-medium">
+                Successfully Uploaded
               </p>
             </div>
             <div className="flex justify-center gap-3">
-              {!isUploading && (
-                <>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setFile(null);
-                      setUploadComplete(false);
-                      if (fileInputRef.current) {
-                        fileInputRef.current.value = "";
-                      }
-                    }}
-                    className="flex items-center gap-1"
-                  >
-                    <IconX size={16} />
-                    <span>Remove</span>
-                  </Button>
-                  {!uploadComplete && (
-                    <Button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex items-center gap-1"
-                    >
-                      <IconUpload size={16} />
-                      <span>Change File</span>
-                    </Button>
-                  )}
-                </>
-              )}
+              <Button
+                variant="outline"
+                onClick={handleRemoveFile}
+                className="flex items-center gap-1"
+                disabled={isUploading}
+              >
+                <IconX size={16} />
+                <span>Remove</span>
+              </Button>
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-1"
+                disabled={isUploading}
+              >
+                <IconUpload size={16} />
+                <span>Change File</span>
+              </Button>
             </div>
           </div>
         )}
