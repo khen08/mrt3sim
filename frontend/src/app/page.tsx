@@ -474,7 +474,8 @@ export default function Home() {
     );
     const stationDistances = simulationSettings.stations.map(
       (station) => station.distance
-    );
+    ).slice(1);
+    
 
     // Destructure settings to exclude the original 'stations' key
     const { stations, ...otherSettings } = simulationSettings;
