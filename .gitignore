@@ -8,6 +8,8 @@
 /backend/.venv
 /backend/uploads/
 /backend/**/__pycache__/
+# don't commit prisma migrations
+/backend/prisma/migrations
 
 # misc
 .DS_Store
