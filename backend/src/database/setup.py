@@ -1,22 +1,25 @@
 import pandas as pd
-from datetime import datetime, time, timezone
+import numpy as np
+from datetime import datetime, time, timedelta
 import json
 from ..config import DEFAULT_SCHEME, DEFAULT_SERVICE_PERIODS
 from .connect import db
+
 class InitializeDB_Data:
     def __init__(self, file_path, config):
         self.config = config
         self.file_path = file_path
         base_date = self.get_datetime_from_csv()
-        self.start_time = datetime.combine(base_date, time(hour=5, minute=0))
-        self.end_time = datetime.combine(base_date, time(hour=22, minute=0))
+        if base_date:
+            self.start_time = datetime.combine(base_date, time(hour=5, minute=0))
+            self.end_time = datetime.combine(base_date, time(hour=22, minute=0))
+        else:
+            print("Error: Could not determine base date from CSV. Aborting initialization.")
+            return
         
-        #print("\n", pd.DataFrame(config),"\n")
         self.save_simulation_data(scheme_type='Regular')
-        self.save_simulation_data(scheme_type='Skip-stop')
 
     def save_simulation_data(self, scheme_type):
-        # Create a new simulation record and capture the returned object
         simulation_entry = db.simulations.create(
             data={
                 'START_TIME': self.start_time,
@@ -29,9 +32,12 @@ class InitializeDB_Data:
             }
         )
 
-        simulation_entry_id = simulation_entry.SIMULATION_ID 
+        simulation_entry_id = simulation_entry.SIMULATION_ID
 
         self.initialize_stations(scheme_type=scheme_type, simulation_id=simulation_entry_id)
+        self.initialize_track_segments(simulation_id=simulation_entry_id)
+        self.initialize_train_specs(scheme_type=scheme_type, simulation_id=simulation_entry_id)
+        self.initialize_passenger_demand(simulation_id=simulation_entry_id)
 
     def initialize_stations(self, scheme_type, simulation_id):
         station_names = self.config['station_names']
@@ -59,12 +65,9 @@ class InitializeDB_Data:
                     }
                 )
         
-        self.initialize_track_segments(scheme_type=scheme_type, simulation_id=simulation_id)
-
-    def initialize_track_segments(self, scheme_type, simulation_id):
+    def initialize_track_segments(self, simulation_id):
         station_distances = self.config['station_distances']
         station_count = len(self.config['station_names'])
-        # Southbound Segments
         for idx, distance in enumerate(station_distances, start=1):
             db.track_segments.create(
                 data={
@@ -76,7 +79,6 @@ class InitializeDB_Data:
                 }
                 )
         
-        # Northbound Segments
         for idx, distance in enumerate(reversed(station_distances)):
             db.track_segments.create(
                 data={
@@ -87,8 +89,7 @@ class InitializeDB_Data:
                     'DIRECTION': 'northbound'
                     }
                 )
-        
-        self.initialize_train_specs(scheme_type=scheme_type, simulation_id=simulation_id)
+
     def initialize_train_specs(self, scheme_type, simulation_id):
         train_specs_entry = db.train_specs.create(
             data={
@@ -96,7 +97,7 @@ class InitializeDB_Data:
                 'SPEC_NAME': 'REGULAR TRAIN',
                 'MAX_CAPACITY': self.config['maxCapacity'],
                 'CRUISING_SPEED': self.config['maxSpeed'],
-                'PASSTHROUGH_SPEED': 20,# fix this
+                'PASSTHROUGH_SPEED': 20,
                 'ACCEL_RATE': self.config['acceleration'],
                 'DECEL_RATE': self.config['deceleration'],
             }
@@ -108,69 +109,165 @@ class InitializeDB_Data:
 
     def initialize_trains(self, scheme_type, spec_id, simulation_id):
         train_count = 0
-        # Get the maximum train count from the service periods
         for period in DEFAULT_SERVICE_PERIODS:
             train_count = max(train_count, period['train_count'])
         
+        trains_data = []
         for train_id in range(1, train_count + 1):
-            train_type = "AB" if scheme_type == "Regular" else "B" if train_id % 2 == 0 else "A"
-            db.trains.create(
-                data={
-                    'SIMULATION_ID': simulation_id,
-                    'TRAIN_ID': train_id,
-                    'SERVICE_TYPE': train_type,
-                    'SPEC_ID': spec_id,
-                }
+            if scheme_type == "Regular":
+                train_type = "AB"
+            else:
+                train_type = "B" if train_id % 2 == 0 else "A"
+
+            trains_data.append({
+                'SIMULATION_ID': simulation_id,
+                'TRAIN_ID': train_id,
+                'SERVICE_TYPE': train_type,
+                'SPEC_ID': spec_id,
+            })
+
+        if trains_data:
+            try:
+                 db.trains.create_many(data=trains_data, skip_duplicates=True)
+            except AttributeError:
+                 print("create_many not available for trains, creating one by one.")
+                 for data in trains_data:
+                     db.trains.create(data=data)
+
+    def initialize_passenger_demand(self, simulation_id):
+        print(f"Initializing passengers for Simulation ID: {simulation_id} from {self.file_path}")
+        try:
+            stations = db.stations.find_many(
+                where = {'SIMULATION_ID': simulation_id},
+            )
+            if not stations:
+                print(f"Error: No stations found for Simulation ID: {simulation_id}. Cannot initialize passengers.")
+                return
+
+            station_type_map = {s.STATION_ID: s.STATION_TYPE for s in stations}
+            valid_station_ids = set(station_type_map.keys())
+            num_stations = len(valid_station_ids)
+
+            df = pd.read_csv(self.file_path)
+
+            id_vars = []
+            if 'DateTime' in df.columns:
+                id_vars.append('DateTime')
+
+            od_columns = [col for col in df.columns if ',' in col]
+
+            if not id_vars:
+                print("Error: 'DateTime' column not found in CSV. Cannot process passengers.")
+                return
+            if not od_columns:
+                print("Error: No OD pair columns (e.g., '1,2') found in CSV. Cannot process passengers.")
+                return
+
+            melted_df = df.melt(
+                id_vars=id_vars,
+                value_vars=od_columns,
+                var_name='OD_PAIR',
+                value_name='PASSENGER_COUNT'
             )
 
-    def initialize_passengers(self):
-        pass
+            melted_df['ARRIVAL_TIME_AT_ORIGIN'] = pd.to_datetime(melted_df['DateTime'])
+            melted_df = melted_df.dropna(subset=['PASSENGER_COUNT'])
+            melted_df = melted_df[melted_df['PASSENGER_COUNT'] > 0]
+            melted_df['PASSENGER_COUNT'] = melted_df['PASSENGER_COUNT'].astype(int)
+
+            if melted_df.empty:
+                print("Warning: No valid passenger demand found after melting and filtering.")
+                return
+
+            melted_df[['ORIGIN_STATION_ID', 'DESTINATION_STATION_ID']] = melted_df['OD_PAIR'].str.strip('"').str.split(',', expand=True).astype(int)
+
+            invalid_origin = ~melted_df['ORIGIN_STATION_ID'].isin(valid_station_ids)
+            invalid_destination = ~melted_df['DESTINATION_STATION_ID'].isin(valid_station_ids)
+            invalid_rows = invalid_origin | invalid_destination
+
+            if invalid_rows.any():
+                print(f"Warning: Found {invalid_rows.sum()} rows with invalid station IDs. These rows will be skipped.")
+                melted_df = melted_df[~invalid_rows]
+
+            if melted_df.empty:
+                 print("Warning: No valid passenger demand remaining after station ID validation.")
+                 return
+
+            melted_df['ORIGIN_STATION_TYPE'] = melted_df['ORIGIN_STATION_ID'].map(station_type_map)
+            melted_df['DESTINATION_STATION_TYPE'] = melted_df['DESTINATION_STATION_ID'].map(station_type_map)
+
+            melted_df['TRIP_TYPE'] = np.where(
+                (melted_df['DESTINATION_STATION_TYPE'] == 'AB') |
+                (melted_df['ORIGIN_STATION_TYPE'] == 'AB') |
+                (melted_df['ORIGIN_STATION_TYPE'] == melted_df['DESTINATION_STATION_TYPE']),
+                'DIRECT',
+                'TRANSFER'
+            )
+
+            melted_df['SIMULATION_ID'] = simulation_id
+
+            final_passenger_data = melted_df[[
+                'SIMULATION_ID',
+                'ARRIVAL_TIME_AT_ORIGIN',
+                'ORIGIN_STATION_ID',
+                'DESTINATION_STATION_ID',
+                'TRIP_TYPE',
+                'PASSENGER_COUNT'
+            ]]
+
+            passenger_records = final_passenger_data.to_dict('records')
+
+            if passenger_records:
+                 try:
+                     db.passenger_demand.create_many(data=passenger_records, skip_duplicates=True)
+
+                 except Exception as e:
+                     print(f"Error during passenger bulk insert: {e}")
+            else:
+                print("No passenger records to insert.")
+
+        except FileNotFoundError:
+            print(f"Error: Passenger data file not found at '{self.file_path}'.")
+        except KeyError as e:
+            print(f"Error: Missing expected column in CSV: {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred during passenger initialization: {e}")
 
     def get_datetime_from_csv(self):
         try:
-            # Read only the first row of data (after the header)
-            df = pd.read_csv(self.file_path, nrows=1)
+            df = pd.read_csv(self.file_path, nrows=5)
 
-            # Check if the DataFrame is not empty (in case the file only had a header)
             if df.empty:
-                print(f"Warning: CSV file '{self.file_path}' appears to be empty (only contains a header).")
+                print(f"Warning: CSV file '{self.file_path}' appears to be empty.")
                 return None
 
-            # Access the data from the first row
-            first_row = df.iloc[0]
+            first_valid_row = None
+            for index, row in df.iterrows():
+                 year = row.get('Year')
+                 month = row.get('Month')
+                 day = row.get('Day')
+                 if pd.notna(year) and pd.notna(month) and pd.notna(day):
+                     first_valid_row = row
+                     break
 
-            # Get the year, month, and day for the first row
-            # Use .get() with a default of None to handle missing columns gracefully
-            year = first_row.get('Year')
-            month = first_row.get('Month')
-            day = first_row.get('Day')
+            if first_valid_row is None:
+                 print(f"Error: Could not find valid Year, Month, or Day columns within the first {len(df)} data rows of '{self.file_path}'.")
+                 return None
 
-            # Check if required columns were found
-            if year is None or month is None or day is None:
-                print(f"Error: Missing Year, Month, or Day column in CSV file '{self.file_path}'.")
-                return None
+            year = first_valid_row.get('Year')
+            month = first_valid_row.get('Month')
+            day = first_valid_row.get('Day')
 
-            # Create the datetime object for the first row
-            # Use errors='coerce' for robustness
-            # Convert to integer first to avoid type issues with pd.to_datetime if columns have mixed types
             try:
-                first_datetime = datetime(int(year), int(month), int(day))
-                
-            except (ValueError, TypeError):
-                print(f"Error: Invalid date values in the first row of '{self.file_path}'.")
-                return None
-
-
-            # Check if the conversion was successful (not NaT)
-            if pd.notna(first_datetime):
-                return first_datetime
-            else:
-                print(f"Error: Could not create a valid datetime from the first row of '{self.file_path}'. Invalid date combination ({year}-{month}-{day}).")
+                base_date = datetime(int(year), int(month), int(day))
+                return base_date
+            except (ValueError, TypeError) as e:
+                print(f"Error: Invalid date values ({year}-{month}-{day}) found in '{self.file_path}'. Error: {e}")
                 return None
 
         except FileNotFoundError:
             print(f"Error: File not found at '{self.file_path}'.")
             return None
         except Exception as e:
-            print(f"An unexpected error occurred while processing '{self.file_path}': {e}")
+            print(f"An unexpected error occurred while reading date from '{self.file_path}': {e}")
             return None
