@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, time, timedelta
 import json
-from ..config import DEFAULT_SCHEME, DEFAULT_SERVICE_PERIODS
+from ..config import DEFAULT_SCHEME, DEFAULT_SERVICE_PERIODS, DEFAULT_ZONE_LENGTH
 from .connect import db
 
 class InitializeDB_Data:
@@ -17,7 +17,11 @@ class InitializeDB_Data:
             print("Error: Could not determine base date from CSV. Aborting initialization.")
             return
         
-        self.save_simulation_data(scheme_type='Regular')
+        self.regular_service = self.save_simulation_data(scheme_type='Regular')
+        self.skip_stop_service = self.save_simulation_data(scheme_type='Skip-stop')
+    
+    def return_simulation_ids(self):
+        return self.regular_service, self.skip_stop_service
 
     def save_simulation_data(self, scheme_type):
         simulation_entry = db.simulations.create(
@@ -39,6 +43,8 @@ class InitializeDB_Data:
         self.initialize_train_specs(scheme_type=scheme_type, simulation_id=simulation_entry_id)
         self.initialize_passenger_demand(simulation_id=simulation_entry_id)
 
+        return simulation_entry_id
+
     def initialize_stations(self, scheme_type, simulation_id):
         station_names = self.config['station_names']
 
@@ -50,7 +56,8 @@ class InitializeDB_Data:
                         'STATION_ID': station_id,
                         'STATION_NAME': station,
                         'STATION_TYPE': 'AB',
-                        'IS_TERMINUS': False if station_id != 1 else True
+                        'IS_TERMINUS': False if station_id != 1 else True,
+                        'ZONE_LENGTH': DEFAULT_ZONE_LENGTH
                     }
                 )
         else:
@@ -61,7 +68,8 @@ class InitializeDB_Data:
                         'STATION_ID': station_id,
                         'STATION_NAME': station,
                         'STATION_TYPE': station_type,   
-                        'IS_TERMINUS': False if station_id != 1 else True
+                        'IS_TERMINUS': False if station_id != 1 else True,
+                        'ZONE_LENGTH': DEFAULT_ZONE_LENGTH
                     }
                 )
         
@@ -135,7 +143,6 @@ class InitializeDB_Data:
                      db.trains.create(data=data)
 
     def initialize_passenger_demand(self, simulation_id):
-        print(f"Initializing passengers for Simulation ID: {simulation_id} from {self.file_path}")
         try:
             stations = db.stations.find_many(
                 where = {'SIMULATION_ID': simulation_id},
@@ -258,7 +265,6 @@ class InitializeDB_Data:
                 parsed_datetime = pd.to_datetime(datetime_str)
                 # Return the date part as a datetime object (consistent with previous implementation)
                 base_date = datetime.combine(parsed_datetime.date(), datetime.min.time())
-                print(f"Successfully extracted base date: {base_date} from {self.file_path}")
                 return base_date
             except (ValueError, TypeError) as e:
                 print(f"Error: Could not parse date from DateTime value '{datetime_str}' in '{self.file_path}'. Error: {e}")

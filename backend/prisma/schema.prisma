@@ -64,6 +64,7 @@ model STATIONS {
   STATION_NAME   String  @db.VarChar(255)
   STATION_TYPE   String  @db.VarChar(10) // A, B, AB
   IS_TERMINUS    Boolean
+  ZONE_LENGTH    Int
 
   // Relation back to SIMULATIONS
   simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
