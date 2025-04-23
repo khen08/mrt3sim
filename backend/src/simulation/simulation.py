@@ -451,23 +451,53 @@ class EventHandler:
             # Actual withdrawal logic is handled in _handle_arrival for Station 1 northbound arrivals.
         
     def _record_timetable_entry(self, train, station, arrival_time, departure_time, 
-                                travel_time=None, boarded=0, alighted=0):
-            """Centralized method to log timetable entries."""
-            # Swap to save to DB
-            
-            #entry = TimetableEntry(
-            #    train_id= train.train_id,
-            #    service_type = train.service_type,
-            #    station_id = station.station_id,
-            #    arrival_time = arrival_time,
-            #    departure_time = departure_time,
-            #    travel_time = travel_time,
-            #    direction = train.direction,
-            #    passengers_boarded = boarded,
-            #    passengers_alighted = alighted,
-            #    trip_count = train.trip_count
-            #)
-            #self.simulation.timetables.append(entry)
+                                travel_time=None): # Removed boarded/alighted args for now
+            """Records a train movement event to the database."""
+            # Ensure Prisma client is available and connected
+            if not self.simulation.prisma or not self.simulation.prisma.is_connected():
+                print("Error: Prisma client not available or not connected. Cannot record timetable entry.")
+                # Optionally, handle this error more robustly (e.g., retry connection, log to file)
+                return
+
+            # Prepare data for database insertion
+            try:
+                # Handle nullable departure time
+                db_departure_time = None
+                if isinstance(departure_time, datetime):
+                    db_departure_time = departure_time
+                elif departure_time == "WITHDRAWN": # Or other specific string indicators
+                    db_departure_time = None 
+                # Add more conditions if other non-datetime values represent null
+
+                # Calculate current passenger count
+                current_passenger_count = len(train.passengers)
+
+                # --- Data for TRAIN_MOVEMENTS table ---                
+                data_to_insert = {
+                    'SIMULATION_ID': self.simulation.simulation_id,
+                    'TRAIN_ID': train.train_id,
+                    'STATION_ID': station.station_id,
+                    'DIRECTION': train.direction,
+                    'ARRIVAL_TIME': arrival_time, 
+                    'DEPARTURE_TIME': db_departure_time, # Use the processed nullable time
+                    # 'PASSENGERS_BOARDED': boarded, # Set to 0 or default for now
+                    # 'PASSENGERS_ALIGHTED': alighted, # Set to 0 or default for now
+                    'CURRENT_PASSENGER_COUNT': current_passenger_count,
+                    'TRIP_COUNT': train.trip_count, 
+                    # Add defaults explicitly if needed, though schema might handle them
+                    'PASSENGERS_BOARDED': 0, 
+                    'PASSENGERS_ALIGHTED': 0,
+                }
+
+                # --- Insert into Database --- 
+                self.simulation.prisma.train_movements.create(data=data_to_insert)
+                # Optional: Add logging for successful insertion
+                # print(f"Recorded movement: Train {train.train_id} at Station {station.station_id} ({arrival_time})")
+
+            except Exception as e:
+                print(f"Error recording timetable entry to database: {e}")
+                print(f"Data attempted: {data_to_insert}") # Log the data that failed
+                # Consider more specific error handling based on potential Prisma/DB errors
 
     def _handle_arrival(self, event):
         train = event.train
@@ -796,10 +826,6 @@ class Simulation:
         
         # Schedule initial events (like service period changes)
         self._schedule_initial_events()
-        
-        # Disconnect Prisma client after initialization
-        if self.prisma.is_connected():
-            self.prisma.disconnect()
 
     def _load_simulation_config(self, simulation_id):
         """Load general simulation parameters from the database."""
