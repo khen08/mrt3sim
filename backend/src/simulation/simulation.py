@@ -2,6 +2,25 @@ import pandas as pd
 from datetime import datetime, time, timedelta
 from queue import PriorityQueue
 from prisma import Prisma
+import json # Added for parsing service periods
+import math # Added for custom_round
+
+# --- Helper Function for Headway Calculation ---
+def custom_round(x):
+    # Check if the number is exactly halfway between two integers
+    if x == math.floor(x) + 0.5:
+        # If halfway, round to the nearest EVEN integer (round half to even)
+        # This is the standard behavior of Python's round() in Python 3
+        # However, implementing explicitly for clarity or if Python 2 compatibility was needed
+        floor_val = math.floor(x)
+        if floor_val % 2 == 0:
+            return floor_val # Round down to the even integer
+        else:
+            return math.ceil(x) # Round up to the even integer (which is floor + 1)
+    else:
+        # If not exactly halfway, round to the nearest integer
+        return round(x)
+# -----------------------------------------------
 
 class TrainSpec:
     def __init__(self, max_capacity, cruising_speed, passthrough_speed, accel_rate, decel_rate):
@@ -797,7 +816,6 @@ class Simulation:
         self.turnaround_time = timedelta(seconds=sim_config.TURNAROUND_TIME) # Assuming TURNAROUND_TIME is in seconds
         self.scheme_type = sim_config.SCHEME_TYPE
         self.service_periods_data = sim_config.SERVICE_PERIODS # Keep raw JSON/dict for now
-        self.passenger_data_file = sim_config.PASSENGER_DATA_FILE
         print(f"\nConfig loaded: Start={self.start_time}, End={self.end_time}")
 
     def _initialize_stations(self):
@@ -809,8 +827,8 @@ class Simulation:
         )
         
         if not db_stations:
-             print(f"Warning: No stations found for SIMULATION_ID: {self.simulation_id}")
-             return
+            print(f"Warning: No stations found for SIMULATION_ID: {self.simulation_id}")
+            return
 
         self.stations = [] # Clear existing stations if any
         for db_station in db_stations:
@@ -826,26 +844,358 @@ class Simulation:
         print(f"Initialized {len(self.stations)} stations.")
 
     def _initialize_trains(self):
-        pass
+        """Fetch train and spec data from DB and create Train objects."""
+        print("Initializing trains...")
+
+        # Ensure stations are initialized to set the starting station
+        if not self.stations:
+            print("Warning: Stations are not initialized. Cannot set initial train positions.")
+            self.trains = []
+            return
+            
+        if not self.stations[0].is_terminus:
+            print(f"Warning: First station {self.stations[0].station_id} is not a terminus. Initial train placement might be incorrect.")
+            
+        first_station = self.stations[0]
+
+        # 1. Fetch all relevant train specs for this simulation
+        db_specs = self.prisma.train_specs.find_many(
+            where={'SIMULATION_ID': self.simulation_id}
+        )
+        if not db_specs:
+            print(f"Warning: No train specifications found for SIMULATION_ID: {self.simulation_id}")
+            self.trains = []
+            return
+            
+        # Create TrainSpec objects and store them in a dictionary by SPEC_ID
+        train_specs_dict = {}
+        for db_spec in db_specs:
+            try:
+                spec = TrainSpec(
+                    max_capacity=db_spec.MAX_CAPACITY,
+                    cruising_speed=db_spec.CRUISING_SPEED,
+                    passthrough_speed=db_spec.PASSTHROUGH_SPEED,
+                    accel_rate=db_spec.ACCEL_RATE,
+                    decel_rate=db_spec.DECEL_RATE
+                )
+                train_specs_dict[db_spec.SPEC_ID] = spec
+            except Exception as e: # Catch potential errors during spec creation
+                print(f"Error creating TrainSpec for SPEC_ID {db_spec.SPEC_ID}: {e}")
+        
+        if not train_specs_dict:
+            print("Error: Failed to create any TrainSpec objects.")
+            self.trains = []
+            return
+
+        # 2. Fetch all trains for this simulation
+        db_trains = self.prisma.trains.find_many(
+            where={'SIMULATION_ID': self.simulation_id},
+            order={'TRAIN_ID': 'asc'} # Optional: Order trains by ID
+        )
+
+        if not db_trains:
+            print(f"Warning: No trains found for SIMULATION_ID: {self.simulation_id}")
+            self.trains = []
+            return
+
+        # 3. Create Train objects
+        self.trains = [] # Clear existing trains
+        for db_train in db_trains:
+            # Get the corresponding TrainSpec
+            train_spec = train_specs_dict.get(db_train.SPEC_ID)
+            if not train_spec:
+                print(f"Warning: TrainSpec with SPEC_ID {db_train.SPEC_ID} not found for TRAIN_ID {db_train.TRAIN_ID}. Skipping train.")
+                continue
+
+            # Create the Train object
+            train = Train(
+                train_id=db_train.TRAIN_ID,
+                train_specs=train_spec,
+                service_type=db_train.SERVICE_TYPE # Service type (A, B, AB) comes from DB
+            )
+
+            # Set initial state (based on old logic)
+            train.current_station = first_station
+            train.direction = "southbound"
+            
+            self.trains.append(train)
+
+        print(f"Initialized {len(self.trains)} trains.")
 
     def _initialize_track_segments(self):
-        pass
-    
-    def _initialize_service_periods(self):
-        """Initialize service periods from the loaded config data."""
-        # Example: Parse self.service_periods_data if needed
-        # This depends heavily on the structure of the SERVICE_PERIODS JSON
-        # For now, just storing it. Logic will be added when needed.
-        self.service_periods = self.service_periods_data 
-        print("Service periods loaded (raw data).")
-        
-    def _initialize_passengers(self):
-        # Passenger initialization might involve reading the PASSENGER_DATA_FILE
-        # or querying a PASSENGER_DEMAND table if it exists and is populated.
-        # Placeholder for now.
-        print("Passenger initialization skipped (placeholder).")
-        pass
+        """Fetch track segment data from DB and create TrackSegment objects."""
+        print("Initializing track segments...")
 
+        # Ensure stations are initialized and create a lookup dictionary
+        if not self.stations:
+            print("Warning: Stations are not initialized. Cannot link track segments.")
+            self.track_segments = []
+            return
+            
+        stations_dict = {s.station_id: s for s in self.stations}
+
+        # Fetch track segments from the database for the current simulation
+        db_segments = self.prisma.track_segments.find_many(
+            where={'SIMULATION_ID': self.simulation_id},
+            order=[
+                {'START_STATION_ID': 'asc'}, # Optional: order for consistency
+                {'END_STATION_ID': 'asc'}
+            ]
+        )
+
+        if not db_segments:
+            print(f"Warning: No track segments found for SIMULATION_ID: {self.simulation_id}")
+            self.track_segments = []
+            return
+
+        self.track_segments = [] # Clear existing segments
+        for db_segment in db_segments:
+            # Create the TrackSegment object
+            # Assuming DISTANCE in the database is already in meters as required by TrackSegment
+            segment = TrackSegment(
+                start_station_id=db_segment.START_STATION_ID,
+                end_station_id=db_segment.END_STATION_ID,
+                distance=db_segment.DISTANCE, # Assuming meters
+                direction=db_segment.DIRECTION
+            )
+            self.track_segments.append(segment)
+
+            # Link the segment to its starting station
+            start_station = stations_dict.get(segment.start_station_id)
+            if start_station:
+                start_station.tracks[segment.direction] = segment
+            else:
+                print(f"Warning: Could not find start station {segment.start_station_id} in initialized stations for segment {segment.segment_id}.")
+
+        print(f"Initialized {len(self.track_segments)} track segments and linked them to stations.")
+
+    def _initialize_service_periods(self):
+        """Parse service periods from DB data, calculate headway, and schedule change events."""
+        print("Initializing service periods...")
+
+        # --- Pre-checks ---
+        if self.service_periods_data is None:
+            print("Error: Service periods data not loaded from database.")
+            return
+            
+        if not self.trains:
+            print("Error: Trains must be initialized before service periods to calculate loop time.")
+            return
+            
+        if not self.start_time:
+            print("Error: Simulation start_time is not set. Cannot schedule service period events.")
+            return
+
+        # --- Parse Service Periods Data ---
+        try:
+            # Assuming self.service_periods_data is a JSON string or already a dict/list
+            if isinstance(self.service_periods_data, str):
+                self.service_periods = json.loads(self.service_periods_data)
+            elif isinstance(self.service_periods_data, (dict, list)):
+                # If it's already parsed (e.g., Prisma returns dict/list for JSON types)
+                self.service_periods = self.service_periods_data
+            else:
+                raise TypeError("Unexpected type for service_periods_data")
+                
+            # Basic validation of structure (expecting a list of dicts)
+            if not isinstance(self.service_periods, list) or not all(isinstance(p, dict) for p in self.service_periods):
+                raise ValueError("Service periods data is not a list of dictionaries.")
+                
+            # Sort periods by start_hour to ensure correct processing order
+            self.service_periods.sort(key=lambda p: p.get('start_hour', float('inf'))) # Sort, handle missing key
+
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
+            print(f"Error parsing service periods data: {e}")
+            self.service_periods = [] # Set to empty list to prevent further errors
+            return
+            
+        if not self.service_periods:
+            print("Warning: No valid service periods found after parsing.")
+            return
+
+        # --- Calculate Loop Time and Headways ---
+        try:
+            # Use the first train to calculate theoretical loop time (assuming all trains have similar base loop time)
+            # Ensure calculate_loop_time handles potential errors if stations/segments aren't ready
+            loop_time_seconds = self.calculate_loop_time(self.trains[0]) 
+            loop_time_minutes = loop_time_seconds / 60.0
+            print(f"Calculated theoretical loop time: {loop_time_minutes:.2f} minutes")
+        except Exception as e:
+            print(f"Error calculating loop time: {e}. Cannot calculate headways.")
+            # Optionally, proceed without headways or stop initialization
+            return 
+
+        # --- Schedule Events ---
+        for i, period in enumerate(self.service_periods):
+            # Validate period structure
+            if 'train_count' not in period or 'start_hour' not in period or 'name' not in period:
+                print(f"Warning: Skipping invalid service period structure: {period}")
+                continue
+            
+            if period['train_count'] <= 0:
+                print(f"Warning: Skipping service period '{period['name']}' with non-positive train count ({period['train_count']}).")
+                continue
+                
+            # Calculate headway
+            period["headway"] = custom_round(loop_time_minutes / period["train_count"])
+
+            # Calculate event start time
+            try:
+                # Combine simulation date with the period's start hour
+                start_datetime = datetime.combine(
+                    self.start_time.date(), # Use the date from the simulation start time
+                    time(hour=int(period["start_hour"]), minute=0, second=0),
+                )
+                
+                # Apply 30-minute offset for periods after the first one
+                # This matches the old logic: the *event* is scheduled 30 mins before the nominal start hour
+                if i != 0:
+                    start_datetime -= timedelta(minutes=30)
+                    
+                # Ensure the calculated event time is not before the simulation start time
+                if start_datetime < self.start_time:
+                    print(f"Info: Calculated start time {start_datetime} for period '{period['name']}' is before simulation start {self.start_time}. Adjusting to simulation start time.")
+                    start_datetime = self.start_time
+                    
+                # Ensure the calculated event time is not after the simulation end time
+                if start_datetime >= self.end_time:
+                    print(f"Warning: Calculated start time {start_datetime} for period '{period['name']}' is after simulation end {self.end_time}. Skipping event.")
+                    continue # Skip scheduling this event
+
+                # Schedule the event
+                self.schedule_event(
+                    Event(
+                        time=start_datetime,
+                        event_type="service_period_change",
+                        period=period # Pass the period dictionary (including calculated headway)
+                    )
+                )
+                print(f"Scheduled '{period['name']}' period change event at {start_datetime.strftime('%Y-%m-%d %H:%M:%S')} (Headway: {period['headway']} mins)")
+
+            except (ValueError, TypeError) as e:
+                print(f"Error calculating or scheduling event for period {period}: {e}")
+
+        # Optional: Print summary table (requires pandas)
+        if self.service_periods: # Only print if periods were successfully processed
+            try:
+                print("\nInitialized Service Periods Summary:")
+                df_periods = pd.DataFrame(
+                    [
+                        {
+                            "Name": p.get("name", "N/A"),
+                            "Train Count": p.get("train_count", "N/A"),
+                            "Start Hour": p.get("start_hour", "N/A"),
+                            "Calculated Headway (min)": p.get("headway", "N/A"),
+                        }
+                        for p in self.service_periods if "headway" in p # Only include successfully processed periods
+                    ]
+                )
+                print(df_periods.to_string(index=False), "\n")
+            except Exception as e:
+                print(f"Error printing service period summary table: {e}")
+
+    def _initialize_passengers(self):
+        """Fetch passenger demand from DB, create Passenger objects, and assign them to stations."""
+        print("Initializing passengers...")
+
+        # --- Pre-checks ---
+        if not self.stations:
+            print("Error: Stations must be initialized before passengers.")
+            self.passenger_demand = []
+            return
+        if not self.start_time or not self.end_time:
+            print("Error: Simulation start_time or end_time is not set. Cannot filter passenger demand.")
+            self.passenger_demand = []
+            return
+            
+        # Create a station lookup dictionary for efficient access
+        stations_dict = {s.station_id: s for s in self.stations}
+        num_stations = len(self.stations)
+
+        # --- Fetch Passenger Demand Data --- 
+        try:
+            db_passenger_demand_entries = self.prisma.passenger_demand.find_many(
+                where={
+                    'SIMULATION_ID': self.simulation_id,
+                    # Filter demand entries to only those arriving within the simulation time window
+                    'ARRIVAL_TIME_AT_ORIGIN': {
+                        'gte': self.start_time,
+                        'lt': self.end_time
+                    }
+                },
+                order={'ARRIVAL_TIME_AT_ORIGIN': 'asc'} # Process in chronological order
+            )
+        except Exception as e:
+            print(f"Error fetching passenger demand from database: {e}")
+            self.passenger_demand = []
+            return
+            
+        if not db_passenger_demand_entries:
+            print(f"Warning: No passenger demand found for SIMULATION_ID {self.simulation_id} within the simulation time frame.")
+            self.passenger_demand = []
+            return
+
+        # --- Create Passenger Objects --- 
+        self.passenger_demand = [] # Clear existing list
+        passenger_id_counter = 1
+        total_passengers_generated = 0
+        skipped_invalid_station = 0
+
+        for demand_entry in db_passenger_demand_entries:
+            origin_id = demand_entry.ORIGIN_STATION_ID
+            dest_id = demand_entry.DESTINATION_STATION_ID
+            arrival_time = demand_entry.ARRIVAL_TIME_AT_ORIGIN
+            passenger_count = demand_entry.PASSENGER_COUNT
+            trip_type = demand_entry.TRIP_TYPE # Use trip type from DB
+
+            # Validate station IDs
+            origin_station = stations_dict.get(origin_id)
+            destination_station = stations_dict.get(dest_id)
+
+            if not origin_station or not destination_station:
+                # print(f"Warning: Invalid origin ({origin_id}) or destination ({dest_id}) station ID found in demand entry. Skipping {passenger_count} passengers.")
+                skipped_invalid_station += passenger_count
+                continue
+                
+            if passenger_count <= 0:
+                # print(f"Warning: Skipping demand entry with non-positive passenger count ({passenger_count}).")
+                continue
+
+            # Create individual passengers for this demand entry
+            for _ in range(passenger_count):
+                passenger = Passenger(
+                    passenger_id=passenger_id_counter,
+                    origin_station_id=origin_id,
+                    destination_station_id=dest_id,
+                    arrival_time=arrival_time
+                )
+                passenger_id_counter += 1
+                total_passengers_generated += 1
+
+                # Determine direction
+                passenger.direction = "southbound" if origin_id < dest_id else "northbound"
+                
+                # Determine required service type based on destination station
+                passenger.service_type = destination_station.station_type
+                
+                # Set trip type from DB data
+                passenger.trip_type = trip_type
+                
+                # Add to the main simulation list (as requested)
+                self.passenger_demand.append(passenger)
+                
+                # Add passenger to the origin station's waiting list
+                origin_station.waiting_passengers.append(passenger)
+
+        # --- Logging --- 
+        print(f"Generated {total_passengers_generated} passengers from {len(db_passenger_demand_entries)} demand entries.")
+        if skipped_invalid_station > 0:
+            print(f"Skipped {skipped_invalid_station} passengers due to invalid origin/destination stations.")
+        # Sample check (optional)
+        if self.stations:
+            print(f"Sample check - Station {self.stations[0].station_id} ({self.stations[0].name}) has {len(self.stations[0].waiting_passengers)} waiting passengers initially.")
+        print("---")
+        
     def _schedule_initial_events(self):
         """Schedule initial events like the first service period change."""
         print("Scheduling initial events...")
