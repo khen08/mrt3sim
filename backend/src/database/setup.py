@@ -235,39 +235,41 @@ class InitializeDB_Data:
 
     def get_datetime_from_csv(self):
         try:
-            df = pd.read_csv(self.file_path, nrows=5)
+            # Read only the first data row to get the date
+            df = pd.read_csv(self.file_path, nrows=1)
 
             if df.empty:
-                print(f"Warning: CSV file '{self.file_path}' appears to be empty.")
+                print(f"Warning: CSV file '{self.file_path}' appears to be empty or has no data rows.")
                 return None
 
-            first_valid_row = None
-            for index, row in df.iterrows():
-                 year = row.get('Year')
-                 month = row.get('Month')
-                 day = row.get('Day')
-                 if pd.notna(year) and pd.notna(month) and pd.notna(day):
-                     first_valid_row = row
-                     break
+            # Check if 'DateTime' column exists
+            if 'DateTime' not in df.columns:
+                print(f"Error: 'DateTime' column not found in '{self.file_path}'.")
+                return None
 
-            if first_valid_row is None:
-                 print(f"Error: Could not find valid Year, Month, or Day columns within the first {len(df)} data rows of '{self.file_path}'.")
+            datetime_str = df.iloc[0]['DateTime']
+
+            if pd.isna(datetime_str):
+                 print(f"Error: First row of 'DateTime' column in '{self.file_path}' is empty.")
                  return None
 
-            year = first_valid_row.get('Year')
-            month = first_valid_row.get('Month')
-            day = first_valid_row.get('Day')
-
             try:
-                base_date = datetime(int(year), int(month), int(day))
+                # Parse the datetime string and extract the date part
+                parsed_datetime = pd.to_datetime(datetime_str)
+                # Return the date part as a datetime object (consistent with previous implementation)
+                base_date = datetime.combine(parsed_datetime.date(), datetime.min.time())
+                print(f"Successfully extracted base date: {base_date} from {self.file_path}")
                 return base_date
             except (ValueError, TypeError) as e:
-                print(f"Error: Invalid date values ({year}-{month}-{day}) found in '{self.file_path}'. Error: {e}")
+                print(f"Error: Could not parse date from DateTime value '{datetime_str}' in '{self.file_path}'. Error: {e}")
                 return None
 
         except FileNotFoundError:
             print(f"Error: File not found at '{self.file_path}'.")
             return None
+        except pd.errors.EmptyDataError:
+             print(f"Error: CSV file '{self.file_path}' is empty.")
+             return None
         except Exception as e:
             print(f"An unexpected error occurred while reading date from '{self.file_path}': {e}")
             return None
