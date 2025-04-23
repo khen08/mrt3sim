@@ -65,7 +65,7 @@ interface MrtMapProps {
 // Define the station positions along the HORIZONTAL line
 // Assuming map width around 1200, Y midline around 250
 const HORIZONTAL_STATION_SPACING = 85;
-const MAP_START_X = 60;
+const MAP_START_X = 80;
 const MAP_WIDTH = 1200;
 const MAP_MID_Y = 150;
 const TRACK_Y_OFFSET = 25; // Increased vertical offset for tracks
@@ -74,13 +74,14 @@ const STATION_STROKE_WIDTH = 1.5;
 const SELECTED_STATION_RADIUS = 11;
 const SELECTED_STATION_STROKE_WIDTH = 3;
 const LABEL_Y_OFFSET = -75;
+const STATION_VISUAL_X_OFFSET = 120; // Offset to move station visuals right
 
 // --- Define coordinates for turnaround visualization ---
 const TURNAROUND_OFFSET_X = 40; // How far past the terminus X to place the train
 const TURNAROUND_Y_OFFSET = 0; // Vertical offset from MAP_MID_Y
 
 const NORTH_TERMINUS_ID = 1;
-const SOUTH_TERMINUS_ID = 13; // Assuming 13 stations
+const SOUTH_TERMINUS_ID = 13;
 // --- End Turnaround Coordinates ---
 
 // --- Theme Colors (using Tailwind class names for consistency) ---
@@ -782,7 +783,9 @@ export default function MrtMap({
           key={`station-group-${station.id}`}
           className="cursor-pointer group transition-transform duration-200 ease-in-out"
           onClick={() => onStationClick && onStationClick(station.id)}
-          transform={`translate(${station.x}, ${TRACK.stationCenterY})`}
+          transform={`translate(${station.x + STATION_VISUAL_X_OFFSET}, ${
+            TRACK.stationCenterY
+          })`}
         >
           <circle
             cx={0}
@@ -945,7 +948,7 @@ export default function MrtMap({
   const stationLabelElements = useMemo(() => {
     return stations.map((station) => {
       const isSelected = selectedStation === station.id;
-      const labelX = station.x;
+      const labelX = station.x + STATION_VISUAL_X_OFFSET;
       const labelY = TRACK.stationCenterY + LABEL_Y_OFFSET;
 
       return (

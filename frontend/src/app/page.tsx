@@ -35,6 +35,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
+import { DarkModeToggle } from "@/components/DarkModeToggle";
 
 // Define interface for the passenger distribution
 interface PassengerDistribution {
@@ -472,13 +473,12 @@ export default function Home() {
     const stationNames = simulationSettings.stations.map(
       (station) => station.name
     );
-    const stationDistances = simulationSettings.stations.map(
-      (station) => station.distance
-    ).slice(1);
-    
+    const stationDistances = simulationSettings.stations
+      .map((station) => station.distance)
+      .slice(1); // Slice(1) because the backend expects distances *between* stations
 
-    // Destructure settings to exclude the original 'stations' key
-    const { stations, ...otherSettings } = simulationSettings;
+    // Destructure settings to exclude the original 'stations' key AND 'schemeType'
+    const { stations, schemeType, ...otherSettings } = simulationSettings;
 
     // Create the payload with the new structure for config
     const payload = {
@@ -486,13 +486,14 @@ export default function Home() {
       config: {
         // Spread the other settings
         ...otherSettings,
-        // Add the new separated arrays
-        station_names: stationNames,
-        station_distances: stationDistances,
+        // Add the new separated arrays with camelCase keys
+        stationNames: stationNames,
+        stationDistances: stationDistances,
       },
     };
-    // Remove the undefined stations key cleanly - NO LONGER NEEDED
+    // Remove the undefined keys cleanly - NO LONGER NEEDED with destructuring
     // delete payload.config.stations;
+    // delete payload.config.schemeType;
 
     // Update the main simulationInput state just in case (optional)
     // setSimulationInput(payload); // This might be incorrect now due to type mismatch if SimulationInput type isn't updated
@@ -605,10 +606,11 @@ export default function Home() {
         {/* Only render sidebar content if not collapsed */}
         {!isSidebarCollapsed && (
           <>
-            <div className="p-4 border-b">
+            <div className="p-4 border-b flex justify-between items-center">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
                 MRT-3 Simulation
               </h2>
+              <DarkModeToggle />
             </div>
             <div className="flex-grow overflow-y-auto p-4">
               {/* Loading Indicator for fetching default settings */}
@@ -770,48 +772,6 @@ export default function Home() {
                               Max passengers per train.
                             </p>
                           </div>
-                          <div className="space-y-2">
-                            <Label>Operational Scheme</Label>
-                            <RadioGroup
-                              name="schemeType"
-                              value={simulationSettings.schemeType}
-                              onValueChange={(value) =>
-                                handleSettingChange(value, "schemeType")
-                              }
-                              className="flex flex-col space-y-1"
-                              disabled={isSimulating}
-                            >
-                              <div className="flex items-center space-x-3">
-                                <RadioGroupItem
-                                  value="Regular"
-                                  id="scheme-regular"
-                                  disabled={isSimulating}
-                                />
-                                <Label
-                                  htmlFor="scheme-regular"
-                                  className="font-normal"
-                                >
-                                  Regular (All stops)
-                                </Label>
-                              </div>
-                              <div className="flex items-center space-x-3">
-                                <RadioGroupItem
-                                  value="Skip-Stop"
-                                  id="scheme-skipstop"
-                                  disabled={isSimulating}
-                                />
-                                <Label
-                                  htmlFor="scheme-skipstop"
-                                  className="font-normal"
-                                >
-                                  Skip-Stop (A/B pattern)
-                                </Label>
-                              </div>
-                            </RadioGroup>
-                            <p className="text-sm text-muted-foreground pt-1">
-                              Select train operation pattern.
-                            </p>
-                          </div>
                         </div>
                       </TabsContent>
 
@@ -821,43 +781,45 @@ export default function Home() {
                           <Label className="text-base font-semibold">
                             Station Management
                           </Label>
-                          <div className="border rounded-md p-4 mt-2 max-h-80 overflow-y-auto">
-                            <div className="grid grid-cols-12 gap-4 mb-2 font-medium text-xs sticky top-0 bg-white dark:bg-gray-800 py-1">
+                          <div className="border rounded-md mt-2 max-h-80 overflow-y-auto">
+                            <div className="grid grid-cols-12 gap-4 mb-2 font-medium text-xs sticky top-0 z-10 bg-white dark:bg-gray-800 px-4 py-2 border-b">
                               <div className="col-span-1">#</div>
                               <div className="col-span-7">Name</div>
                               <div className="col-span-4">
                                 Dist. from Prev (km)
                               </div>
                             </div>
-                            {simulationSettings.stations.map(
-                              (station, index) => (
-                                <div
-                                  key={`station-${index}`}
-                                  className="grid grid-cols-12 gap-4 items-center mb-1 text-xs"
-                                >
-                                  <div className="col-span-1 text-gray-500">
-                                    {index + 1}
+                            <div className="px-4 pt-2 pb-4">
+                              {simulationSettings.stations.map(
+                                (station, index) => (
+                                  <div
+                                    key={`station-${index}`}
+                                    className="grid grid-cols-12 gap-4 items-center mb-1 text-xs"
+                                  >
+                                    <div className="col-span-1 text-gray-500">
+                                      {index + 1}
+                                    </div>
+                                    <div className="col-span-7">
+                                      {station.name}
+                                    </div>
+                                    <div className="col-span-4">
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={station.distance}
+                                        onChange={(e) =>
+                                          handleStationDistanceChange(index, e)
+                                        }
+                                        // Disable first station and if simulating
+                                        disabled={index === 0 || isSimulating}
+                                        className="h-7 text-xs"
+                                      />
+                                    </div>
                                   </div>
-                                  <div className="col-span-7">
-                                    {station.name}
-                                  </div>
-                                  <div className="col-span-4">
-                                    <Input
-                                      type="number"
-                                      step="0.01"
-                                      min="0"
-                                      value={station.distance}
-                                      onChange={(e) =>
-                                        handleStationDistanceChange(index, e)
-                                      }
-                                      // Disable first station and if simulating
-                                      disabled={index === 0 || isSimulating}
-                                      className="h-7 text-xs"
-                                    />
-                                  </div>
-                                </div>
-                              )
-                            )}
+                                )
+                              )}
+                            </div>
                           </div>
                         </div>
                       </TabsContent>
@@ -914,8 +876,8 @@ export default function Home() {
       <button
         onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         className={cn(
-          "absolute top-1/2 -translate-y-1/2 z-20 p-1 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 shadow-md transition-all duration-300 ease-in-out",
-          isSidebarCollapsed ? "left-2" : "left-[490px]" // Adjust if sidebar width changes
+          "absolute top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-mrt-blue hover:bg-blue-700 text-white shadow-md transition-all duration-300 ease-in-out",
+          isSidebarCollapsed ? "left-2" : "left-[490px]"
         )}
         title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
       >
