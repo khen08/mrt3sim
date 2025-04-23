@@ -67,6 +67,7 @@ DEFAULT_SERVICE_PERIODS = [
         'start_hour': 20
     }
 ]
+DEFAULT_ZONE_LENGTH = 130 # in meters
 # --- File Upload Configuration ---
 
 # Define upload folder relative to the backend directory

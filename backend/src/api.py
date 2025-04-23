@@ -10,6 +10,8 @@ from .config import DEFAULT_SETTINGS, UPLOAD_FOLDER
 from .database import InitializeDB_Data
 from .database.connect import db
 
+# Import Simulation Handler
+from .simulation import Simulation
 # --- Initialize Flask App ---
 app = Flask(__name__)
 CORS(app) # Enable CORS for all routes
@@ -62,7 +64,6 @@ def upload_csv():
         print("Error: File object is invalid during /upload_csv")
         return jsonify({"error": "Invalid file object received"}), 400
 
-
 @app.route('/run_simulation', methods=['POST'])
 def run_simulation():
     print("Received request for /run_simulation")
@@ -96,8 +97,6 @@ def run_simulation():
     secure_name = secure_filename(filename)
     file_path = os.path.join(UPLOAD_FOLDER, secure_name)
 
-    print(f"Attempting to use pre-uploaded file: {file_path}")
-
     if not os.path.exists(file_path):
         print(f"Error: File '{secure_name}' not found in upload folder '{UPLOAD_FOLDER}'")
         if not os.path.exists(UPLOAD_FOLDER):
@@ -106,9 +105,14 @@ def run_simulation():
         else:
             return jsonify({"error": f"File '{secure_name}' not found. Please upload the file first."}), 404
 
-    try:
-        print(f"Proceeding with simulation using file '{secure_name}' and config.")
+    try:        
         initialize_db = InitializeDB_Data(file_path, config)
+        regular_service_id, skip_stop_service_id = initialize_db.return_simulation_ids()
+        print(f"Regular service ID: {regular_service_id}")
+        print(f"Skip-stop service ID: {skip_stop_service_id}")
+
+        simulation = Simulation(regular_service_id, skip_stop_service_id)
+        simulation.run()
 
         placeholder_timetable = [
             {"message": "Simulation logic placeholder."},
@@ -121,7 +125,6 @@ def run_simulation():
     except Exception as e:
         print(f"Error during simulation processing: {e}")
         return jsonify({"error": f"Error during simulation processing: {e}"}), 500
-
 
 @app.route('/get_default_settings', methods=['GET'])
 def get_default_settings():
