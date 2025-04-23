@@ -14,6 +14,7 @@ import {
   IconRotateClockwise,
   IconRewindBackward30,
   IconRewindForward30,
+  IconRoute,
 } from "@tabler/icons-react";
 import { parseTime, formatTime, addSeconds } from "@/lib/timeUtils";
 import { MRT_COLORS } from "@/components/ui/button";
@@ -37,6 +38,7 @@ const PEAK_HOURS = {
 };
 
 type PeakPeriod = keyof typeof PEAK_HOURS; // Type will be 'AM' | 'PM'
+type OperationalScheme = "Regular" | "Skip-Stop"; // Type for visual scheme
 
 // Define custom styles using the MRT color palette
 const progressStyles = {
@@ -55,6 +57,8 @@ const SimulationController = ({
 }: SimulationControllerProps) => {
   const [isRunning, setIsRunning] = useState(false);
   const [selectedPeak, setSelectedPeak] = useState<PeakPeriod>("AM");
+  const [visualScheme, setVisualScheme] =
+    useState<OperationalScheme>("Regular"); // State for visual scheme
   const [currentTime, setCurrentTime] = useState(PEAK_HOURS.AM.start);
   const [speed, setSpeed] = useState(1);
   // State for manual time input
@@ -207,6 +211,18 @@ const SimulationController = ({
     [selectedPeak]
   );
 
+  // Handle selection of a different visual operational scheme
+  const handleSchemeChange = useCallback(
+    (newScheme: OperationalScheme) => {
+      if (newScheme !== visualScheme) {
+        console.log(`Switching visual scheme to: ${newScheme}`);
+        setVisualScheme(newScheme);
+        // Potentially trigger map updates or other visual changes if needed
+      }
+    },
+    [visualScheme]
+  );
+
   // --- Manual Time Input Handlers --- //
   const validateAndSetTime = (inputTime: string) => {
     const timeRegex = /^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$/;
@@ -278,51 +294,130 @@ const SimulationController = ({
   const speedPresets = [0.5, 1, 2, 5, 10];
 
   return (
-    <div className="bg-white rounded-lg border p-4 shadow-sm">
+    <div className="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-700 p-4 shadow-sm">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-md font-medium mr-4">Simulation Control</h3>
+        <h3 className="text-md font-medium mr-4 text-gray-900 dark:text-gray-100">
+          Simulation Control
+        </h3>
 
         {/* Peak Period Selector */}
-        <RadioGroup
-          value={selectedPeak}
-          onValueChange={(value) => handlePeakChange(value as PeakPeriod)}
-          className="flex space-x-2 bg-gray-100 p-1 rounded-md"
-          disabled={!hasTimetableData}
-        >
-          <div className="flex items-center space-x-2">
-            <RadioGroupItem value="AM" id="peak-am" className="peer sr-only" />
-            <Label
-              htmlFor="peak-am"
-              className={`px-3 py-1 rounded text-sm font-medium cursor-pointer transition-colors ${
-                selectedPeak === "AM"
-                  ? "bg-mrt-blue text-white shadow-sm"
-                  : "text-gray-600 hover:bg-gray-200"
-              }`}
-            >
-              AM Peak (7-9)
-            </Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <RadioGroupItem value="PM" id="peak-pm" className="peer sr-only" />
-            <Label
-              htmlFor="peak-pm"
-              className={`px-3 py-1 rounded text-sm font-medium cursor-pointer transition-colors ${
-                selectedPeak === "PM"
-                  ? "bg-mrt-blue text-white shadow-sm"
-                  : "text-gray-600 hover:bg-gray-200"
-              }`}
-            >
-              PM Peak (5-8)
-            </Label>
-          </div>
-        </RadioGroup>
+        <div className="flex items-center ml-4">
+          <IconRoute
+            size={16}
+            className="mr-2 text-gray-500 dark:text-gray-400"
+          />
+          <RadioGroup
+            value={selectedPeak}
+            onValueChange={(value) => handlePeakChange(value as PeakPeriod)}
+            className={cn(
+              "flex space-x-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-md",
+              !hasTimetableData && "opacity-50 pointer-events-none"
+            )}
+            disabled={!hasTimetableData}
+          >
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem
+                value="AM"
+                id="peak-am"
+                className="peer sr-only"
+              />
+              <Label
+                htmlFor="peak-am"
+                className={cn(
+                  "px-3 py-1 rounded text-sm font-medium cursor-pointer transition-colors",
+                  selectedPeak === "AM"
+                    ? "bg-mrt-blue text-white shadow-sm"
+                    : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                )}
+              >
+                AM Peak (7-9)
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem
+                value="PM"
+                id="peak-pm"
+                className="peer sr-only"
+              />
+              <Label
+                htmlFor="peak-pm"
+                className={cn(
+                  "px-3 py-1 rounded text-sm font-medium cursor-pointer transition-colors",
+                  selectedPeak === "PM"
+                    ? "bg-mrt-blue text-white shadow-sm"
+                    : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                )}
+              >
+                PM Peak (5-8)
+              </Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {/* Operational Scheme Selector */}
+        <div className="flex items-center ml-4">
+          <IconRoute
+            size={16}
+            className="mr-2 text-gray-500 dark:text-gray-400"
+          />
+          <RadioGroup
+            value={visualScheme}
+            onValueChange={(value) =>
+              handleSchemeChange(value as OperationalScheme)
+            }
+            className={cn(
+              "flex space-x-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-md",
+              !hasTimetableData && "opacity-50 pointer-events-none"
+            )}
+            disabled={!hasTimetableData}
+          >
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem
+                value="Regular"
+                id="scheme-regular"
+                className="peer sr-only"
+              />
+              <Label
+                htmlFor="scheme-regular"
+                className={cn(
+                  "px-3 py-1 rounded text-xs font-medium cursor-pointer transition-colors",
+                  visualScheme === "Regular"
+                    ? "bg-gray-600 text-white shadow-sm"
+                    : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                )}
+              >
+                Regular
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem
+                value="Skip-Stop"
+                id="scheme-skipstop"
+                className="peer sr-only"
+              />
+              <Label
+                htmlFor="scheme-skipstop"
+                className={cn(
+                  "px-3 py-1 rounded text-xs font-medium cursor-pointer transition-colors",
+                  visualScheme === "Skip-Stop"
+                    ? "bg-gray-600 text-white shadow-sm"
+                    : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                )}
+              >
+                Skip-Stop
+              </Label>
+            </div>
+          </RadioGroup>
+        </div>
 
         {/* Current Time Display & Manual Input */}
         {/* Manual Time Input - Only show when simulation is NOT running */}
         {!isRunning && (
           <div className="flex items-center gap-2 ml-4 relative w-auto">
             {timeInputError && (
-              <p className="text-xs text-red-600">{timeInputError}</p>
+              <p className="text-xs text-red-600 dark:text-red-500">
+                {timeInputError}
+              </p>
             )}
             <Input
               type="text"
@@ -331,9 +426,10 @@ const SimulationController = ({
               onKeyDown={handleManualTimeKeyDown}
               onBlur={handleManualTimeBlur}
               placeholder="HH:MM:SS"
-              className={`h-8 text-sm font-mono w-24 ${
-                timeInputError ? "border-red-500" : ""
-              }`}
+              className={cn(
+                `h-8 text-sm font-mono w-24`,
+                timeInputError ? "border-red-500 dark:border-red-600" : ""
+              )}
               title={`Set time within ${viewStartTime} - ${viewEndTime}`}
             />
           </div>
@@ -367,7 +463,7 @@ const SimulationController = ({
               size="icon"
               onClick={skipBack}
               title="Skip back 30 seconds"
-              className="border-2 hover:bg-gray-100 hover:border-gray-400 transition-all"
+              className="border-2 hover:bg-gray-100 dark:hover:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-600 transition-all"
               disabled={!hasTimetableData}
             >
               <IconRewindBackward30 size={18} />
@@ -398,7 +494,7 @@ const SimulationController = ({
               size="icon"
               onClick={skipAhead}
               title="Skip ahead 30 seconds"
-              className="border-2 hover:bg-gray-100 hover:border-gray-400 transition-all"
+              className="border-2 hover:bg-gray-100 dark:hover:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-600 transition-all"
               disabled={!hasTimetableData}
             >
               <IconRewindForward30 size={18} />
@@ -408,7 +504,7 @@ const SimulationController = ({
               size="icon"
               onClick={resetSimulation}
               title="Reset to start of peak"
-              className="border-2 hover:bg-gray-100 hover:border-gray-400 transition-all ml-4"
+              className="border-2 hover:bg-gray-100 dark:hover:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-600 transition-all ml-4"
               disabled={!hasTimetableData}
             >
               <IconRotateClockwise size={18} />
@@ -417,7 +513,9 @@ const SimulationController = ({
 
           <div className="flex items-center space-x-2">
             <IconClock size={18} style={{ color: MRT_COLORS.blue }} />
-            <span className="text-sm font-medium mr-2">Speed:</span>
+            <span className="text-sm font-medium mr-2 text-gray-700 dark:text-gray-300">
+              Speed:
+            </span>
 
             {/* Speed preset buttons */}
             <div className="flex space-x-1">
