@@ -24,6 +24,42 @@ def custom_round(x):
         return round(x)
 # -----------------------------------------------
 
+class TimetableEntry:
+    def __init__(self,
+                train_id,
+                station_id,
+                arrival_time,
+                departure_time,
+                travel_time,
+                direction,
+                passengers_boarded,
+                passengers_alighted,
+                current_station_passenger_count
+            ):
+        """
+        Initialize a Timetable Entity
+        
+        Args:
+            train_id (int)
+            station_id (int)
+            scheduled_arrival (datetime)
+            scheduled_departure (datetime)
+        Attributes:
+            arrival_time (datetime)
+            departure_time (datetime)
+            passengers_boarded (int)
+            passengers_alighted (int)
+        """
+        self.train_id = train_id
+        self.station_id = station_id
+        self.arrival_time = arrival_time
+        self.departure_time = departure_time
+        self.travel_time = travel_time
+        self.direction = direction
+        self.passengers_boarded = passengers_boarded
+        self.passengers_alighted = passengers_alighted
+        self.current_station_passenger_count = current_station_passenger_count
+        
 class TrainSpec:
     def __init__(self, max_capacity, cruising_speed, passthrough_speed, accel_rate, decel_rate):
         self.max_capacity = max_capacity
@@ -359,7 +395,6 @@ class Event:
         Args:
             time (datetime): Time of the event
             event_type (str): Type of event (e.g., "train_arrival")
-            simulation_id (int, optional): The ID of the simulation this event belongs to.
             period (dict, optional): Service period data for period change events.
             train (Train, optional): Train involved in the event.
             station (Station, optional): Station involved in the event.
@@ -367,7 +402,6 @@ class Event:
         """
         self.time = time
         self.event_type = event_type
-        self.simulation_id = simulation_id
         self.period = period
         self.train = train
         self.station = station
@@ -437,7 +471,6 @@ class EventHandler:
                     Event(
                         time=departure_time,
                         event_type="train_departure",
-                        simulation_id=self.simulation.simulation_id,
                         train=train,
                         station=train.current_station
                     )
@@ -453,54 +486,21 @@ class EventHandler:
             #print(f"SERVICE PERIOD CHANGE: Need to withdraw {trains_to_withdraw} trains.")
             # Actual withdrawal logic is handled in _handle_arrival for Station 1 northbound arrivals.
         
-    def _record_timetable_entry(self, simulation_id, train, station, arrival_time, departure_time, 
-                                 travel_time=None, boarded=0, alighted=0):
-            """Records a train movement event to the database."""
-            # Ensure Prisma client is available and connected
-            if not db or not db.is_connected():
-                print("Error: Shared DB client not available or not connected. Cannot record timetable entry.")
-                # Optionally, handle this error more robustly (e.g., retry connection, log to file)
-                return
-
-            # Prepare data for database insertion
-            try:
-                # Handle nullable departure time
-                db_departure_time = None
-                if isinstance(departure_time, datetime):
-                    db_departure_time = departure_time
-                elif departure_time == "WITHDRAWN": # Or other specific string indicators
-                    db_departure_time = None 
-                # Add more conditions if other non-datetime values represent null
-
-                # Calculate current passenger count
-                current_passenger_count = len(train.passengers)
-
-                # --- Data for TRAIN_MOVEMENTS table ---                
-                data_to_insert = {
-                    'SIMULATION_ID': simulation_id,
-                    'TRAIN_ID': train.train_id,
-                    'STATION_ID': station.station_id,
-                    'DIRECTION': train.direction,
-                    'ARRIVAL_TIME': arrival_time, 
-                    'DEPARTURE_TIME': db_departure_time, # Use the processed nullable time
-                    # 'PASSENGERS_BOARDED': boarded, # Set to 0 or default for now
-                    # 'PASSENGERS_ALIGHTED': alighted, # Set to 0 or default for now
-                    'CURRENT_PASSENGER_COUNT': current_passenger_count,
-                    'TRIP_COUNT': train.trip_count, 
-                    # Add defaults explicitly if needed, though schema might handle them
-                    'PASSENGERS_BOARDED': boarded, 
-                    'PASSENGERS_ALIGHTED': alighted,
-                }
-
-                # --- Insert into Database --- 
-                db.train_movements.create(data=data_to_insert)
-                # Optional: Add logging for successful insertion
-                # print(f"Recorded movement: Train {train.train_id} at Station {station.station_id} ({arrival_time})")
-
-            except Exception as e:
-                print(f"Error recording timetable entry to database: {e}")
-                print(f"Data attempted: {data_to_insert}") # Log the data that failed
-                # Consider more specific error handling based on potential Prisma/DB errors
+    def _record_timetable_entry(self, train, station, arrival_time, departure_time, 
+                                travel_time, boarded=0, alighted=0):
+            """Centralized method to log timetable entries."""
+            entry = TimetableEntry(
+                train_id= train.train_id,
+                station_id = station.station_id,
+                arrival_time = arrival_time,
+                departure_time = departure_time,
+                travel_time = travel_time,
+                direction = train.direction,
+                passengers_boarded = boarded,
+                passengers_alighted = alighted,
+                current_station_passenger_count = len(station.waiting_passengers)
+            )
+            self.simulation.timetables.append(entry)
 
     def _handle_arrival(self, event):
         train = event.train
@@ -527,14 +527,11 @@ class EventHandler:
                 #print(f"Remaining trains to withdraw: {self.simulation.trains_to_withdraw_count}")
                 # Record final arrival but do not schedule turnaround/departure
                 self._record_timetable_entry(
-                    simulation_id=event.simulation_id,
                     train=train, 
                     station=station, 
                     arrival_time=arrival_time, 
                     departure_time="WITHDRAWN", # Indicate withdrawn status
-                    travel_time=timedelta(seconds=int(train.current_journey_travel_time)), # Log final travel time
-                    boarded=0,
-                    alighted=0
+                    travel_time=train.current_journey_travel_time # Log final travel time
                 )
                 # Clear the platform the train arrived on
                 station.platforms[train.direction] = None
@@ -549,7 +546,7 @@ class EventHandler:
         # --- Normal Arrival Processing (If not withdrawn) ---
         # Calculate departure time based on dwell time
         departure_time = arrival_time + self.simulation.dwell_time
-        train.arrival_time = arrival_time # Store arrival time on train for later recording
+        ##train.arrival_time = arrival_time
         train.current_station = station
         
         # Occupy Current Station
@@ -561,7 +558,6 @@ class EventHandler:
                 Event(
                     time=departure_time,
                     event_type="turnaround",
-                    simulation_id=self.simulation.simulation_id,
                     train=train,
                     station=station
                 )
@@ -572,7 +568,6 @@ class EventHandler:
                 Event(
                     time=departure_time,
                     event_type="train_departure",
-                    simulation_id=self.simulation.simulation_id,
                     train=train,
                     station=station
                 )
@@ -585,17 +580,6 @@ class EventHandler:
         departure_time = event.time
         next_segment = station.get_next_segment(train.direction)
         
-        # === Add Robustness Checks ===
-        if next_station is None:
-            print(f"ERROR ({event.time}): Train {train.train_id} attempting to depart from station {station.station_id} towards non-existent next station (likely terminus). Halting departure.")
-            # This indicates a potential logic flaw elsewhere if a departure is scheduled from a terminus incorrectly.
-            return # Stop processing this departure event
-            
-        if next_segment is None:
-            print(f"ERROR ({event.time}): Train {train.train_id} attempting to depart from station {station.station_id} ({train.direction}) but no next segment found.")
-            return # Stop processing this departure event
-        # ============================
-        
         # Check for resource availability
         if next_station.platforms[train.direction] is None and next_segment.is_available():
             #======= HANDLE NEWLY INSERTED TRAINS =======#
@@ -603,7 +587,7 @@ class EventHandler:
                 travel_time = "INITIAL DEPARTURE"
                 train.arrival_time = departure_time - self.simulation.dwell_time
             else: 
-                travel_time = timedelta(seconds=int(train.current_journey_travel_time))
+                travel_time = train.current_journey_travel_time
             
             #======= BOARD/ALIGHT PASSENGERS =======#
             alighted, boarded = station.process_passenger_exchange(
@@ -620,14 +604,13 @@ class EventHandler:
             
             #======= RECORD TO TIMETABLE =======#
             self._record_timetable_entry(
-                simulation_id=event.simulation_id,
                 train=train, 
                 station=station, 
-                arrival_time = train.arrival_time, # Use stored arrival time
+                arrival_time = train.arrival_time,
                 departure_time = departure_time, 
                 travel_time=travel_time,
-                boarded=0, # Use 0 for now
-                alighted=0 # Use 0 for now
+                boarded=boarded, 
+                alighted=alighted
             )
             
             # Update Train and Station Properties
@@ -639,7 +622,6 @@ class EventHandler:
                 Event(
                     time = departure_time,
                     event_type = "segment_enter",
-                    simulation_id=self.simulation.simulation_id,
                     train = train,
                     station = next_station,
                     segment = next_segment
@@ -716,7 +698,6 @@ class EventHandler:
                 Event(
                     time=final_departure_time,
                     event_type="train_departure",
-                    simulation_id=self.simulation.simulation_id,
                     train=train,
                     station=station,
                 )
@@ -729,14 +710,13 @@ class EventHandler:
         
         # Record Arrival before Turnaround
         self._record_timetable_entry(
-                simulation_id=event.simulation_id,
                 train=train, 
                 station=station, 
-                arrival_time = train.arrival_time, # Use stored arrival time
+                arrival_time = train.arrival_time,
                 departure_time = departure_time, 
-                travel_time=timedelta(seconds=int(train.current_journey_travel_time)),
-                boarded=0, # Use 0 for now 
-                alighted=0 # Use 0 for now
+                travel_time= train.current_journey_travel_time,
+                boarded=0, 
+                alighted=0
             )
         
         # Clear Station Platform
@@ -745,28 +725,18 @@ class EventHandler:
         # Change train direction
         train.change_direction()
         
-        # The turnaround event time (`event.time`) represents when the turnaround *starts* (arrival + dwell).
-        # Calculate when the turnaround *finishes*.
-        turnaround_finish_time = event.time + self.simulation.turnaround_time 
-
-        if turnaround_finish_time <= self.simulation.end_time:
-            # Set the effective 'arrival time' for the *next* leg of the journey starting from this station
-            # This is needed for calculating travel time correctly on the return trip. 
-            # We also reset the journey travel time counter.
-            train.arrival_time = turnaround_finish_time 
-            train.current_journey_travel_time = 0
-            
-            # Schedule the actual departure event *after* the turnaround is complete.
+        if event.time <= self.simulation.end_time:
+            train.arrival_time = departure_time + self.simulation.turnaround_time
+            train.current_journey_travel_time = self.simulation.turnaround_time.total_seconds()
+            departure_time = train.arrival_time + self.simulation.dwell_time
             self.simulation.schedule_event(
                 Event(
-                    time=turnaround_finish_time, # Departure happens when turnaround finishes
+                    departure_time, 
                     event_type="train_departure", 
-                    simulation_id=self.simulation.simulation_id,
                     train=train, 
                     station=station
-                    # Simulation ID will be added in the next step
+                    )
                 )
-            )
             
     def _handle_segment_enter(self, event):
         train = event.train
@@ -797,7 +767,6 @@ class EventHandler:
                 Event(
                     time= exit_time,
                     event_type= "segment_exit",
-                    simulation_id=self.simulation.simulation_id,
                     train= train,
                     station=next_station,
                     segment= segment
@@ -817,12 +786,11 @@ class EventHandler:
             Event(
                 time=event.time,
                 event_type="train_arrival",
-                simulation_id=self.simulation.simulation_id,
                 train=train,
                 station=station
             )
         )
-            
+               
 class Simulation:
     def __init__(self, regular_service_id, skip_stop_service_id):
         self.simulation_queue = [regular_service_id, skip_stop_service_id]
@@ -847,6 +815,8 @@ class Simulation:
         
         self.event_queue = PriorityQueue()
         self.event_handler = EventHandler(self)
+
+        self.timetables = []
     
     def initialize(self, simulation_id):
         """Set up simulation components."""
@@ -874,10 +844,10 @@ class Simulation:
 
         self.start_time = sim_config.START_TIME
         self.end_time = sim_config.END_TIME
-        self.dwell_time = timedelta(seconds=sim_config.DWELL_TIME) # Assuming DWELL_TIME is in seconds
-        self.turnaround_time = timedelta(seconds=sim_config.TURNAROUND_TIME) # Assuming TURNAROUND_TIME is in seconds
+        self.dwell_time = timedelta(seconds=sim_config.DWELL_TIME)
+        self.turnaround_time = timedelta(seconds=sim_config.TURNAROUND_TIME)
         self.scheme_type = sim_config.SCHEME_TYPE
-        self.service_periods_data = sim_config.SERVICE_PERIODS # Keep raw JSON/dict for now
+        self.service_periods_data = sim_config.SERVICE_PERIODS # JSON/dict
         print(f"\nConfig loaded: Start={self.start_time}, End={self.end_time}")
 
     def _initialize_stations(self, simulation_id):
@@ -1130,7 +1100,6 @@ class Simulation:
                         time=start_datetime,
                         event_type="service_period_change",
                         period=period, # Pass the period dictionary (including calculated headway)
-                        simulation_id=self.simulation_id
                     )
                 )
                 print(f"Scheduled '{period['name']}' period change event at {start_datetime.strftime('%Y-%m-%d %H:%M:%S')} (Headway: {period['headway']} mins)")
@@ -1266,22 +1235,126 @@ class Simulation:
     def run(self):
         """Run the simulation until the end time."""
         print("Simulation running...")
+        simulation_run_successfully = False # Flag to track success
         for simulation_id in self.simulation_queue:
-            self.simulation_id = simulation_id
-            self._load_simulation_config(simulation_id)
-            self.initialize(simulation_id)
-            
-            while self.current_time < self.end_time and not self.event_queue.empty():
-                priority, event = self.event_queue.get()  # Get the next event 
-                self.current_time = event.time
-                self.event_handler.process_event(event)
+            try:
+                self.simulation_id = simulation_id
+                self._load_simulation_config(simulation_id)
+                self.initialize(simulation_id)
 
-                
-        # Disconnect shared Prisma client after all simulations in the queue are run
+                while self.current_time < self.end_time and not self.event_queue.empty():
+                    priority, event = self.event_queue.get()  # Get the next event
+                    # Ensure we don't process events past the end time
+                    if event.time >= self.end_time:
+                        self.current_time = event.time # Update time but don't process
+                        continue # Skip processing this event
+
+                    self.current_time = event.time
+                    self.event_handler.process_event(event)
+
+                # Indicate success for this simulation ID run
+                simulation_run_successfully = True
+                print(f"Simulation for ID {simulation_id} completed up to {self.current_time}.")
+                print(f"Generated {len(self.timetables)} timetable entries.")
+
+                # Save results before potentially moving to the next simulation_id or disconnecting
+                self.save_timetable_to_db()
+
+            except Exception as e:
+                print(f"Error during simulation run for ID {simulation_id}: {e}")
+                # Decide if you want to stop all simulations or continue with the next ID
+                break # Stop processing further simulation IDs on error
+
+            self.timetables = []
+            self.event_queue = PriorityQueue()
+            self.active_trains = []
+            self.passenger_demand = []
+            self.stations = []
+            self.track_segments = []
+            self.trains = []
+            self.service_periods = []
+            self.simulation_id = None
+            self.current_time = None
+            self.end_time = None
+
+        # Disconnect shared Prisma client after all simulations in the queue are attempted or completed
         if db.is_connected():
             print("Disconnecting shared DB client after simulation run.")
             db.disconnect()
+
+    def save_timetable_to_db(self):
+        """Formats timetable entries and bulk inserts them into the TRAIN_MOVEMENTS table."""
+        if not self.timetables:
+            print("No timetable entries generated to save.")
+            return
+
+        if not db.is_connected():
+            print("Error: Database is not connected. Cannot save timetable.")
+            # Optionally try to reconnect if desired, but better practice is to save before disconnect.
+            # try:
+            #     db.connect()
+            # except Exception as e:
+            #     print(f"Failed to reconnect to DB: {e}")
+            #     return
+            return
+
+
+        print(f"Preparing {len(self.timetables)} timetable entries for database insertion...")
+        data_to_insert = []
+        skipped_count = 0
+        for entry in self.timetables:
+            # Handle potential non-datetime departure times (like "WITHDRAWN")
+            departure_time_db = None
+            if isinstance(entry.departure_time, datetime):
+                departure_time_db = entry.departure_time
+            # else: leave as None if it's "WITHDRAWN" or other non-datetime
+
+            # Skip entries with None arrival time if required by DB schema
+            if entry.arrival_time is None and entry.departure_time is None: # Example condition
+                 #print(f"Skipping entry for Train {entry.train_id} at Station {entry.station_id} due to missing times.")
+                 skipped_count += 1
+                 continue
             
+            travel_time_db = 0 # Default to 0
+            if isinstance(entry.travel_time, (int, float)):
+                travel_time_db = int(entry.travel_time)
+            elif entry.travel_time == "INITIAL DEPARTURE":
+                travel_time_db = 0
+
+            # Adjust these keys based on your actual Prisma schema for TRAIN_MOVEMENTS
+            data = {
+                "SIMULATION_ID": self.simulation_id, # Add simulation ID for context
+                "TRAIN_ID": entry.train_id,
+                "STATION_ID": entry.station_id,
+                "DIRECTION": entry.direction,
+                "ARRIVAL_TIME": entry.arrival_time,
+                "DEPARTURE_TIME": departure_time_db,
+                "TRAVEL_TIME_SECONDS": travel_time_db, 
+                "PASSENGERS_BOARDED": entry.passengers_boarded,
+                "PASSENGERS_ALIGHTED": entry.passengers_alighted,
+                "CURRENT_STATION_PASSENGER_COUNT": entry.current_station_passenger_count,
+            }
+            data_to_insert.append(data)
+
+        if skipped_count > 0:
+             print(f"Skipped {skipped_count} entries due to missing time data.")
+
+        if not data_to_insert:
+            print("No valid entries remaining to insert after filtering.")
+            return
+
+        try:
+            print(f"Attempting to insert {len(data_to_insert)} entries into TRAIN_MOVEMENTS...")
+            # Ensure you have imported 'db' from your Prisma client setup
+            result = db.train_movements.create_many(
+                data=data_to_insert,
+                skip_duplicates=True  # Prevent errors if an identical entry exists (adjust if needed)
+            )
+            print(f"Successfully inserted {result} records into TRAIN_MOVEMENTS.")
+        except Exception as e:
+            print(f"Error inserting timetable data into database: {e}")
+            # Consider logging the failed data or implementing retry logic if necessary
+
     def get_station_by_id(self, station_id):
         """Fast O(1) station lookup by ID."""
         return next((s for s in self.stations if s.station_id == station_id), None)
@@ -1414,4 +1487,15 @@ class Simulation:
         # Final
         print(timedelta(seconds=total_time))
         return total_time
-    
+
+if __name__ == "__main__":
+    """ Method to run the simulation as a standalone script"""
+    regular_sim_id = 1
+    skip_stop_sim_id = 2
+
+    test_sim = Simulation(regular_sim_id, skip_stop_sim_id)
+
+    test_sim.run()
+
+    print("\nSimulation script finished.")
+

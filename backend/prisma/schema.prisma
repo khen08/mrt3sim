@@ -120,17 +120,17 @@ model TRAINS {
 }
 
 model TRAIN_MOVEMENTS {
-  MOVEMENT_ID             Int       @id @default(autoincrement())
-  SIMULATION_ID           Int
-  TRAIN_ID                Int
-  STATION_ID              Int
-  DIRECTION               String    @db.VarChar(10)
-  ARRIVAL_TIME            DateTime  @db.DateTime
-  DEPARTURE_TIME          DateTime? @db.DateTime // Nullable
-  PASSENGERS_BOARDED      Int       @default(0)
-  PASSENGERS_ALIGHTED     Int       @default(0)
-  CURRENT_PASSENGER_COUNT Int       @default(0)
-  TRIP_COUNT              Int       @default(0)
+  MOVEMENT_ID                     Int       @id @default(autoincrement())
+  SIMULATION_ID                   Int
+  TRAIN_ID                        Int
+  STATION_ID                      Int
+  DIRECTION                       String    @db.VarChar(10)
+  ARRIVAL_TIME                    DateTime  @db.DateTime
+  DEPARTURE_TIME                  DateTime? @db.DateTime // Nullable
+  TRAVEL_TIME_SECONDS             Int       @default(0)
+  PASSENGERS_BOARDED              Int       @default(0)
+  PASSENGERS_ALIGHTED             Int       @default(0)
+  CURRENT_STATION_PASSENGER_COUNT Int       @default(0)
 
   // Relation back to SIMULATIONS
   simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
