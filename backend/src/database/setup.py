@@ -46,7 +46,7 @@ class InitializeDB_Data:
         return simulation_entry_id
 
     def initialize_stations(self, scheme_type, simulation_id):
-        station_names = self.config['station_names']
+        station_names = self.config['stationNames']
 
         if scheme_type == 'Regular':
             for station_id, station in enumerate(station_names, start=1):
@@ -74,8 +74,8 @@ class InitializeDB_Data:
                 )
         
     def initialize_track_segments(self, simulation_id):
-        station_distances = self.config['station_distances']
-        station_count = len(self.config['station_names'])
+        station_distances = self.config['stationDistances']
+        station_count = len(self.config['stationNames'])
         for idx, distance in enumerate(station_distances, start=1):
             db.track_segments.create(
                 data={

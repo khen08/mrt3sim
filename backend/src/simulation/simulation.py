@@ -5,6 +5,8 @@ from prisma import Prisma
 import json # Added for parsing service periods
 import math # Added for custom_round
 
+from src.database.connect import db
+
 # --- Helper Function for Headway Calculation ---
 def custom_round(x):
     # Check if the number is exactly halfway between two integers
@@ -454,8 +456,8 @@ class EventHandler:
                                 travel_time=None): # Removed boarded/alighted args for now
             """Records a train movement event to the database."""
             # Ensure Prisma client is available and connected
-            if not self.simulation.prisma or not self.simulation.prisma.is_connected():
-                print("Error: Prisma client not available or not connected. Cannot record timetable entry.")
+            if not db or not db.is_connected():
+                print("Error: Shared DB client not available or not connected. Cannot record timetable entry.")
                 # Optionally, handle this error more robustly (e.g., retry connection, log to file)
                 return
 
@@ -490,7 +492,7 @@ class EventHandler:
                 }
 
                 # --- Insert into Database --- 
-                self.simulation.prisma.train_movements.create(data=data_to_insert)
+                db.train_movements.create(data=data_to_insert)
                 # Optional: Add logging for successful insertion
                 # print(f"Recorded movement: Train {train.train_id} at Station {station.station_id} ({arrival_time})")
 
@@ -791,6 +793,7 @@ class EventHandler:
 class Simulation:
     def __init__(self, regular_service_id, skip_stop_service_id):
         self.simulation_queue = [regular_service_id, skip_stop_service_id]
+        self.simulation_id = None # Track the current simulation ID being processed
         self.start_time = None
         self.end_time = None
         self.current_time = None
@@ -809,28 +812,28 @@ class Simulation:
         self.active_headway = 0
         self.trains_to_withdraw_count = 0
         
-        self.prisma = Prisma()
         self.event_queue = PriorityQueue()
         self.event_handler = EventHandler(self)
     
-    def initialize(self):
+    def initialize(self, simulation_id):
         """Set up simulation components."""
-        self._initialize_stations()
-        self._initialize_trains()
-        self._initialize_track_segments()
-        self._initialize_passengers()
-        self._initialize_service_periods()
+        self._initialize_stations(simulation_id)
+        self._initialize_trains(simulation_id)
+        self._initialize_track_segments(simulation_id)
+        self._initialize_passengers_demand(simulation_id)
+        self._initialize_service_periods(simulation_id)
+        # print([t.train_id for t in self.trains])
+        # print([s.station_id for s in self.stations])
+        # print([ts.segment_id for ts in self.track_segments])
+        # print(self.service_periods)
         
         # Set initial simulation time based on config
         self.current_time = self.start_time
-        
-        # Schedule initial events (like service period changes)
-        self._schedule_initial_events()
 
     def _load_simulation_config(self, simulation_id):
         """Load general simulation parameters from the database."""
         print(f"Loading config for simulation {simulation_id}...")
-        sim_config = self.prisma.simulations.find_unique(
+        sim_config = db.simulations.find_unique(
             where={'SIMULATION_ID': simulation_id}
         )
         if not sim_config:
@@ -844,11 +847,11 @@ class Simulation:
         self.service_periods_data = sim_config.SERVICE_PERIODS # Keep raw JSON/dict for now
         print(f"\nConfig loaded: Start={self.start_time}, End={self.end_time}")
 
-    def _initialize_stations(self):
+    def _initialize_stations(self, simulation_id):
         """Fetch station data from DB and create Station objects."""
         print("Initializing stations...")
-        db_stations = self.prisma.stations.find_many(
-            where={'SIMULATION_ID': self.simulation_id},
+        db_stations = db.stations.find_many(
+            where={'SIMULATION_ID': simulation_id},
             order={'STATION_ID': 'asc'} # Ensure stations are ordered by ID
         )
         
@@ -869,7 +872,7 @@ class Simulation:
             self.stations.append(station)
         print(f"Initialized {len(self.stations)} stations.")
 
-    def _initialize_trains(self):
+    def _initialize_trains(self, simulation_id):
         """Fetch train and spec data from DB and create Train objects."""
         print("Initializing trains...")
 
@@ -885,11 +888,11 @@ class Simulation:
         first_station = self.stations[0]
 
         # 1. Fetch all relevant train specs for this simulation
-        db_specs = self.prisma.train_specs.find_many(
-            where={'SIMULATION_ID': self.simulation_id}
+        db_specs = db.train_specs.find_many(
+            where={'SIMULATION_ID': simulation_id}
         )
         if not db_specs:
-            print(f"Warning: No train specifications found for SIMULATION_ID: {self.simulation_id}")
+            print(f"Warning: No train specifications found for SIMULATION_ID: {simulation_id}")
             self.trains = []
             return
             
@@ -914,13 +917,13 @@ class Simulation:
             return
 
         # 2. Fetch all trains for this simulation
-        db_trains = self.prisma.trains.find_many(
-            where={'SIMULATION_ID': self.simulation_id},
+        db_trains = db.trains.find_many(
+            where={'SIMULATION_ID': simulation_id},
             order={'TRAIN_ID': 'asc'} # Optional: Order trains by ID
         )
 
         if not db_trains:
-            print(f"Warning: No trains found for SIMULATION_ID: {self.simulation_id}")
+            print(f"Warning: No trains found for SIMULATION_ID: {simulation_id}")
             self.trains = []
             return
 
@@ -948,7 +951,7 @@ class Simulation:
 
         print(f"Initialized {len(self.trains)} trains.")
 
-    def _initialize_track_segments(self):
+    def _initialize_track_segments(self, simulation_id):
         """Fetch track segment data from DB and create TrackSegment objects."""
         print("Initializing track segments...")
 
@@ -961,8 +964,8 @@ class Simulation:
         stations_dict = {s.station_id: s for s in self.stations}
 
         # Fetch track segments from the database for the current simulation
-        db_segments = self.prisma.track_segments.find_many(
-            where={'SIMULATION_ID': self.simulation_id},
+        db_segments = db.track_segments.find_many(
+            where={'SIMULATION_ID': simulation_id},
             order=[
                 {'START_STATION_ID': 'asc'}, # Optional: order for consistency
                 {'END_STATION_ID': 'asc'}
@@ -970,7 +973,7 @@ class Simulation:
         )
 
         if not db_segments:
-            print(f"Warning: No track segments found for SIMULATION_ID: {self.simulation_id}")
+            print(f"Warning: No track segments found for SIMULATION_ID: {simulation_id}")
             self.track_segments = []
             return
 
@@ -994,8 +997,8 @@ class Simulation:
                 print(f"Warning: Could not find start station {segment.start_station_id} in initialized stations for segment {segment.segment_id}.")
 
         print(f"Initialized {len(self.track_segments)} track segments and linked them to stations.")
-
-    def _initialize_service_periods(self):
+    
+    def _initialize_service_periods(self, simulation_id):
         """Parse service periods from DB data, calculate headway, and schedule change events."""
         print("Initializing service periods...")
 
@@ -1019,7 +1022,7 @@ class Simulation:
                 self.service_periods = json.loads(self.service_periods_data)
             elif isinstance(self.service_periods_data, (dict, list)):
                 # If it's already parsed (e.g., Prisma returns dict/list for JSON types)
-                self.service_periods = self.service_periods_data
+                self.service_periods = self.service_periods_data 
             else:
                 raise TypeError("Unexpected type for service_periods_data")
                 
@@ -1120,7 +1123,7 @@ class Simulation:
             except Exception as e:
                 print(f"Error printing service period summary table: {e}")
 
-    def _initialize_passengers(self):
+    def _initialize_passengers_demand(self, simulation_id):
         """Fetch passenger demand from DB, create Passenger objects, and assign them to stations."""
         print("Initializing passengers...")
 
@@ -1140,9 +1143,9 @@ class Simulation:
 
         # --- Fetch Passenger Demand Data --- 
         try:
-            db_passenger_demand_entries = self.prisma.passenger_demand.find_many(
+            db_passenger_demand_entries = db.passenger_demand.find_many(
                 where={
-                    'SIMULATION_ID': self.simulation_id,
+                    'SIMULATION_ID': simulation_id,
                     # Filter demand entries to only those arriving within the simulation time window
                     'ARRIVAL_TIME_AT_ORIGIN': {
                         'gte': self.start_time,
@@ -1157,7 +1160,7 @@ class Simulation:
             return
             
         if not db_passenger_demand_entries:
-            print(f"Warning: No passenger demand found for SIMULATION_ID {self.simulation_id} within the simulation time frame.")
+            print(f"Warning: No passenger demand found for SIMULATION_ID {simulation_id} within the simulation time frame.")
             self.passenger_demand = []
             return
 
@@ -1221,34 +1224,6 @@ class Simulation:
         if self.stations:
             print(f"Sample check - Station {self.stations[0].station_id} ({self.stations[0].name}) has {len(self.stations[0].waiting_passengers)} waiting passengers initially.")
         print("---")
-        
-    def _schedule_initial_events(self):
-        """Schedule initial events like the first service period change."""
-        print("Scheduling initial events...")
-        # Example: Schedule the first service period change event
-        # This requires parsing self.service_periods
-        # Placeholder logic:
-        # if self.service_periods and isinstance(self.service_periods, list) and len(self.service_periods) > 0:
-        #     first_period = self.service_periods[0] # Assuming sorted list
-        #     period_start_time_str = first_period.get('start_time') # Example key
-        #     if period_start_time_str:
-        #         # Convert string time to datetime relative to simulation start
-        #         # This conversion logic depends on the format in SERVICE_PERIODS
-        #         # period_start_dt = ... # Conversion logic needed here
-        #         
-        #         # Check if the period start is within the simulation time frame
-        #         if self.start_time <= period_start_dt < self.end_time:
-        #             self.schedule_event(Event(
-        #                 time=period_start_dt,
-        #                 event_type="service_period_change",
-        #                 period=first_period 
-        #             ))
-        #             print(f"Scheduled first service period change at {period_start_dt}")
-        #         else:
-        #              print("First service period start time is outside simulation window.")
-        # else:
-        #      print("No service periods found or invalid format to schedule initial change.")
-        pass # Placeholder implementation
 
     def schedule_event(self, event):
         """Add an event to the priority queue."""
@@ -1259,12 +1234,17 @@ class Simulation:
         print("Simulation running...")
         for simulation_id in self.simulation_queue:
             self._load_simulation_config(simulation_id)
-            #self.initialize(simulation_id)
+            self.initialize(simulation_id)
             
-            #while self.current_time < self.end_time and not self.event_queue.empty():
-            #    priority, event = self.event_queue.get()  # Get the next event 
-            #    self.current_time = event.time
-            #    self.event_handler.process_event(event)
+            while self.current_time < self.end_time and not self.event_queue.empty():
+                priority, event = self.event_queue.get()  # Get the next event 
+                self.current_time = event.time
+                self.event_handler.process_event(event)
+                
+        # Disconnect shared Prisma client after all simulations in the queue are run
+        if db.is_connected():
+            print("Disconnecting shared DB client after simulation run.")
+            db.disconnect()
             
     def get_station_by_id(self, station_id):
         """Fast O(1) station lookup by ID."""
@@ -1398,7 +1378,3 @@ class Simulation:
         # Final
         print(timedelta(seconds=total_time))
         return total_time
-    
-    def get_station_by_id(self, station_id):
-        """Fast O(1) station lookup by ID."""
-        return next((s for s in self.stations if s.station_id == station_id), None)
