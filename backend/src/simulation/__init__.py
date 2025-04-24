@@ -1,3 +1,3 @@
-from .simulation import Simulation
+from .main import Simulation
 
 __all__ = ['Simulation']

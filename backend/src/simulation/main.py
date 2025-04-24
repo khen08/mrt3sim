@@ -140,9 +140,6 @@ class Station:
         # Alight Passengers
         passengers_alighted = []
         for passenger in train.passengers[:]: # Iterate over a copy of the list
-            if passenger.passenger_id == 7:
-                print(train.current_station.station_id)
-
             if passenger.destination_station_id == self.station_id:
                 train.passengers.remove(passenger)
                 passengers_alighted.append(passenger)
@@ -480,7 +477,7 @@ class EventHandler:
 
                 # --- Data for TRAIN_MOVEMENTS table ---                
                 data_to_insert = {
-                    'SIMULATION_ID': self.simulation.simulation_id,
+                    'SIMULATION_ID': simulation_id,
                     'TRAIN_ID': train.train_id,
                     'STATION_ID': station.station_id,
                     'DIRECTION': train.direction,
@@ -829,7 +826,7 @@ class EventHandler:
 class Simulation:
     def __init__(self, regular_service_id, skip_stop_service_id):
         self.simulation_queue = [regular_service_id, skip_stop_service_id]
-        self.simulation_id = None # Track the current simulation ID being processed
+        self.simulation_id = None
         self.start_time = None
         self.end_time = None
         self.current_time = None
@@ -857,7 +854,7 @@ class Simulation:
         self._initialize_trains(simulation_id)
         self._initialize_track_segments(simulation_id)
         self._initialize_passengers_demand(simulation_id)
-        self._initialize_service_periods(simulation_id)
+        self._initialize_service_periods()
         # print([t.train_id for t in self.trains])
         # print([s.station_id for s in self.stations])
         # print([ts.segment_id for ts in self.track_segments])
@@ -1034,9 +1031,8 @@ class Simulation:
 
         print(f"Initialized {len(self.track_segments)} track segments and linked them to stations.")
     
-    def _initialize_service_periods(self, simulation_id):
+    def _initialize_service_periods(self):
         """Parse service periods from DB data, calculate headway, and schedule change events."""
-        print("Initializing service periods...")
 
         # --- Pre-checks ---
         if self.service_periods_data is None:
@@ -1084,7 +1080,6 @@ class Simulation:
             # Ensure calculate_loop_time handles potential errors if stations/segments aren't ready
             loop_time_seconds = self.calculate_loop_time(self.trains[0]) 
             loop_time_minutes = loop_time_seconds / 60.0
-            print(f"Calculated theoretical loop time: {loop_time_minutes:.2f} minutes")
         except Exception as e:
             print(f"Error calculating loop time: {e}. Cannot calculate headways.")
             # Optionally, proceed without headways or stop initialization
@@ -1272,6 +1267,7 @@ class Simulation:
         """Run the simulation until the end time."""
         print("Simulation running...")
         for simulation_id in self.simulation_queue:
+            self.simulation_id = simulation_id
             self._load_simulation_config(simulation_id)
             self.initialize(simulation_id)
             
@@ -1279,6 +1275,7 @@ class Simulation:
                 priority, event = self.event_queue.get()  # Get the next event 
                 self.current_time = event.time
                 self.event_handler.process_event(event)
+
                 
         # Disconnect shared Prisma client after all simulations in the queue are run
         if db.is_connected():
@@ -1417,3 +1414,4 @@ class Simulation:
         # Final
         print(timedelta(seconds=total_time))
         return total_time
+    
