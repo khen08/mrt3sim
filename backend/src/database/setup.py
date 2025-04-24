@@ -47,31 +47,28 @@ class InitializeDB_Data:
 
     def initialize_stations(self, scheme_type, simulation_id):
         station_names = self.config['stationNames']
+        num_stations = len(station_names)
 
         if scheme_type == 'Regular':
-            for station_id, station in enumerate(station_names, start=1):
-                db.stations.create(
-                    data={
-                        'SIMULATION_ID': simulation_id,
-                        'STATION_ID': station_id,
-                        'STATION_NAME': station,
-                        'STATION_TYPE': 'AB',
-                        'IS_TERMINUS': False if station_id != 1 else True,
-                        'ZONE_LENGTH': DEFAULT_ZONE_LENGTH
-                    }
-                )
+            station_types = ['AB'] * num_stations
         else:
-            for station_id, (station, station_type) in enumerate(zip(station_names, DEFAULT_SCHEME), start=1):
-                db.stations.create(
-                    data={
-                        'SIMULATION_ID': simulation_id,
-                        'STATION_ID': station_id,
-                        'STATION_NAME': station,
-                        'STATION_TYPE': station_type,   
-                        'IS_TERMINUS': False if station_id != 1 else True,
-                        'ZONE_LENGTH': DEFAULT_ZONE_LENGTH
-                    }
-                )
+            if len(DEFAULT_SCHEME) != num_stations:
+                 print(f"Error: Mismatch between number of stations ({num_stations}) and DEFAULT_SCHEME length ({len(DEFAULT_SCHEME)}). Using 'AB' for all.")
+                 station_types = ['AB'] * num_stations
+            else:
+                station_types = DEFAULT_SCHEME
+
+        for station_id, (station_name, station_type) in enumerate(zip(station_names, station_types), start=1):
+            db.stations.create(
+                data={
+                    'SIMULATION_ID': simulation_id,
+                    'STATION_ID': station_id,
+                    'STATION_NAME': station_name,
+                    'STATION_TYPE': station_type,
+                    'IS_TERMINUS': station_id == 1 or station_id == num_stations, # Terminus is first or last station
+                    'ZONE_LENGTH': DEFAULT_ZONE_LENGTH
+                }
+            )
         
     def initialize_track_segments(self, simulation_id):
         station_distances = self.config['stationDistances']
