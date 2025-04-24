@@ -355,19 +355,22 @@ class Train:
         return (len(self.passengers) / self.capacity * 100)
 
 class Event:
-    def __init__(self, time, event_type, period=None, train=None, station=None, segment=None):
+    def __init__(self, time, event_type, simulation_id=None, period=None, train=None, station=None, segment=None):
         """
         Initialize a Simulation Event
 
         Args:
-            time = time
-            event_type = event_type  # e.g., "train_arrival", "train_departure", "segment_enter", "segment_exit"
-            train = train
-            station = station
-            
+            time (datetime): Time of the event
+            event_type (str): Type of event (e.g., "train_arrival")
+            simulation_id (int, optional): The ID of the simulation this event belongs to.
+            period (dict, optional): Service period data for period change events.
+            train (Train, optional): Train involved in the event.
+            station (Station, optional): Station involved in the event.
+            segment (TrackSegment, optional): Track segment involved in the event.
         """
         self.time = time
         self.event_type = event_type
+        self.simulation_id = simulation_id
         self.period = period
         self.train = train
         self.station = station
@@ -437,6 +440,7 @@ class EventHandler:
                     Event(
                         time=departure_time,
                         event_type="train_departure",
+                        simulation_id=self.simulation.simulation_id,
                         train=train,
                         station=train.current_station
                     )
@@ -452,8 +456,8 @@ class EventHandler:
             #print(f"SERVICE PERIOD CHANGE: Need to withdraw {trains_to_withdraw} trains.")
             # Actual withdrawal logic is handled in _handle_arrival for Station 1 northbound arrivals.
         
-    def _record_timetable_entry(self, train, station, arrival_time, departure_time, 
-                                travel_time=None): # Removed boarded/alighted args for now
+    def _record_timetable_entry(self, simulation_id, train, station, arrival_time, departure_time, 
+                                 travel_time=None, boarded=0, alighted=0):
             """Records a train movement event to the database."""
             # Ensure Prisma client is available and connected
             if not db or not db.is_connected():
@@ -487,8 +491,8 @@ class EventHandler:
                     'CURRENT_PASSENGER_COUNT': current_passenger_count,
                     'TRIP_COUNT': train.trip_count, 
                     # Add defaults explicitly if needed, though schema might handle them
-                    'PASSENGERS_BOARDED': 0, 
-                    'PASSENGERS_ALIGHTED': 0,
+                    'PASSENGERS_BOARDED': boarded, 
+                    'PASSENGERS_ALIGHTED': alighted,
                 }
 
                 # --- Insert into Database --- 
@@ -526,11 +530,14 @@ class EventHandler:
                 #print(f"Remaining trains to withdraw: {self.simulation.trains_to_withdraw_count}")
                 # Record final arrival but do not schedule turnaround/departure
                 self._record_timetable_entry(
+                    simulation_id=event.simulation_id,
                     train=train, 
                     station=station, 
                     arrival_time=arrival_time, 
                     departure_time="WITHDRAWN", # Indicate withdrawn status
-                    travel_time=timedelta(seconds=int(train.current_journey_travel_time)) # Log final travel time
+                    travel_time=timedelta(seconds=int(train.current_journey_travel_time)), # Log final travel time
+                    boarded=0,
+                    alighted=0
                 )
                 # Clear the platform the train arrived on
                 station.platforms[train.direction] = None
@@ -545,7 +552,7 @@ class EventHandler:
         # --- Normal Arrival Processing (If not withdrawn) ---
         # Calculate departure time based on dwell time
         departure_time = arrival_time + self.simulation.dwell_time
-        ##train.arrival_time = arrival_time
+        train.arrival_time = arrival_time # Store arrival time on train for later recording
         train.current_station = station
         
         # Occupy Current Station
@@ -557,6 +564,7 @@ class EventHandler:
                 Event(
                     time=departure_time,
                     event_type="turnaround",
+                    simulation_id=self.simulation.simulation_id,
                     train=train,
                     station=station
                 )
@@ -567,6 +575,7 @@ class EventHandler:
                 Event(
                     time=departure_time,
                     event_type="train_departure",
+                    simulation_id=self.simulation.simulation_id,
                     train=train,
                     station=station
                 )
@@ -578,6 +587,17 @@ class EventHandler:
         next_station = self.simulation.get_station_by_id(station.station_id + 1) if train.direction == "southbound" else self.simulation.get_station_by_id(station.station_id - 1)
         departure_time = event.time
         next_segment = station.get_next_segment(train.direction)
+        
+        # === Add Robustness Checks ===
+        if next_station is None:
+            print(f"ERROR ({event.time}): Train {train.train_id} attempting to depart from station {station.station_id} towards non-existent next station (likely terminus). Halting departure.")
+            # This indicates a potential logic flaw elsewhere if a departure is scheduled from a terminus incorrectly.
+            return # Stop processing this departure event
+            
+        if next_segment is None:
+            print(f"ERROR ({event.time}): Train {train.train_id} attempting to depart from station {station.station_id} ({train.direction}) but no next segment found.")
+            return # Stop processing this departure event
+        # ============================
         
         # Check for resource availability
         if next_station.platforms[train.direction] is None and next_segment.is_available():
@@ -603,13 +623,14 @@ class EventHandler:
             
             #======= RECORD TO TIMETABLE =======#
             self._record_timetable_entry(
+                simulation_id=event.simulation_id,
                 train=train, 
                 station=station, 
-                arrival_time = train.arrival_time,
+                arrival_time = train.arrival_time, # Use stored arrival time
                 departure_time = departure_time, 
                 travel_time=travel_time,
-                boarded=boarded, 
-                alighted=alighted
+                boarded=0, # Use 0 for now
+                alighted=0 # Use 0 for now
             )
             
             # Update Train and Station Properties
@@ -621,6 +642,7 @@ class EventHandler:
                 Event(
                     time = departure_time,
                     event_type = "segment_enter",
+                    simulation_id=self.simulation.simulation_id,
                     train = train,
                     station = next_station,
                     segment = next_segment
@@ -697,6 +719,7 @@ class EventHandler:
                 Event(
                     time=final_departure_time,
                     event_type="train_departure",
+                    simulation_id=self.simulation.simulation_id,
                     train=train,
                     station=station,
                 )
@@ -709,13 +732,14 @@ class EventHandler:
         
         # Record Arrival before Turnaround
         self._record_timetable_entry(
+                simulation_id=event.simulation_id,
                 train=train, 
                 station=station, 
-                arrival_time = train.arrival_time,
+                arrival_time = train.arrival_time, # Use stored arrival time
                 departure_time = departure_time, 
                 travel_time=timedelta(seconds=int(train.current_journey_travel_time)),
-                boarded=0, 
-                alighted=0
+                boarded=0, # Use 0 for now 
+                alighted=0 # Use 0 for now
             )
         
         # Clear Station Platform
@@ -724,18 +748,28 @@ class EventHandler:
         # Change train direction
         train.change_direction()
         
-        if event.time <= self.simulation.end_time:
-            train.arrival_time = departure_time + self.simulation.turnaround_time
-            train.current_journey_travel_time = self.simulation.turnaround_time.total_seconds()
-            departure_time = train.arrival_time + self.simulation.dwell_time
+        # The turnaround event time (`event.time`) represents when the turnaround *starts* (arrival + dwell).
+        # Calculate when the turnaround *finishes*.
+        turnaround_finish_time = event.time + self.simulation.turnaround_time 
+
+        if turnaround_finish_time <= self.simulation.end_time:
+            # Set the effective 'arrival time' for the *next* leg of the journey starting from this station
+            # This is needed for calculating travel time correctly on the return trip. 
+            # We also reset the journey travel time counter.
+            train.arrival_time = turnaround_finish_time 
+            train.current_journey_travel_time = 0
+            
+            # Schedule the actual departure event *after* the turnaround is complete.
             self.simulation.schedule_event(
                 Event(
-                    departure_time, 
+                    time=turnaround_finish_time, # Departure happens when turnaround finishes
                     event_type="train_departure", 
+                    simulation_id=self.simulation.simulation_id,
                     train=train, 
                     station=station
-                    )
+                    # Simulation ID will be added in the next step
                 )
+            )
             
     def _handle_segment_enter(self, event):
         train = event.train
@@ -766,6 +800,7 @@ class EventHandler:
                 Event(
                     time= exit_time,
                     event_type= "segment_exit",
+                    simulation_id=self.simulation.simulation_id,
                     train= train,
                     station=next_station,
                     segment= segment
@@ -785,6 +820,7 @@ class EventHandler:
             Event(
                 time=event.time,
                 event_type="train_arrival",
+                simulation_id=self.simulation.simulation_id,
                 train=train,
                 station=station
             )
@@ -1071,10 +1107,12 @@ class Simulation:
             # Calculate event start time
             try:
                 # Combine simulation date with the period's start hour
-                start_datetime = datetime.combine(
+                naive_start_datetime = datetime.combine(
                     self.start_time.date(), # Use the date from the simulation start time
                     time(hour=int(period["start_hour"]), minute=0, second=0),
                 )
+                # Make the combined datetime offset-aware using the timezone from self.start_time
+                start_datetime = naive_start_datetime.replace(tzinfo=self.start_time.tzinfo)
                 
                 # Apply 30-minute offset for periods after the first one
                 # This matches the old logic: the *event* is scheduled 30 mins before the nominal start hour
@@ -1096,7 +1134,8 @@ class Simulation:
                     Event(
                         time=start_datetime,
                         event_type="service_period_change",
-                        period=period # Pass the period dictionary (including calculated headway)
+                        period=period, # Pass the period dictionary (including calculated headway)
+                        simulation_id=self.simulation_id
                     )
                 )
                 print(f"Scheduled '{period['name']}' period change event at {start_datetime.strftime('%Y-%m-%d %H:%M:%S')} (Headway: {period['headway']} mins)")
