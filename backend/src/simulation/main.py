@@ -1,9 +1,9 @@
 import pandas as pd
 from datetime import datetime, time, timedelta
 from queue import PriorityQueue
-from prisma import Prisma
 import json # Added for parsing service periods
 import math # Added for custom_round
+import time as py_time # Added for timing the run method
 
 from src.database.connect import db
 
@@ -1236,6 +1236,7 @@ class Simulation:
         """Run the simulation until the end time."""
         print("Simulation running...")
         simulation_run_successfully = False # Flag to track success
+        start_run_time = py_time.perf_counter() # Record start time
         for simulation_id in self.simulation_queue:
             try:
                 self.simulation_id = simulation_id
@@ -1276,6 +1277,10 @@ class Simulation:
             self.simulation_id = None
             self.current_time = None
             self.end_time = None
+
+        end_run_time = py_time.perf_counter() # Record end time
+        run_duration = end_run_time - start_run_time
+        print(f"Total simulation run() execution time: {run_duration:.4f} seconds")
 
         # Disconnect shared Prisma client after all simulations in the queue are attempted or completed
         if db.is_connected():
