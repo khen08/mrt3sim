@@ -1,22 +1,15 @@
 import os
 import json
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from app import app
+from flask import request, jsonify
 from werkzeug.utils import secure_filename
 from prisma import Prisma
 
 # Import configuration and database logic
-from .config import DEFAULT_SETTINGS, UPLOAD_FOLDER
-from .database import InitializeDB_Data
-from .database.connect import db
+from config import DEFAULT_SETTINGS, UPLOAD_FOLDER
 
 # Import Simulation Handler
-from .simulation import Simulation
-# --- Initialize Flask App ---
-app = Flask(__name__)
-CORS(app) # Enable CORS for all routes
-print("API initialized") # Adjust print statement
-
+from simulation import Simulation
 
 # --- API Routes ---
 
@@ -106,13 +99,7 @@ def run_simulation():
             return jsonify({"error": f"File '{secure_name}' not found. Please upload the file first."}), 404
 
     try:        
-        initialize_db = InitializeDB_Data(file_path, config)
-        regular_service_id, skip_stop_service_id = initialize_db.return_simulation_ids()
-        print(f"Regular service ID: {regular_service_id}")
-        print(f"Skip-stop service ID: {skip_stop_service_id}")
-
-        simulation = Simulation(regular_service_id, skip_stop_service_id)
-        simulation.run()
+        print(config)
 
         placeholder_timetable = [
             {"message": "Simulation logic placeholder."},

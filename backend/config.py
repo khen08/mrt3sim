@@ -71,8 +71,8 @@ DEFAULT_ZONE_LENGTH = 130 # in meters
 # --- File Upload Configuration ---
 
 # Define upload folder relative to the backend directory
-# Assuming config.py is in backend/src/
-BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Assuming config.py is in backend/
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BACKEND_DIR, 'uploads')
 
 # Ensure the upload folder exists at startup

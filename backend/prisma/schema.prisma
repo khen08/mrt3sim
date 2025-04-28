@@ -23,9 +23,23 @@ model SIMULATIONS {
   END_TIME            DateTime @db.DateTime
   DWELL_TIME          Int
   TURNAROUND_TIME     Int
-  SCHEME_TYPE         String   @db.VarChar(15)
   SERVICE_PERIODS     Json     @db.Json // Assumes appropriate JSON structure
   PASSENGER_DATA_FILE String   @db.VarChar(255)
+
+  // Total passenger count for the simulation
+  TOTAL_PASSENGER_COUNT Int @default(0)
+
+  // Aggregated results for Regular scheme run (in seconds)
+  REGULAR_TOTAL_PASSENGER_TRAVEL_TIME_SECONDS Int @default(0)
+  REGULAR_TOTAL_PASSENGER_WAITING_TIME_SECONDS Int @default(0)
+
+  // Aggregated results for Skip-stop scheme run (in seconds)
+  SKIP_STOP_TOTAL_PASSENGER_TRAVEL_TIME_SECONDS Int @default(0)
+  SKIP_STOP_TOTAL_PASSENGER_WAITING_TIME_SECONDS Int @default(0)
+
+  //LOOP TIME
+  REGULAR_LOOP_TIME_MINUTES Int @default(0)
+  SKIP_STOP_LOOP_TIME_MINUTES Int @default(0)
 
   // Relations
   train_specs     TRAIN_SPECS[]
@@ -105,6 +119,8 @@ model TRAINS {
   TRAIN_ID      Int
   SERVICE_TYPE  String @db.VarChar(10) // A, B, AB
   SPEC_ID       Int // Links to TRAIN_SPECS
+  REGULAR_LOOP_COUNT Int @default(0)
+  SKIP_STOP_LOOP_COUNT Int @default(0)
 
   // Relation back to SIMULATIONS
   simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
@@ -122,11 +138,13 @@ model TRAINS {
 model TRAIN_MOVEMENTS {
   MOVEMENT_ID                     Int       @id @default(autoincrement())
   SIMULATION_ID                   Int
+  SERVICE_TYPE                    String    @db.VarChar(10) // Regular, Skip-stop
   TRAIN_ID                        Int
   STATION_ID                      Int
   DIRECTION                       String    @db.VarChar(10)
+  TRAIN_STATUS                    String    @db.VarChar(10) // IN_TRANSIT, TURNAROUND, WITHDRAWN
   ARRIVAL_TIME                    DateTime  @db.DateTime
-  DEPARTURE_TIME                  DateTime? @db.DateTime // Nullable
+  DEPARTURE_TIME                  DateTime? @db.DateTime // Nullable remove null when status is fixed
   TRAVEL_TIME_SECONDS             Int       @default(0)
   PASSENGERS_BOARDED              Int       @default(0)
   PASSENGERS_ALIGHTED             Int       @default(0)

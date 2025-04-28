@@ -1,4 +1,12 @@
-from src.api import app # Import the app instance from your api module
+from flask import Flask
+from flask_cors import CORS
+# --- Initialize Flask App ---
+app = Flask(__name__)
+CORS(app) # Enable CORS for all routes
+print("API initialized") # Adjust print statement
+
+# --- Import Routes ---
+import routes
 
 if __name__ == '__main__':
     print("Starting Flask development server...")
