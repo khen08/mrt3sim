@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
-import { IconTrain, IconClock } from "@tabler/icons-react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { IconClock } from "@tabler/icons-react";
 
 interface Station {
   id: number;
@@ -39,14 +39,36 @@ interface Train {
 // Define the structure for the API response (individual timetable entries)
 // This can be refined based on the exact fields returned by the Flask API
 interface SimulationTimetableEntry {
-  [key: string]: any; // Allow any fields for now
-  "Train ID": number;
-  NStation: number;
-  Direction: "northbound" | "southbound";
-  "Arrival Time": string | null;
-  "Departure Time": string | null;
-  "Train Status"?: "active" | "inactive"; // Added Train Status field
-  // Add other relevant fields returned by the API (e.g., Service Type, Delay)
+  // Updated to match TRAIN_MOVEMENTS table structure in schema.prisma
+  MOVEMENT_ID?: number;
+  SIMULATION_ID?: number;
+  SERVICE_TYPE?: string; // Regular, Skip-stop
+  TRAIN_ID: number; // Changed from "Train ID"
+  STATION_ID: number; // Changed from NStation
+  DIRECTION: string; // northbound, southbound (case-sensitive!)
+  TRAIN_STATUS: "active" | "inactive"; // Updated field
+  ARRIVAL_TIME: string | null; // Changed from "Arrival Time"
+  DEPARTURE_TIME: string | null; // Changed from "Departure Time"
+  TRAVEL_TIME_SECONDS?: number;
+  PASSENGERS_BOARDED?: number;
+  PASSENGERS_ALIGHTED?: number;
+  CURRENT_STATION_PASSENGER_COUNT?: number;
+
+  // Keep backward compatibility with any code still using the old field names
+  "Train ID"?: number;
+  NStation?: number;
+  "Arrival Time"?: string | null;
+  "Departure Time"?: string | null;
+}
+
+interface TrainInfoData {
+  id: number;
+  direction: "northbound" | "southbound";
+  status: string; // e.g., "At Station", "In Transit", "Turning Around", "Inactive"
+  load: number; // Hardcoded 0 for now
+  capacity: number;
+  relevantStationName: string | null; // Current or next station
+  scheduledTime: string | null; // Arrival or Departure time
 }
 
 interface MrtMapProps {
@@ -54,20 +76,23 @@ interface MrtMapProps {
   trains?: Train[]; // This might become obsolete if positions are calculated from timetable
   selectedStation?: number | null;
   onStationClick?: (stationId: number) => void;
+  selectedTrainId?: number | null; // NEW: Prop for selected train ID
+  onTrainClick?: (trainId: number, details: TrainInfoData) => void; // NEW: Handler prop
   simulationTime?: string;
   isRunning?: boolean;
   // Replace trainSchedules with simulationTimetable from API
   // trainSchedules?: TrainSchedule[];
   simulationTimetable?: SimulationTimetableEntry[] | null; // Use the API response type
   turnaroundTime?: number; // Added prop for turnaround duration
+  maxCapacity?: number; // NEW: Max capacity for calculating TrainInfoData
 }
 
 // Define the station positions along the HORIZONTAL line
 // Assuming map width around 1200, Y midline around 250
-const HORIZONTAL_STATION_SPACING = 85;
-const MAP_START_X = 80;
+const HORIZONTAL_STATION_SPACING = 70;
+const MAP_START_X = 170;
 const MAP_WIDTH = 1200;
-const MAP_MID_Y = 150;
+const MAP_MID_Y = 120;
 const TRACK_Y_OFFSET = 25; // Increased vertical offset for tracks
 const STATION_RADIUS = 10;
 const STATION_STROKE_WIDTH = 1.5;
@@ -75,10 +100,6 @@ const SELECTED_STATION_RADIUS = 11;
 const SELECTED_STATION_STROKE_WIDTH = 3;
 const LABEL_Y_OFFSET = -75;
 const STATION_VISUAL_X_OFFSET = 120; // Offset to move station visuals right
-
-// --- Define coordinates for turnaround visualization ---
-const TURNAROUND_OFFSET_X = 40; // How far past the terminus X to place the train
-const TURNAROUND_Y_OFFSET = 0; // Vertical offset from MAP_MID_Y
 
 const NORTH_TERMINUS_ID = 1;
 const SOUTH_TERMINUS_ID = 13;
@@ -147,7 +168,6 @@ const STATIONS_BY_ID = STATIONS.reduce((acc, station) => {
 const CENTER_STATION_X = STATIONS_BY_ID[7]?.x ?? MAP_WIDTH / 2; // Fallback to map center
 
 // Track path coordinates for HORIZONTAL layout
-const MAP_END_X = STATIONS[STATIONS.length - 1].x + 40; // End relative to last station
 const TRACK = {
   start: { x: STATIONS[0].x, y: MAP_MID_Y }, // Start at first station X
   end: { x: STATIONS[STATIONS.length - 1].x, y: MAP_MID_Y }, // End at last station X
@@ -160,10 +180,6 @@ const TRACK = {
 // Define U-turn paths
 const northTurnaroundPathD = `M ${TRACK.start.x} ${TRACK.northboundY} A ${TRACK_Y_OFFSET} ${TRACK_Y_OFFSET} 0 0 0 ${TRACK.start.x} ${TRACK.southboundY}`;
 const southTurnaroundPathD = `M ${TRACK.end.x} ${TRACK.southboundY} A ${TRACK_Y_OFFSET} ${TRACK_Y_OFFSET} 0 0 0 ${TRACK.end.x} ${TRACK.northboundY}`; // Sweep flag changed to 0
-
-// Train operation parameters
-const TRAIN_SPEED = 40; // pixels per second (can adjust based on new horizontal scale)
-const DEFAULT_DWELL_TIME = 20; // seconds per station stop
 
 // --- Inactive Train Depot Coordinates --- //
 const DEPOT_CENTER_Y = MAP_MID_Y + TRACK_Y_OFFSET + 60; // MOVED LOWER
@@ -190,9 +206,18 @@ interface TrainState {
 
 // Helper function to parse time string to seconds since midnight
 function timeToSeconds(timeStr: string): number {
-  if (!timeStr || typeof timeStr !== "string" || !timeStr.includes(":"))
-    return 0;
-  const parts = timeStr.split(":").map(Number);
+  if (!timeStr || typeof timeStr !== "string") return 0;
+
+  // Handle both HH:MM:SS and full datetime format (2023-04-12 07:00:00)
+  let timePart = timeStr;
+  if (timeStr.includes(" ")) {
+    // Extract time part from datetime string
+    timePart = timeStr.split(" ")[1];
+  }
+
+  if (!timePart.includes(":")) return 0;
+
+  const parts = timePart.split(":").map(Number);
   if (parts.length !== 3 || parts.some(isNaN)) return 0;
   const [hours, minutes, seconds] = parts;
   return hours * 3600 + minutes * 60 + seconds;
@@ -215,12 +240,15 @@ export default function MrtMap({
   trains: initialTrains = [], // Keep for now, but likely needs rework
   selectedStation = null,
   onStationClick = () => {},
+  selectedTrainId,
+  onTrainClick,
   simulationTime = "07:00:00",
   isRunning = false,
   // Use simulationTimetable prop, default to null
   // trainSchedules = SAMPLE_TRAIN_SCHEDULES,
   simulationTimetable = null,
   turnaroundTime = 60, // Use prop with default
+  maxCapacity = 0, // NEW: Accept maxCapacity prop
 }: MrtMapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [trainStates, setTrainStates] = useState<TrainState[]>([]);
@@ -228,546 +256,498 @@ export default function MrtMap({
   const [debugInfo, setDebugInfo] = useState<Record<string, any>>({});
   const [inactiveTrainCount, setInactiveTrainCount] = useState(0); // State for dynamic box width
 
-  // --- Timetable Processing useEffect ---
+  // Store event pairs for click handling - Memoize for performance
+  const trainEventPairs = useMemo(() => {
+    const pairs: Record<number, { eventA: any | null; eventB: any | null }> =
+      {};
+    if (!simulationTimetable || simulationTimetable.length === 0) {
+      return pairs;
+    }
+    const currentSimSeconds = timeToSeconds(simulationTime);
+    const normalizedTimetable = simulationTimetable.map((entry) => {
+      const anyEntry = entry as any;
+      const isNewFormat = "TRAIN_ID" in anyEntry || "MOVEMENT_ID" in anyEntry;
+      return {
+        TRAIN_ID: isNewFormat ? anyEntry.TRAIN_ID : anyEntry["Train ID"],
+        STATION_ID: isNewFormat ? anyEntry.STATION_ID : anyEntry.NStation,
+        DIRECTION: (isNewFormat
+          ? anyEntry.DIRECTION || "southbound"
+          : anyEntry.Direction || "southbound"
+        ).toLowerCase() as Direction,
+        TRAIN_STATUS: isNewFormat
+          ? anyEntry.TRAIN_STATUS || "active"
+          : anyEntry["Train Status"] || "active",
+        ARRIVAL_TIME: isNewFormat
+          ? anyEntry.ARRIVAL_TIME
+          : anyEntry["Arrival Time"],
+        DEPARTURE_TIME: isNewFormat
+          ? anyEntry.DEPARTURE_TIME
+          : anyEntry["Departure Time"],
+      };
+    });
+
+    const timetableByTrain = normalizedTimetable.reduce((acc, entry) => {
+      if (
+        !entry ||
+        typeof entry.TRAIN_ID === "undefined" ||
+        entry.ARRIVAL_TIME === null
+      ) {
+        return acc;
+      }
+      const trainId = entry.TRAIN_ID;
+      if (!acc[trainId]) acc[trainId] = [];
+      acc[trainId].push(entry);
+      return acc;
+    }, {} as { [key: number]: any[] });
+
+    for (const trainId in timetableByTrain) {
+      timetableByTrain[trainId].sort((a, b) => {
+        const arrA = timeToSeconds(a.ARRIVAL_TIME!);
+        const arrB = timeToSeconds(b.ARRIVAL_TIME!);
+        return arrA - arrB;
+      });
+    }
+
+    for (const trainIdStr in timetableByTrain) {
+      const trainId = parseInt(trainIdStr, 10);
+      const trainSchedule = timetableByTrain[trainId];
+      let eventA = null;
+      let eventB = null;
+      for (let i = 0; i < trainSchedule.length; i++) {
+        const currentEvent = trainSchedule[i];
+        const arrivalSec = timeToSeconds(currentEvent.ARRIVAL_TIME!);
+        const departureSec = currentEvent.DEPARTURE_TIME
+          ? timeToSeconds(currentEvent.DEPARTURE_TIME)
+          : arrivalSec;
+
+        if (
+          arrivalSec <= currentSimSeconds &&
+          currentSimSeconds < departureSec
+        ) {
+          eventA = currentEvent;
+          eventB = null;
+          break;
+        } else if (departureSec <= currentSimSeconds) {
+          const nextEvent = trainSchedule[i + 1];
+          if (nextEvent) {
+            const nextArrivalSec = timeToSeconds(nextEvent.ARRIVAL_TIME!);
+            if (currentSimSeconds < nextArrivalSec) {
+              eventA = currentEvent;
+              eventB = nextEvent;
+              break;
+            }
+          } else {
+            eventA = currentEvent;
+            eventB = null;
+            break;
+          }
+        }
+      }
+      pairs[trainId] = { eventA, eventB };
+    }
+    return pairs;
+  }, [simulationTimetable, simulationTime]);
+
+  // --- Timetable Processing useEffect (Now primarily sets trainStates) ---
   useEffect(() => {
-    // --- DEBUG: Log Inputs ---
-    // console.log(
-    //   `[MapEffect] Update Start - SimTime: ${simulationTime}, TurnaroundTimeProp: ${turnaroundTime}`
-    // );
-    // --- End Debug ---
+    console.log(
+      `[MapEffect] Update Start - SimTime: ${simulationTime}, TurnaroundTimeProp: ${turnaroundTime}`
+    );
 
     if (!simulationTimetable || simulationTimetable.length === 0) {
-      // console.log("[MapEffect] No simulation timetable data, clearing trains.");
-      if (trainStates.length > 0) {
-        setTrainStates([]);
-        setDebugInfo({}); // Clear debug info too
-      }
+      console.log("[MapEffect] No simulation timetable data, clearing trains.");
+      setTrainStates([]);
+      setDebugInfo({});
+      setInactiveTrainCount(0); // Reset inactive count
       return;
     }
 
     const currentSimSeconds = timeToSeconds(simulationTime);
-    const newTrainStates: TrainState[] = [];
-    let inactiveTrainIndex = 0; // Counter for placing trains in the depot
+    console.log(
+      `Current simulation time: ${simulationTime} (${currentSimSeconds}s)`
+    );
 
-    // Calculate dynamic box width (needed for centering X calculation)
-    const depotBoxWidth =
-      inactiveTrainCount > 0
-        ? INACTIVE_TRAIN_SPACING * inactiveTrainCount + 10
-        : 60;
-    // Calculate the starting X for the *center* of the first train inside the centered box
-    const totalTrainGroupWidth =
-      inactiveTrainCount > 0
-        ? (inactiveTrainCount - 1) * INACTIVE_TRAIN_SPACING
-        : 0;
-    const depotStartX = CENTER_STATION_X - totalTrainGroupWidth / 2; // Center the group
+    // --- Normalize and Process Timetable Data ---
+    const normalizedTimetable = simulationTimetable.map((entry) => {
+      const anyEntry = entry as any;
+      const isNewFormat = "TRAIN_ID" in anyEntry || "MOVEMENT_ID" in anyEntry;
+      return {
+        TRAIN_ID: isNewFormat ? anyEntry.TRAIN_ID : anyEntry["Train ID"],
+        STATION_ID: isNewFormat ? anyEntry.STATION_ID : anyEntry.NStation,
+        DIRECTION: (isNewFormat
+          ? anyEntry.DIRECTION || "southbound"
+          : anyEntry.Direction || "southbound"
+        ).toLowerCase() as Direction, // Ensure type is Direction
+        TRAIN_STATUS: isNewFormat
+          ? anyEntry.TRAIN_STATUS || "active"
+          : anyEntry["Train Status"] || "active",
+        ARRIVAL_TIME: isNewFormat
+          ? anyEntry.ARRIVAL_TIME
+          : anyEntry["Arrival Time"],
+        DEPARTURE_TIME: isNewFormat
+          ? anyEntry.DEPARTURE_TIME
+          : anyEntry["Departure Time"],
+      };
+    });
 
-    const timetableByTrain = simulationTimetable.reduce((acc, entry) => {
-      if (!entry || typeof entry["Train ID"] === "undefined") {
+    const timetableByTrain = normalizedTimetable.reduce((acc, entry) => {
+      if (
+        !entry ||
+        typeof entry.TRAIN_ID === "undefined" ||
+        entry.ARRIVAL_TIME === null // Skip entries without arrival time for sorting
+      ) {
         return acc;
       }
-      const trainId = entry["Train ID"];
+      const trainId = entry.TRAIN_ID;
       if (!acc[trainId]) acc[trainId] = [];
       acc[trainId].push(entry);
       return acc;
-    }, {} as { [key: number]: SimulationTimetableEntry[] });
+    }, {} as { [key: number]: any[] });
+
+    for (const trainId in timetableByTrain) {
+      timetableByTrain[trainId].sort((a, b) => {
+        const arrA = timeToSeconds(a.ARRIVAL_TIME!); // Assume non-null after filter
+        const arrB = timeToSeconds(b.ARRIVAL_TIME!); // Assume non-null after filter
+        return arrA - arrB;
+      });
+    }
+
+    // --- Calculate Train Positions and States ---
+    const newTrainStates: TrainState[] = [];
+    let inactiveTrainIndex = 0;
+    const processedTrainIds = new Set<number>(); // Keep track of processed trains
 
     for (const trainIdStr in timetableByTrain) {
       const trainId = parseInt(trainIdStr, 10);
-      // console.log(
-      //   `[MapEffect Train ${trainId}] Processing schedule. SimTime: ${simulationTime} (${currentSimSeconds}s)`
-      // );
-      const trainSchedule = timetableByTrain[trainId].sort((a, b) => {
-        const arrA = a["Arrival Time"]
-          ? timeToSeconds(a["Arrival Time"])
-          : Infinity;
-        const arrB = b["Arrival Time"]
-          ? timeToSeconds(b["Arrival Time"])
-          : Infinity;
-        if (arrA !== arrB) return arrA - arrB;
-        const depA =
-          a["Departure Time"] && a["Departure Time"] !== "WITHDRAWN"
-            ? timeToSeconds(a["Departure Time"])
-            : Infinity;
-        const depB =
-          b["Departure Time"] && b["Departure Time"] !== "WITHDRAWN"
-            ? timeToSeconds(b["Departure Time"])
-            : Infinity;
-        return depA - depB;
-      });
+      processedTrainIds.add(trainId);
+      const trainSchedule = timetableByTrain[trainId];
 
-      let finalState: Partial<TrainState> & { id: number } = {
-        id: trainId,
-        isActive: false,
-        isInDepot: false, // Default to not in depot
-      };
-      let stateFound = false;
+      if (trainSchedule.length === 0) continue; // Should not happen after filtering
 
+      const firstEvent = trainSchedule[0];
+      const lastEvent = trainSchedule[trainSchedule.length - 1];
+
+      let trainState: TrainState | null = null;
+      let isExplicitlyInactive = false;
+      let inactiveTriggerEvent: any = null; // Store the event that triggers inactivity
+
+      // 1. Preliminary check: Has the train passed an "inactive" status event?
+      for (const event of trainSchedule) {
+        if (event.TRAIN_STATUS === "inactive") {
+          const departureSec = event.DEPARTURE_TIME
+            ? timeToSeconds(event.DEPARTURE_TIME)
+            : event.ARRIVAL_TIME
+            ? timeToSeconds(event.ARRIVAL_TIME)
+            : Infinity; // Use arrival if no departure, else Infinity
+
+          if (currentSimSeconds >= departureSec && departureSec !== Infinity) {
+            console.log(
+              `Train ${trainId}: Found INACTIVE event trigger at time ${
+                event.DEPARTURE_TIME || event.ARRIVAL_TIME
+              }. ` +
+                `Condition met (currentSimSeconds=${currentSimSeconds} >= ${departureSec}).`
+            );
+            isExplicitlyInactive = true;
+            inactiveTriggerEvent = event; // Store the specific event
+            break; // Found the trigger, no need to check further events for this train
+          }
+        }
+      }
+
+      // 2. If explicitly inactive, set state for depot
+      if (isExplicitlyInactive && inactiveTriggerEvent) {
+        // Enhance the log to clearly indicate the transition
+        console.log(
+          `Train ${trainId}: TRANSITIONING to INACTIVE state. Triggered by event at ` +
+            `${
+              inactiveTriggerEvent.DEPARTURE_TIME ||
+              inactiveTriggerEvent.ARRIVAL_TIME
+            } ` +
+            `(SimTime: ${simulationTime}, ${currentSimSeconds}s)`
+        );
+        // We calculate the final X position *after* the main loop
+        trainState = {
+          id: trainId,
+          x: 0, // Placeholder X, will be recalculated later
+          y: DEPOT_CENTER_Y,
+          direction: inactiveTriggerEvent.DIRECTION, // Use direction from the triggering event
+          isStopped: true,
+          isActive: true, // Visually active in depot
+          isTurningAround: false,
+          isInDepot: true,
+          rotation: 0, // Depot trains are horizontal
+          currentStationIndex: -1,
+          turnaroundProgress: null,
+        };
+        newTrainStates.push(trainState); // Add to list
+        continue; // Go to the next trainId
+      }
+
+      // 3. If NOT explicitly inactive, determine active state (existing logic)
+      //    (We removed the old check that only looked at the *last* event's status)
+      const firstArrivalSec = timeToSeconds(firstEvent.ARRIVAL_TIME!);
+      if (currentSimSeconds < firstArrivalSec) {
+        // Train hasn't started yet, effectively invisible
+        // console.log(`Train ${trainId}: Not active yet.`);
+        continue; // Skip to next train
+      }
+
+      // Find relevant events for active trains
+      let eventA = null; // The event defining the start of the current segment
+      let eventB = null; // The event defining the end of the current segment
+
+      // (Loop to find eventA and eventB - same as before)
       for (let i = 0; i < trainSchedule.length; i++) {
-        const event = trainSchedule[i];
-        const nextEvent =
-          i + 1 < trainSchedule.length ? trainSchedule[i + 1] : null;
-        // const prevEvent = i > 0 ? trainSchedule[i - 1] : null; // Keep if needed for fallback or complex checks
+        const currentEvent = trainSchedule[i];
 
-        const arrivalSec = event["Arrival Time"]
-          ? timeToSeconds(event["Arrival Time"])
-          : null;
-        const departureSec =
-          event["Departure Time"] && event["Departure Time"] !== "WITHDRAWN"
-            ? timeToSeconds(event["Departure Time"])
-            : null;
-        const eventStationId = event.NStation;
-        const eventDirection = event.Direction.toLowerCase() as Direction;
-        const eventTrainStatus = event["Train Status"] ?? "active"; // Default to active if missing
-
-        const nextArrivalSec = nextEvent?.["Arrival Time"]
-          ? timeToSeconds(nextEvent["Arrival Time"])
-          : null;
-        const nextDepartureSec =
-          nextEvent?.["Departure Time"] &&
-          nextEvent["Departure Time"] !== "WITHDRAWN"
-            ? timeToSeconds(nextEvent["Departure Time"])
-            : null;
-        const nextStationId = nextEvent?.NStation;
-        const nextDirection = nextEvent?.Direction?.toLowerCase() as
-          | Direction
-          | undefined;
-
-        // --- Identify Turnaround Gaps ---
-        let isTurnaroundStartEvent = false; // Is `event` the arrival/dwell *before* turnaround visual?
-        let turnaroundVisualStartTimeSec: number | null = null;
-        let turnaroundVisualEndTimeSec: number | null = null;
-        let directionBeforeTurnaround: Direction | null = null;
-        let directionAfterTurnaround: Direction | null = null;
-
-        if (
-          nextEvent &&
-          departureSec !== null && // Event i has a departure time (marks end of Dwell 1)
-          nextDepartureSec !== null && // Event i+1 has a departure time (marks end of visual/start of Dwell 2)
-          eventStationId === nextStationId && // Both events are at the same station
-          (eventStationId === NORTH_TERMINUS_ID ||
-            eventStationId === SOUTH_TERMINUS_ID) && // It's a terminus
-          eventDirection !== nextDirection // The direction changes between event i and i+1
-        ) {
-          // Turnaround detected: Mark the start event and store times/directions.
-          isTurnaroundStartEvent = true;
-          turnaroundVisualStartTimeSec = departureSec;
-          turnaroundVisualEndTimeSec = nextDepartureSec;
-          directionBeforeTurnaround = eventDirection;
-          directionAfterTurnaround = nextDirection!;
-          // console.log(`%c[MapEffect Train ${trainId} Event ${i}] Turnaround GAP Detected`, "color: purple;",
-          //     `| SimSec: ${currentSimSeconds}`, `| Dwell1 End (Visual Start): ${turnaroundVisualStartTimeSec} (${formatTime(turnaroundVisualStartTimeSec!)})`,
-          //     `| Visual End: ${turnaroundVisualEndTimeSec} (${formatTime(turnaroundVisualEndTimeSec!)})`,
-          //     `| PrevDir: ${directionBeforeTurnaround}`, `| NextDir: ${directionAfterTurnaround}`
-          // );
-        }
-
-        // --- State Determination based on Time ---
-
-        // 0. Check for Inactive State & Past Departure Time (Highest Priority)
-        if (
-          eventTrainStatus === "inactive" &&
-          departureSec !== null &&
-          currentSimSeconds >= departureSec
-        ) {
-          // Train is inactive and should be in the depot
-          // console.log(`%c[MapEffect Train ${trainId} Event ${i}] Assigning STATE INACTIVE (In Depot)`, "color: gray; font-weight: bold;",
-          //      `| SimSec: ${currentSimSeconds}`, `| Dep: ${departureSec}`);
-
-          const depotX =
-            depotStartX + inactiveTrainIndex * INACTIVE_TRAIN_SPACING; // Position train center
-          const depotY = DEPOT_CENTER_Y; // Use fixed Y center
-          inactiveTrainIndex++; // Increment for the next inactive train
-
-          finalState = {
-            id: trainId,
-            x: depotX,
-            y: depotY,
-            direction: eventDirection, // Keep last known direction?
-            isStopped: true,
-            isActive: true, // Still active visually, but in depot
-            isTurningAround: false,
-            isInDepot: true, // Mark as in depot
-            rotation: 0, // Face right in the depot
-            currentStationIndex: -1, // Not at a track station
-            turnaroundProgress: null,
-          };
-          stateFound = true;
-          break; // Found the final state for this train
-        }
-
-        // 1. Turnaround Visual Phase?
-        if (
-          isTurnaroundStartEvent &&
-          turnaroundVisualStartTimeSec !== null &&
-          turnaroundVisualEndTimeSec !== null &&
-          currentSimSeconds >= turnaroundVisualStartTimeSec &&
-          currentSimSeconds < turnaroundVisualEndTimeSec
-        ) {
-          const effectiveTurnaroundDuration = Math.max(
-            1,
-            turnaroundVisualEndTimeSec - turnaroundVisualStartTimeSec
+        // --- Add Detailed Logging inside the loop for Train 5 ---
+        if (trainId === 5) {
+          console.log(
+            `Train 5 Loop (i=${i}): Checking currentEvent:`,
+            JSON.stringify(currentEvent)
           );
-          const timeIntoTurnaround =
-            currentSimSeconds - turnaroundVisualStartTimeSec;
-          const progress = Math.min(
-            1,
-            timeIntoTurnaround / effectiveTurnaroundDuration
+        }
+        // --- End Logging ---
+
+        const arrivalSec = timeToSeconds(currentEvent.ARRIVAL_TIME!);
+        const departureSec = currentEvent.DEPARTURE_TIME
+          ? timeToSeconds(currentEvent.DEPARTURE_TIME)
+          : arrivalSec; // If no departure, assume instant
+
+        // --- Add Logging for time comparison ---
+        if (trainId === 5) {
+          console.log(
+            `Train 5 Loop (i=${i}): SimSec=${currentSimSeconds}, ArrSec=${arrivalSec}, DepSec=${departureSec}`
           );
-          const isNorthTurnaround = eventStationId === NORTH_TERMINUS_ID;
+        }
+        // --- End Logging ---
 
-          // console.log(`%c[MapEffect Train ${trainId} Event ${i}] Assigning STATE A (Active Turnaround Visual)`, "color: blue; font-weight: bold;",
-          //      `| SimSec: ${currentSimSeconds}`, `| Start: ${turnaroundVisualStartTimeSec}`, `| End: ${turnaroundVisualEndTimeSec}`, `| Progress: ${progress.toFixed(2)}`);
+        if (
+          arrivalSec <= currentSimSeconds &&
+          currentSimSeconds < departureSec
+        ) {
+          // --- Add Logging for Dwelling Match ---
+          if (trainId === 5) {
+            console.log(`Train 5 Loop (i=${i}): Matched DWELLING state.`);
+          }
+          // --- End Logging ---
+          eventA = currentEvent;
+          eventB = null;
+          break;
+        } else if (departureSec <= currentSimSeconds) {
+          // --- Add Logging for Transit Check ---
+          if (trainId === 5) {
+            console.log(
+              `Train 5 Loop (i=${i}): Checking TRANSIT condition (departureSec <= currentSimSeconds is true).`
+            );
+          }
+          // --- End Logging ---
+          const nextEvent = trainSchedule[i + 1];
+          // --- Add Logging for nextEvent ---
+          if (trainId === 5) {
+            console.log(
+              `Train 5 Loop (i=${i}): nextEvent:`,
+              JSON.stringify(nextEvent)
+            );
+          }
+          // --- End Logging ---
 
-          // Calculate U-turn center coordinates for teleportation
+          // Ensure nextEvent exists and is also active
+          if (nextEvent) {
+            const nextArrivalSec = timeToSeconds(nextEvent.ARRIVAL_TIME!);
+            // --- Add Logging for Transit Inner Check ---
+            if (trainId === 5) {
+              console.log(
+                `Train 5 Loop (i=${i}): nextEvent is valid. nextArrivalSec=${nextArrivalSec}. Checking if currentSimSeconds < nextArrivalSec.`
+              );
+            }
+            // --- End Logging ---
+            if (currentSimSeconds < nextArrivalSec) {
+              // --- Add Logging for Transit Match ---
+              if (trainId === 5) {
+                console.log(`Train 5 Loop (i=${i}): Matched IN TRANSIT state.`);
+              }
+              // --- End Logging ---
+              eventA = currentEvent;
+              eventB = nextEvent;
+              break;
+            }
+            // If currentSimSeconds >= nextArrivalSec, we let the loop continue
+          } else {
+            // --- Add Logging for Last Active/Stuck Match ---
+            if (trainId === 5) {
+              console.log(
+                `Train 5 Loop (i=${i}): No valid nextEvent. Setting as last active/stuck state.`
+              );
+            }
+            // --- End Logging ---
+            // No valid next event (either end of schedule or next is inactive)
+            // Treat as stuck at the current station (currentEvent)
+            eventA = currentEvent;
+            eventB = null;
+            break; // Exit loop, state will be "At Station"
+          }
+        }
+      }
+
+      // Calculate State based on identified active events (A and B)
+      // (Logic for AT STATION, IN TRANSIT, TURNING AROUND - same as before)
+      if (eventA && !eventB) {
+        // --- AT STATION (DWELLING or last known active position) ---
+        console.log(`Train ${trainId}: At station ${eventA.STATION_ID}.`);
+        trainState = {
+          id: trainId,
+          x: getStationXById(eventA.STATION_ID),
+          y: getTrainYPosition(eventA.DIRECTION),
+          direction: eventA.DIRECTION,
+          isStopped: true,
+          isActive: true,
+          isTurningAround: false,
+          isInDepot: false,
+          rotation: eventA.DIRECTION === "northbound" ? 180 : 0,
+          currentStationIndex: stations.findIndex(
+            (s) => s.id === eventA.STATION_ID
+          ),
+          turnaroundProgress: null,
+        };
+      } else if (eventA && eventB) {
+        // --- IN TRANSIT or TURNING AROUND ---
+        const departureSec = timeToSeconds(eventA.DEPARTURE_TIME!);
+        const arrivalSec = timeToSeconds(eventB.ARRIVAL_TIME!);
+        const segmentDuration = arrivalSec - departureSec;
+        const timeInSegment = currentSimSeconds - departureSec;
+
+        const isTurnaround =
+          eventA.STATION_ID === eventB.STATION_ID &&
+          eventA.DIRECTION !== eventB.DIRECTION &&
+          (eventA.STATION_ID === NORTH_TERMINUS_ID ||
+            eventA.STATION_ID === SOUTH_TERMINUS_ID);
+
+        if (isTurnaround) {
+          // --- TURNING AROUND ---
+          console.log(
+            `Train ${trainId}: Turning around at station ${eventA.STATION_ID}.`
+          );
+          const progress =
+            segmentDuration > 0
+              ? Math.min(1, timeInSegment / segmentDuration)
+              : 0;
+          const isNorthTurnaround = eventA.STATION_ID === NORTH_TERMINUS_ID;
           const uturnCenterX = isNorthTurnaround
-            ? TRACK.start.x - TRACK_Y_OFFSET // Left of North Terminus
-            : TRACK.end.x + TRACK_Y_OFFSET; // Right of South Terminus
+            ? STATIONS_BY_ID[NORTH_TERMINUS_ID].x - TRACK_Y_OFFSET
+            : STATIONS_BY_ID[SOUTH_TERMINUS_ID].x + TRACK_Y_OFFSET;
           const uturnCenterY = MAP_MID_Y;
 
-          finalState = {
+          trainState = {
             id: trainId,
             x: uturnCenterX,
             y: uturnCenterY,
-            direction: directionAfterTurnaround!, // Set to the *next* direction
+            direction: eventB.DIRECTION,
             isStopped: true,
             isActive: true,
-            isTurningAround: true, // Flag for loading circle
-            rotation: directionAfterTurnaround === "northbound" ? 180 : 0, // Point in the *next* direction
+            isTurningAround: true,
+            isInDepot: false,
+            rotation: eventB.DIRECTION === "northbound" ? 180 : 0,
             currentStationIndex: -1,
             turnaroundProgress: progress,
-            isInDepot: false, // Not in depot
           };
-          stateFound = true;
-          break;
-        }
+        } else {
+          // --- IN TRANSIT ---
+          console.log(
+            `Train ${trainId}: In transit from ${eventA.STATION_ID} to ${eventB.STATION_ID}.`
+          );
+          const progress =
+            segmentDuration > 0
+              ? Math.min(1, timeInSegment / segmentDuration)
+              : 0;
+          const startX = getStationXById(eventA.STATION_ID);
+          const endX = getStationXById(eventB.STATION_ID);
+          const currentX = startX + (endX - startX) * progress;
 
-        // 2. Dwell Phase? (Covers Dwell 1, Dwell 2, standard dwell, AND inactive dwell before departure)
-        if (
-          !stateFound &&
-          arrivalSec !== null &&
-          departureSec !== null &&
-          currentSimSeconds >= arrivalSec &&
-          currentSimSeconds < departureSec
-        ) {
-          let dwellType =
-            eventTrainStatus === "inactive"
-              ? "Inactive (Pre-Depot)"
-              : "Standard";
-          if (isTurnaroundStartEvent) {
-            dwellType = "Pre-Turnaround (Dwell 1)";
-          }
-          // Basic check if this dwell might be Dwell 2 (occurs at terminus, direction matches the *next* event's direction if a turnaround just happened)
-          // This relies on the *previous* check `isTurnaroundStartEvent` identifying the preceding gap.
-          // A more robust check might involve looking back further, but let's keep it simple.
-          if (
-            eventStationId === NORTH_TERMINUS_ID ||
-            eventStationId === SOUTH_TERMINUS_ID
-          ) {
-            // If the *next* event exists and signifies the start of moving away from this terminus
-            // and the direction matches, maybe it's Dwell 2? Very heuristic.
-            // Let's assume the API provides Dwell 2 explicitly if it exists, so standard check suffices.
-          }
-
-          // console.log(`%c[MapEffect Train ${trainId} Event ${i}] Assigning STATE B (${dwellType} Dwell)`, "color: orange;",
-          //     `| SimSec: ${currentSimSeconds}`, `| Arr: ${arrivalSec}`, `| Dep: ${departureSec}`, `| Dir: ${eventDirection}`);
-
-          finalState = {
+          trainState = {
             id: trainId,
-            x: getStationXById(eventStationId),
-            y: getTrainYPosition(eventDirection),
-            direction: eventDirection,
-            isStopped: true,
+            x: currentX,
+            y: getTrainYPosition(eventA.DIRECTION),
+            direction: eventA.DIRECTION,
+            isStopped: false,
             isActive: true,
             isTurningAround: false,
-            rotation: eventDirection === "northbound" ? 180 : 0,
-            currentStationIndex: stations.findIndex(
-              (s) => s.id === eventStationId
-            ),
-            turnaroundProgress: null,
-            isInDepot: false, // Not in depot
-          };
-          stateFound = true;
-          break;
-        }
-
-        // 3. Moving Phase? (Only applies if train is 'active')
-        if (
-          !stateFound &&
-          eventTrainStatus === "active" && // Ensure train is active to be moving
-          departureSec !== null &&
-          nextEvent &&
-          nextArrivalSec !== null
-        ) {
-          // Segment is between current event's departure and next event's arrival
-          let segmentStartTimeSec = departureSec;
-          let segmentEndTimeSec = nextArrivalSec;
-          let movingFromStationId = eventStationId;
-          let movingToStationId = nextStationId!;
-          let movingDirection = eventDirection;
-
-          if (
-            currentSimSeconds >= segmentStartTimeSec &&
-            currentSimSeconds < segmentEndTimeSec
-          ) {
-            const segmentDuration = Math.max(
-              1,
-              segmentEndTimeSec - segmentStartTimeSec
-            );
-            const timeIntoSegment = currentSimSeconds - segmentStartTimeSec;
-            const progress = Math.min(
-              1,
-              Math.max(0, timeIntoSegment / segmentDuration)
-            );
-            const prevStationX = getStationXById(movingFromStationId);
-            const nextStationX = getStationXById(movingToStationId);
-
-            // console.log(`%c[MapEffect Train ${trainId} Event ${i}] Assigning STATE C (Moving)`, "color: green; font-weight: bold;",
-            //     `| SimSec: ${currentSimSeconds}`, `| Start: ${segmentStartTimeSec}`, `| End: ${segmentEndTimeSec}`, `| Progress: ${progress.toFixed(2)}`);
-
-            finalState = {
-              id: trainId,
-              x: prevStationX + (nextStationX - prevStationX) * progress,
-              y: getTrainYPosition(movingDirection),
-              direction: movingDirection,
-              isStopped: false,
-              isActive: true,
-              isTurningAround: false,
-              rotation: movingDirection === "northbound" ? 180 : 0,
-              currentStationIndex: -1,
-              turnaroundProgress: null,
-              isInDepot: false, // Not in depot
-            };
-            stateFound = true;
-            break;
-          }
-        }
-
-        // 4. Inactive State? (Before first event starts)
-        if (
-          !stateFound &&
-          i === 0 &&
-          (arrivalSec ?? departureSec ?? Infinity) > currentSimSeconds
-        ) {
-          // console.log(`[MapEffect Train ${trainId} Event ${i}] Assigning STATE D (Inactive - Before First Event Time ${arrivalSec ?? departureSec})`);
-          finalState = { id: trainId, isActive: false, isInDepot: false }; // Ensure isInDepot is false
-          stateFound = true;
-          break;
-        }
-      } // End inner loop (schedule events)
-
-      // --- Fallback Logic ---
-      if (!stateFound) {
-        // console.log(`[MapEffect Train ${trainId}] No state found in loop, entering fallback logic. SimSec: ${currentSimSeconds}`);
-        if (trainSchedule.length === 0) {
-          finalState = { id: trainId, isActive: false, isInDepot: false };
-        } else {
-          const firstEvent = trainSchedule[0];
-          const firstKnownTime = timeToSeconds(
-            firstEvent["Arrival Time"] ?? firstEvent["Departure Time"] ?? ""
-          );
-          const lastEvent = trainSchedule[trainSchedule.length - 1];
-          const secondLastEvent =
-            trainSchedule.length > 1
-              ? trainSchedule[trainSchedule.length - 2]
-              : null;
-
-          // Check if after last known departure time
-          const lastKnownDepartureTime = timeToSeconds(
-            lastEvent["Departure Time"] ?? "99:99:99"
-          );
-
-          if (firstKnownTime > 0 && currentSimSeconds < firstKnownTime) {
-            // Before first event
-            // console.log(`[MapEffect Train ${trainId} Fallback] Setting Inactive (Before First Event: ${firstKnownTime})`);
-            finalState = { id: trainId, isActive: false, isInDepot: false };
-          } else if (
-            lastKnownDepartureTime > 0 &&
-            currentSimSeconds >= lastKnownDepartureTime
-          ) {
-            // After last departure time
-
-            // Check if the last sequence was a turnaround visual potentially ongoing
-            let wasLastEventTurnaroundEnd = false;
-            let lastTurnaroundVisualStartTimeSec: number | null = null;
-            let lastTurnaroundVisualEndTimeSec: number | null = null;
-            let lastDirectionAfterTurnaround: Direction | null = null;
-
-            if (
-              secondLastEvent &&
-              lastEvent.NStation === secondLastEvent.NStation &&
-              (lastEvent.NStation === NORTH_TERMINUS_ID ||
-                lastEvent.NStation === SOUTH_TERMINUS_ID) &&
-              lastEvent.Direction !== secondLastEvent.Direction &&
-              secondLastEvent["Departure Time"] &&
-              timeToSeconds(secondLastEvent["Departure Time"]) <
-                lastKnownDepartureTime
-            ) {
-              wasLastEventTurnaroundEnd = true;
-              lastTurnaroundVisualStartTimeSec = timeToSeconds(
-                secondLastEvent["Departure Time"]
-              );
-              lastTurnaroundVisualEndTimeSec = lastKnownDepartureTime;
-              lastDirectionAfterTurnaround =
-                lastEvent.Direction.toLowerCase() as Direction;
-            }
-
-            if (
-              wasLastEventTurnaroundEnd &&
-              lastTurnaroundVisualStartTimeSec &&
-              lastTurnaroundVisualEndTimeSec &&
-              currentSimSeconds >= lastTurnaroundVisualStartTimeSec &&
-              currentSimSeconds < lastTurnaroundVisualEndTimeSec
-            ) {
-              // Fallback: Still visually turning around after schedule "ends"
-              const effectiveTurnaroundDuration = Math.max(
-                1,
-                lastTurnaroundVisualEndTimeSec -
-                  lastTurnaroundVisualStartTimeSec
-              );
-              const timeIntoTurnaround =
-                currentSimSeconds - lastTurnaroundVisualStartTimeSec;
-              const progress = Math.min(
-                1,
-                timeIntoTurnaround / effectiveTurnaroundDuration
-              );
-              const isNorthTurnaround =
-                lastEvent.NStation === NORTH_TERMINUS_ID;
-              const uturnCenterX = isNorthTurnaround
-                ? TRACK.start.x - TRACK_Y_OFFSET
-                : TRACK.end.x + TRACK_Y_OFFSET;
-              const uturnCenterY = MAP_MID_Y;
-
-              // console.log(`%c[MapEffect Train ${trainId} Fallback] Assigning STATE A (Active Turnaround Visual - Post Schedule)`, "color: blue; font-weight: bold;");
-              finalState = {
-                id: trainId,
-                x: uturnCenterX,
-                y: uturnCenterY,
-                direction: lastDirectionAfterTurnaround!,
-                isStopped: true,
-                isActive: true,
-                isTurningAround: true,
-                rotation:
-                  lastDirectionAfterTurnaround === "northbound" ? 180 : 0,
-                currentStationIndex: -1,
-                turnaroundProgress: progress,
-                isInDepot: false, // Add missing isInDepot flag
-              };
-            } else {
-              // After the last event, not in a final turnaround visual. Stop at last station.
-              // console.log(`%c[MapEffect Train ${trainId} Fallback] Assigning STATE B (Dwell - Post Schedule End)`, "color: orange;");
-              finalState = {
-                id: trainId,
-                x: getStationXById(lastEvent.NStation),
-                y: getTrainYPosition(
-                  lastEvent.Direction.toLowerCase() as Direction
-                ),
-                direction: lastEvent.Direction.toLowerCase() as Direction,
-                isStopped: true,
-                isActive: true, // Keep visible
-                isTurningAround: false,
-                rotation:
-                  lastEvent.Direction.toLowerCase() === "northbound" ? 180 : 0,
-                currentStationIndex: stations.findIndex(
-                  (s) => s.id === lastEvent.NStation
-                ),
-                turnaroundProgress: null,
-                isInDepot: false, // Add missing isInDepot flag
-              };
-            }
-          } else {
-            // Gap in schedule or other unexpected timing
-            // console.log(`[MapEffect Train ${trainId} Fallback] Setting Inactive (Gap or Unknown)`);
-            finalState = { id: trainId, isActive: false, isInDepot: false }; // Ensure isInDepot is false
-          }
-        }
-        // Ensure final state has defaults if inactive
-        if (!finalState.isActive) {
-          finalState = {
-            ...finalState,
-            x: 0,
-            y: 0,
-            direction: "southbound",
-            isStopped: false,
-            isTurningAround: false,
-            rotation: 0,
+            isInDepot: false,
+            rotation: eventA.DIRECTION === "northbound" ? 180 : 0,
             currentStationIndex: -1,
             turnaroundProgress: null,
-            isActive: false,
           };
         }
-      }
-
-      // --- Push state if active ---
-      if (finalState.isActive) {
-        // console.log(`[MapEffect Train ${trainId}] Pushing Final Active State:`, finalState);
-        const completeState: TrainState = {
-          id: trainId,
-          x: finalState.x ?? 0,
-          y: finalState.y ?? 0,
-          direction: finalState.direction ?? "southbound",
-          isStopped: finalState.isStopped ?? false,
-          isActive: true,
-          isTurningAround: finalState.isTurningAround ?? false,
-          isInDepot: finalState.isInDepot ?? false, // Use calculated value or default
-          rotation: finalState.rotation ?? 0,
-          currentStationIndex: finalState.currentStationIndex ?? -1,
-          turnaroundProgress: finalState.turnaroundProgress ?? null,
-        };
-        newTrainStates.push(completeState);
       } else {
-        // console.log(`[MapEffect Train ${trainId}] Final State is Inactive.`);
+        // Fallback if no active state found (should be rare now)
+        console.warn(
+          `Train ${trainId}: Could not determine ACTIVE state at time ${simulationTime}. Hiding train.`
+        );
+        // Don't add to newTrainStates if state is unknown
+        trainState = null;
       }
-    } // End outer loop (trains)
 
-    // --- Collect Debug Info ---
-    const activeTrainCount = newTrainStates.length;
-    const stoppedTrainCount = newTrainStates.filter(
-      (t) => t.isStopped && !t.isTurningAround
+      // Add the calculated state if valid
+      if (trainState) {
+        newTrainStates.push(trainState);
+      }
+    } // End of processing each train
+
+    // --- Recalculate Depot Positions AFTER processing all trains ---
+    const finalInactiveCount = newTrainStates.filter(
+      (ts) => ts.isInDepot
     ).length;
-    const movingTrainCount = newTrainStates.filter(
-      (t) => !t.isStopped && !t.isTurningAround
+    let currentInactiveIndex = 0;
+    newTrainStates.forEach((ts) => {
+      if (ts.isInDepot) {
+        // Calculate centered starting X based on the final total count
+        const depotStartX =
+          CENTER_STATION_X - (finalInactiveCount * INACTIVE_TRAIN_SPACING) / 2;
+        // Assign the final X position based on the index
+        ts.x = depotStartX + currentInactiveIndex * INACTIVE_TRAIN_SPACING;
+        currentInactiveIndex++;
+      }
+    });
+    setInactiveTrainCount(finalInactiveCount); // Update state for depot box size
+    // --- End Recalculation ---
+
+    // Collect debug info (simplified)
+    const activeTrainCount = newTrainStates.filter(
+      (ts) => ts.isActive && !ts.isInDepot
     ).length;
+    const inactiveTrainsInDepot = newTrainStates
+      .filter((ts) => ts.isInDepot)
+      .map((t) => t.id);
     const turningAroundTrains = newTrainStates
       .filter((t) => t.isTurningAround)
       .map((t) => t.id);
+
     const currentDebugInfo = {
-      "Active Trains": activeTrainCount,
-      "Moving Trains": movingTrainCount,
-      "Stopped Trains": stoppedTrainCount,
+      Time: simulationTime,
+      SimSeconds: currentSimSeconds,
+      "Visible Trains": newTrainStates.length,
+      "Active (Moving/Stopped)": activeTrainCount,
+      "Inactive (Depot)":
+        inactiveTrainsInDepot.length > 0
+          ? inactiveTrainsInDepot.join(", ")
+          : "None",
       "Turning Around":
         turningAroundTrains.length > 0
           ? turningAroundTrains.join(", ")
           : "None",
-      // Add more debug fields here as needed
     };
 
-    // Compare and update state only if necessary to avoid re-renders
+    // Update state only if necessary
     if (JSON.stringify(newTrainStates) !== JSON.stringify(trainStates)) {
-      // console.log(
-      //   `[MapEffect] Updating trainStates state. Prev: ${trainStates.length}, New: ${newTrainStates.length}`
-      // );
+      console.log(
+        `Updating train states: ${newTrainStates.length} trains rendered.`
+      );
       setTrainStates(newTrainStates);
-      setDebugInfo(currentDebugInfo); // Update debug info only when train states change
-    } else {
-      // console.log("[MapEffect] No change in trainStates detected.");
     }
+    setDebugInfo(currentDebugInfo);
 
-    // Update the count of inactive trains for dynamic box sizing
-    setInactiveTrainCount(inactiveTrainIndex); // Set state after loop
-
-    // --- DEBUG: Log Update End ---
-    // console.log(
-    //   `[MapEffect] Update End - SimTime: ${simulationTime}, TurnaroundTimeProp: ${turnaroundTime}`
-    // );
-    // --- End Debug ---
-  }, [
-    simulationTimetable,
-    simulationTime,
-    stations, // stations definition rarely changes, but keep dependency
-    turnaroundTime, // turnaroundTime prop is now implicitly handled by the gap in the timetable data
-    inactiveTrainCount, // ADDED dependency for centering calculation
-    // trainStates dependency removed to prevent potential loops if state setting triggers effect
-  ]);
+    console.log(`[MapEffect] Update End - SimTime: ${simulationTime}`);
+  }, [simulationTimetable, simulationTime, stations, trainEventPairs]);
 
   // Memoize station elements to prevent unnecessary re-renders
   const stationElements = useMemo(() => {
@@ -830,6 +810,67 @@ export default function MrtMap({
     return direction === "southbound" ? TRACK.southboundY : TRACK.northboundY;
   };
 
+  // --- NEW: Handle Train Click on Map --- //
+  const handleMapTrainClick = useCallback(
+    (trainId: number) => {
+      if (!onTrainClick) return;
+
+      const state = trainStates.find((ts) => ts.id === trainId);
+      const events = trainEventPairs[trainId];
+
+      if (!state || !events) {
+        console.error(
+          `Could not find state or events for clicked train ${trainId}`
+        );
+        return;
+      }
+
+      const { eventA, eventB } = events;
+      let statusString = "Unknown";
+      let relevantStationName: string | null = null;
+      let scheduledTime: string | null = null;
+
+      if (state.isInDepot) {
+        statusString = "Inactive";
+      } else if (state.isTurningAround) {
+        statusString = `Turning Around`;
+        if (eventA) {
+          relevantStationName =
+            STATIONS_BY_ID[eventA.STATION_ID]?.name ??
+            `Station ${eventA.STATION_ID}`;
+          scheduledTime = eventB?.ARRIVAL_TIME ?? null; // Departure time of the turnaround completion
+        }
+      } else if (state.isStopped) {
+        statusString = `At Station`;
+        if (eventA) {
+          relevantStationName =
+            STATIONS_BY_ID[eventA.STATION_ID]?.name ??
+            `Station ${eventA.STATION_ID}`;
+          scheduledTime = eventA.DEPARTURE_TIME ?? null;
+        }
+      } else if (!state.isStopped && eventA && eventB) {
+        statusString = `In Transit`;
+        relevantStationName =
+          STATIONS_BY_ID[eventB.STATION_ID]?.name ??
+          `Station ${eventB.STATION_ID}`;
+        scheduledTime = eventB.ARRIVAL_TIME ?? null;
+      }
+
+      const details: TrainInfoData = {
+        id: trainId,
+        direction: state.direction,
+        status: statusString,
+        load: 0, // Hardcoded as per requirement
+        capacity: maxCapacity, // Use prop passed down
+        relevantStationName,
+        scheduledTime,
+      };
+
+      onTrainClick(trainId, details);
+    },
+    [trainStates, trainEventPairs, onTrainClick, maxCapacity] // Dependencies for the handler
+  );
+
   // Memoize train elements with new design
   const trainElements = useMemo(() => {
     const trainSize = 18; // Size of the square
@@ -872,9 +913,12 @@ export default function MrtMap({
           <g
             key={`train-${train.id}`}
             transform={groupTransform}
-            className={`train-element group hover:scale-110 cursor-pointer ${
+            onClick={() => handleMapTrainClick(train.id)}
+            className={`train-element group cursor-pointer transition-transform duration-200 ease-in-out ${
               train.isInDepot ? "opacity-80" : ""
-            }`} // Add opacity if in depot
+            } ${
+              selectedTrainId === train.id ? "train-selected-highlight" : ""
+            }`}
           >
             {/* Standard Train Visual (Square + Arrow + Text) */}
             {/* Apply slight opacity reduction if turning around, but not full hiding */}
@@ -917,8 +961,8 @@ export default function MrtMap({
                   cy="0"
                   r={loadingRadius}
                   fill="none"
-                  stroke="currentColor" // Use train color or a neutral one
-                  opacity={0.2} // Dim background
+                  stroke="currentColor"
+                  opacity={selectedTrainId === train.id ? 0.3 : 0.2}
                   strokeWidth={loadingStrokeWidth}
                 />
                 {/* Progress Circle */}
@@ -927,15 +971,13 @@ export default function MrtMap({
                   cy="0"
                   r={loadingRadius}
                   fill="none"
-                  stroke="currentColor" // Use train color
+                  stroke="currentColor"
                   strokeWidth={loadingStrokeWidth}
                   strokeDasharray={loadingCircumference}
-                  // Animate offset based on progress
                   strokeDashoffset={
                     loadingCircumference * (1 - train.turnaroundProgress)
                   }
-                  transform="rotate(-90)" // Start progress from top
-                  // Use a fast transition only for the dash offset to make the fill smooth
+                  transform="rotate(-90)"
                   className="transition-[stroke-dashoffset] duration-150 ease-linear"
                 />
               </g>
@@ -943,7 +985,7 @@ export default function MrtMap({
           </g>
         );
       });
-  }, [trainStates]); // Removed getTrainClass dependency
+  }, [trainStates, selectedTrainId, handleMapTrainClick]);
 
   const stationLabelElements = useMemo(() => {
     return stations.map((station) => {
@@ -967,175 +1009,203 @@ export default function MrtMap({
         </text>
       );
     });
-  }, [stations, selectedStation]); // Keep selectedStation dependency
+  }, [stations, selectedStation]);
 
   return (
-    <div
-      className={`relative w-full h-full overflow-hidden ${THEME.background}`}
-    >
-      {/* Simulation Time Display */}
+    <>
+      {/* Add some simple CSS for the highlight */}
+      <style>
+        {`
+          .train-selected-highlight {
+            filter: url(#train-highlight);
+            opacity: 1 !important; /* Ensure selected is fully opaque */
+          }
+        `}
+      </style>
       <div
-        className={`absolute top-2 right-2 px-3 py-1 rounded shadow text-lg font-mono font-semibold flex items-center z-10 ${THEME.legend}`}
+        className={`relative w-full h-full overflow-hidden ${THEME.background}`}
       >
-        <IconClock
-          size={16}
-          className="mr-2 text-gray-600 dark:text-gray-400"
-        />
-        {simulationTime}
-      </div>
-
-      {/* Debug Info Overlay - Top Left */}
-      <div
-        className={`absolute top-2 left-2 bg-white/80 dark:bg-gray-900/80 p-2 rounded shadow text-xs font-mono z-20 max-w-xs`}
-      >
-        <h4 className="font-bold mb-1">Debug Info</h4>
-        <ul>
-          {Object.entries(debugInfo).map(([key, value]) => (
-            <li
-              key={key}
-              className="whitespace-nowrap overflow-hidden text-ellipsis"
-            >
-              <span className="font-semibold">{key}:</span>{" "}
-              {JSON.stringify(value)}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <svg
-        ref={svgRef}
-        width="100%"
-        height="100%"
-        viewBox={`0 0 ${MAP_WIDTH} 300`}
-        preserveAspectRatio="xMidYMid meet"
-      >
-        {/* Define marker for arrowheads */}
-        <defs>
-          {/* ... marker definitions ... */}
-          <marker
-            id="arrowhead-blue"
-            markerWidth="10"
-            markerHeight="7"
-            refX="0"
-            refY="3.5"
-            orient="auto"
-          >
-            <polygon points="0 0, 10 3.5, 0 7" fill="#0066CC" />
-          </marker>
-          <marker
-            id="arrowhead-red"
-            markerWidth="10"
-            markerHeight="7"
-            refX="0"
-            refY="3.5"
-            orient="auto"
-          >
-            <polygon points="0 0, 10 3.5, 0 7" fill="#CC0000" />
-          </marker>
-        </defs>
-
-        {/* --- Track Lines (Direct SVG Stroke) --- */}
-        {/* Northbound Track (Blue) */}
-        <line
-          x1={TRACK.start.x}
-          y1={TRACK.northboundY}
-          x2={TRACK.end.x}
-          y2={TRACK.northboundY}
-          className={`${THEME.track.northbound}`}
-          strokeWidth={4.5}
-        />
-        {/* Southbound Track (Red) */}
-        <line
-          x1={TRACK.start.x}
-          y1={TRACK.southboundY}
-          x2={TRACK.end.x}
-          y2={TRACK.southboundY}
-          className={`${THEME.track.southbound}`}
-          strokeWidth={4.5}
-        />
-
-        {/* --- U-Turn Tracks (Dashed) --- */}
-        <path
-          d={northTurnaroundPathD}
-          fill="none"
-          className={`${THEME.track.northbound} opacity-70`} // Use track color or a neutral one
-          strokeWidth={3}
-          strokeDasharray="4, 4" // Dashed line style
-        />
-        <path
-          d={southTurnaroundPathD}
-          fill="none"
-          className={`${THEME.track.southbound} opacity-70`} // Use track color or a neutral one
-          strokeWidth={3}
-          strokeDasharray="4, 4" // Dashed line style
-        />
-
-        {/* Render station labels first (behind stations/trains) */}
-        <g className="station-labels">{stationLabelElements}</g>
-
-        {/* Station Elements */}
-        <g className="stations">{stationElements}</g>
-
-        {/* Train Elements */}
-        <g className="trains">{trainElements}</g>
-
-        {/* --- Inactive Train Depot Area --- */}
-        <g className="inactive-depot">
-          <rect
-            // Calculate centered X based on dynamic width and center station
-            x={
-              CENTER_STATION_X -
-              (inactiveTrainCount > 0
-                ? INACTIVE_TRAIN_SPACING * inactiveTrainCount + 20
-                : 70) /
-                2
-            } // Increased padding (10+10)
-            y={DEPOT_CENTER_Y - (INACTIVE_TRAIN_SIZE + 20) / 2} // Center box vertically around DEPOT_CENTER_Y
-            // Calculate width: padding + (space for each train) + padding
-            width={
-              inactiveTrainCount > 0
-                ? INACTIVE_TRAIN_SPACING * inactiveTrainCount + 20
-                : 70
-            } // Min width 70, added 10+10 padding
-            height={INACTIVE_TRAIN_SIZE + 20} // INCREASED Height to encompass trains + more padding (10+10)
-            fill="rgba(150, 150, 150, 0.1)" // Semi-transparent grey
-            stroke="rgba(100, 100, 100, 0.3)" // Dim border
-            strokeWidth={1}
-            rx={5} // Rounded corners
+        {/* Simulation Time Display */}
+        <div
+          className={`absolute top-2 right-2 px-3 py-1 rounded shadow text-lg font-mono font-semibold flex items-center z-10 ${THEME.legend}`}
+        >
+          <IconClock
+            size={16}
+            className="mr-2 text-gray-600 dark:text-gray-400"
           />
-          <text
-            // Center the text horizontally above the box relative to Station 7
-            x={CENTER_STATION_X}
-            y={DEPOT_CENTER_Y - (INACTIVE_TRAIN_SIZE + 20) / 2 - 5} // Position text above the larger box
-            textAnchor="middle"
-            className="text-[10px] fill-gray-500 dark:fill-gray-400 font-medium"
-          >
-            Inactive Trains
-          </text>
-        </g>
-      </svg>
-
-      {/* Legend */}
-      <div
-        className={`absolute bottom-2 right-2 p-2 rounded shadow text-xs z-10 flex space-x-4 ${THEME.legend}`}
-      >
-        <div className="flex items-center">
-          {/* Use dedicated legend indicator theme color and increase height */}
-          <div
-            className={`w-4 h-2 mr-2 rounded-sm ${THEME.legendIndicator.southbound}`}
-          ></div>
-          {/* Use HTML text theme color */}
-          <span className={`${THEME.textHtmlPrimary}`}>Southbound</span>
+          {simulationTime}
         </div>
-        <div className="flex items-center">
-          {/* Use dedicated legend indicator theme color and increase height */}
-          <div
-            className={`w-4 h-2 mr-2 rounded-sm ${THEME.legendIndicator.northbound}`}
-          ></div>
-          {/* Use HTML text theme color */}
-          <span className={`${THEME.textHtmlPrimary}`}>Northbound</span>
+
+        {/* Debug Info Overlay - Top Left */}
+        <div
+          className={`absolute top-2 left-2 bg-white/80 dark:bg-gray-900/80 p-2 rounded shadow text-xs font-mono z-20 max-w-xs`}
+        >
+          <h4 className="font-bold mb-1">Debug Info</h4>
+          <ul>
+            {Object.entries(debugInfo).map(([key, value]) => (
+              <li
+                key={key}
+                className="whitespace-nowrap overflow-hidden text-ellipsis"
+              >
+                <span className="font-semibold">{key}:</span>{" "}
+                {JSON.stringify(value)}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <svg
+          ref={svgRef}
+          width="100%"
+          height="100%"
+          viewBox={`0 0 ${MAP_WIDTH} 300`}
+          preserveAspectRatio="xMidYMid meet"
+        >
+          {/* Define marker for arrowheads */}
+          <defs>
+            {/* ... marker definitions ... */}
+            <marker
+              id="arrowhead-blue"
+              markerWidth="10"
+              markerHeight="7"
+              refX="0"
+              refY="3.5"
+              orient="auto"
+            >
+              <polygon points="0 0, 10 3.5, 0 7" fill="#0066CC" />
+            </marker>
+            <marker
+              id="arrowhead-red"
+              markerWidth="10"
+              markerHeight="7"
+              refX="0"
+              refY="3.5"
+              orient="auto"
+            >
+              <polygon points="0 0, 10 3.5, 0 7" fill="#CC0000" />
+            </marker>
+
+            {/* NEW: Filter for highlighting selected train */}
+            <filter
+              id="train-highlight"
+              x="-50%"
+              y="-50%"
+              width="200%"
+              height="200%"
+            >
+              <feDropShadow
+                dx="0"
+                dy="0"
+                stdDeviation="3"
+                floodColor="#FBBF24"
+                floodOpacity="0.8"
+              />
+            </filter>
+          </defs>
+
+          {/* --- Track Lines (Direct SVG Stroke) --- */}
+          {/* Northbound Track (Blue) */}
+          <line
+            x1={TRACK.start.x}
+            y1={TRACK.northboundY}
+            x2={TRACK.end.x}
+            y2={TRACK.northboundY}
+            className={`${THEME.track.northbound}`}
+            strokeWidth={4.5}
+          />
+          {/* Southbound Track (Red) */}
+          <line
+            x1={TRACK.start.x}
+            y1={TRACK.southboundY}
+            x2={TRACK.end.x}
+            y2={TRACK.southboundY}
+            className={`${THEME.track.southbound}`}
+            strokeWidth={4.5}
+          />
+
+          {/* --- U-Turn Tracks (Dashed) --- */}
+          <path
+            d={northTurnaroundPathD}
+            fill="none"
+            className={`${THEME.track.northbound} opacity-70`} // Use track color or a neutral one
+            strokeWidth={3}
+            strokeDasharray="4, 4" // Dashed line style
+          />
+          <path
+            d={southTurnaroundPathD}
+            fill="none"
+            className={`${THEME.track.southbound} opacity-70`} // Use track color or a neutral one
+            strokeWidth={3}
+            strokeDasharray="4, 4" // Dashed line style
+          />
+
+          {/* Render station labels first (behind stations/trains) */}
+          <g className="station-labels">{stationLabelElements}</g>
+
+          {/* Station Elements */}
+          <g className="stations">{stationElements}</g>
+
+          {/* Train Elements */}
+          <g className="trains">{trainElements}</g>
+
+          {/* --- Inactive Train Depot Area --- */}
+          <g className="inactive-depot">
+            <rect
+              // Calculate centered X based on dynamic width and center station
+              x={
+                CENTER_STATION_X -
+                (inactiveTrainCount > 0
+                  ? INACTIVE_TRAIN_SPACING * inactiveTrainCount + 30 // Increased padding
+                  : 80) / // Adjusted min width slightly
+                  2
+              }
+              y={DEPOT_CENTER_Y - (INACTIVE_TRAIN_SIZE + 30) / 2} // Increased padding, adjusted y
+              // Calculate width: padding + (space for each train) + padding
+              width={
+                inactiveTrainCount > 0
+                  ? INACTIVE_TRAIN_SPACING * inactiveTrainCount + 30 // Increased padding (15+15)
+                  : 80 // Adjusted min width slightly
+              }
+              height={INACTIVE_TRAIN_SIZE + 30} // INCREASED Height padding (15+15)
+              fill="rgba(150, 150, 150, 0.1)" // Semi-transparent grey
+              stroke="rgba(100, 100, 100, 0.3)" // Dim border
+              strokeWidth={1}
+              rx={5} // Rounded corners
+            />
+            <text
+              // Center the text horizontally above the box relative to Station 7
+              x={CENTER_STATION_X}
+              y={DEPOT_CENTER_Y - (INACTIVE_TRAIN_SIZE + 30) / 2 - 6} // Position text above the larger box
+              textAnchor="middle"
+              className="text-[10px] fill-gray-500 dark:fill-gray-400 font-medium"
+            >
+              Inactive Trains
+            </text>
+          </g>
+        </svg>
+
+        {/* Legend */}
+        <div
+          className={`absolute bottom-2 right-2 p-2 rounded shadow text-xs z-10 flex space-x-4 ${THEME.legend}`}
+        >
+          <div className="flex items-center">
+            {/* Use dedicated legend indicator theme color and increase height */}
+            <div
+              className={`w-4 h-2 mr-2 rounded-sm ${THEME.legendIndicator.southbound}`}
+            ></div>
+            {/* Use HTML text theme color */}
+            <span className={`${THEME.textHtmlPrimary}`}>Southbound</span>
+          </div>
+          <div className="flex items-center">
+            {/* Use dedicated legend indicator theme color and increase height */}
+            <div
+              className={`w-4 h-2 mr-2 rounded-sm ${THEME.legendIndicator.northbound}`}
+            ></div>
+            {/* Use HTML text theme color */}
+            <span className={`${THEME.textHtmlPrimary}`}>Northbound</span>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

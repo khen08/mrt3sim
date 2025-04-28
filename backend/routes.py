@@ -1,19 +1,24 @@
 import os
 import json
-from app import app
-from flask import request, jsonify
+from flask import request, jsonify, Blueprint
 from werkzeug.utils import secure_filename
 from prisma import Prisma
 
 # Import configuration and database logic
 from config import DEFAULT_SETTINGS, UPLOAD_FOLDER
 
+# Import database client
+from connect import db
+
 # Import Simulation Handler
 from simulation import Simulation
 
-# --- API Routes ---
+# --- Create Blueprint ---
+main_bp = Blueprint('main', __name__)
 
-@app.route('/upload_csv', methods=['POST'])
+# --- API Routes (using Blueprint) ---
+
+@main_bp.route('/upload_csv', methods=['POST'])
 def upload_csv():
     print("Received request for /upload_csv")
 
@@ -57,7 +62,7 @@ def upload_csv():
         print("Error: File object is invalid during /upload_csv")
         return jsonify({"error": "Invalid file object received"}), 400
 
-@app.route('/run_simulation', methods=['POST'])
+@main_bp.route('/run_simulation', methods=['POST'])
 def run_simulation():
     print("Received request for /run_simulation")
 
@@ -98,23 +103,48 @@ def run_simulation():
         else:
             return jsonify({"error": f"File '{secure_name}' not found. Please upload the file first."}), 404
 
-    try:        
-        print(config)
+    try:
+        print("--- Simulation Configuration ---")
+        print(json.dumps(config, indent=2))
+        print(f"--- Using data file: {secure_name} ---")
 
-        placeholder_timetable = [
-            {"message": "Simulation logic placeholder."},
-            {"using_preuploaded_file": filename},
-            {"received_config": config}
-        ]
-        #print("Returning placeholder simulation result from /run_simulation.")
-        return jsonify(placeholder_timetable), 200 # Or return 'results'
+        # Instantiate the Simulation class
+        sim = Simulation(csv_filename=secure_name, config=config)
+
+        # Run the simulation
+        # The sim.run() method now handles initialization, event processing,
+        # database interaction, and its own exception handling.
+        sim.run()
+
+        # Check if simulation ran successfully (indicated by simulation_id being set)
+        if sim.simulation_id:
+            print(f"Simulation run completed successfully for ID: {sim.simulation_id}")
+            # You might want to fetch some results from the DB here if needed
+            # For now, just return the ID and a success message.
+            return jsonify({
+                "message": "Simulation completed successfully.",
+                "simulation_id": sim.simulation_id
+                }), 200
+        else:
+            # sim.run() likely encountered an error and handled it internally
+            # (e.g., failed to create DB entry, deleted failed entry)
+            print("Error: Simulation run failed to produce a simulation ID.")
+            return jsonify({"error": "Simulation run failed. Check server logs for details."}), 500
 
     except Exception as e:
-        print(f"Error during simulation processing: {e}")
-        return jsonify({"error": f"Error during simulation processing: {e}"}), 500
+        # Catch any unexpected errors during instantiation or the run call itself
+        print(f"Error during simulation processing in /run_simulation route: {e}")
+        import traceback
+        print(traceback.format_exc())
+        # Attempt to delete the simulation entry if one was created before the error
+        # This is a safety net, sim.run() should handle its own cleanup on failure.
+        # We might not have sim.simulation_id here if the error was early.
+        # Consider more robust error handling/cleanup if necessary.
+        return jsonify({"error": f"An unexpected error occurred during simulation: {e}"}), 500
 
-@app.route('/get_default_settings', methods=['GET'])
+@main_bp.route('/get_default_settings', methods=['GET'])
 def get_default_settings():
+    print("--- Inside get_default_settings function ---")
     print("Request received for /get_default_settings")
     try:
         # DEFAULT_SETTINGS is imported from config
@@ -123,5 +153,49 @@ def get_default_settings():
     except Exception as e:
         print(f"Error fetching default settings: {e}")
         return jsonify({"error": f"Could not retrieve default settings: {e}"}), 500
+
+@main_bp.route('/get_timetable/<int:simulation_id>', methods=['GET', 'OPTIONS'])
+def get_timetable(simulation_id):
+    try:
+        # Add CORS headers for OPTIONS request
+        if request.method == 'OPTIONS':
+            response = jsonify({'status': 'ok'})
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+            response.headers.add('Access-Control-Allow-Methods', 'GET')
+            return response
+        
+        # Connect to database - ensure we have a connection
+        db.connect()
+        print(f"Database connected for timetable query (simulation_id: {simulation_id})")
+            
+        # Fetch timetable entries from the database
+        timetable_entries = db.train_movements.find_many(
+            where={'SIMULATION_ID': simulation_id},
+            order=[{'ARRIVAL_TIME': 'asc'}]
+        )
+        
+        # Convert to serializable format
+        serializable_entries = []
+        for entry in timetable_entries:
+            # Convert datetime objects to strings
+            entry_dict = entry.dict()
+            entry_dict['ARRIVAL_TIME'] = entry_dict['ARRIVAL_TIME'].strftime('%H:%M:%S')
+            if entry_dict['DEPARTURE_TIME']:
+                entry_dict['DEPARTURE_TIME'] = entry_dict['DEPARTURE_TIME'].strftime('%H:%M:%S')
+            serializable_entries.append(entry_dict)
+        
+        print(f"Retrieved {len(serializable_entries)} timetable entries for simulation ID {simulation_id}")
+        return jsonify(serializable_entries)
+    except Exception as e:
+        print(f"Error fetching timetable for simulation ID {simulation_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        # Always ensure we disconnect (to prevent connection leaks)
+        try:
+            db.disconnect()
+            print("Database disconnected after timetable query")
+        except Exception as disconnect_error:
+            print(f"Warning: Error disconnecting from database: {disconnect_error}")
 
 # Note: The app is run from backend/app.py, not here.

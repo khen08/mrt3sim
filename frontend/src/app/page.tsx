@@ -9,11 +9,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  IconTrain,
   IconUpload,
   IconSettings,
-  IconMap,
-  IconInfoCircle,
   IconPlayerPlay,
   IconLoader2,
   IconAlertCircle,
@@ -24,11 +21,10 @@ import {
 import CsvUpload from "@/components/CsvUpload";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import MrtMap from "@/components/MrtMap";
 import SimulationController from "@/components/SimulationController";
 import StationInfo from "@/components/StationInfo";
-import { TrainSchedule } from "@/components/MrtMap";
+import TrainInfo from "@/components/TrainInfo";
 import { parseTime, formatTime } from "@/lib/timeUtils";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -73,6 +69,17 @@ interface SimulationInput {
   config: SimulationSettings | null;
 }
 
+// Define the new interface for data passed to TrainInfo
+interface TrainInfoData {
+  id: number;
+  direction: "northbound" | "southbound";
+  status: string; // e.g., "At Station", "In Transit", "Turning Around", "Inactive"
+  load: number; // Hardcoded 0 for now
+  capacity: number;
+  relevantStationName: string | null; // Current or next station
+  scheduledTime: string | null; // Arrival or Departure time
+}
+
 // Define peak hour ranges (also needed here for setting initial time)
 const PEAK_HOURS = {
   AM: { start: "07:00:00", end: "09:00:00" },
@@ -104,6 +111,9 @@ export default function Home() {
   const [simulationTime, setSimulationTime] = useState(PEAK_HOURS.AM.start); // Default start time
   const [isSimulationRunning, setIsSimulationRunning] = useState(false);
   const [selectedStation, setSelectedStation] = useState<number | null>(null);
+  const [selectedTrainId, setSelectedTrainId] = useState<number | null>(null);
+  const [selectedTrainDetails, setSelectedTrainDetails] =
+    useState<TrainInfoData | null>(null);
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
 
   // State for API call
@@ -279,6 +289,8 @@ export default function Home() {
         // Reset things related to the previous simulation run
         setSimulationResult(null);
         setSelectedStation(null);
+        setSelectedTrainId(null);
+        setSelectedTrainDetails(null);
         setSimulationTime(PEAK_HOURS.AM.start); // Reset time to default start
         setIsSimulationRunning(false); // Ensure simulation is paused
         setApiError(null); // Clear any previous errors
@@ -290,6 +302,8 @@ export default function Home() {
         // Optionally clear more state if needed when file is removed
         setSimulationResult(null);
         setSelectedStation(null);
+        setSelectedTrainId(null);
+        setSelectedTrainDetails(null);
         setIsSimulationRunning(false);
       }
     },
@@ -420,8 +434,33 @@ export default function Home() {
       setSelectedStation((prevSelected) =>
         prevSelected === stationId ? null : stationId
       );
+      // Deselect train when station is clicked
+      setSelectedTrainId(null);
+      setSelectedTrainDetails(null);
     },
     [] // Removed selectedStation dependency, toggle logic doesn't need it
+  );
+
+  // --- NEW: Handle Train Click from Map --- //
+  const handleTrainClick = useCallback(
+    (trainId: number, details: TrainInfoData) => {
+      console.log("Train clicked:", trainId, "Details:", details);
+      // Toggle selection: If same train clicked, deselect
+      setSelectedTrainId((prevSelected) =>
+        prevSelected === trainId ? null : trainId
+      );
+      // Set details only if selecting, clear if deselecting
+      if (selectedTrainId === trainId) {
+        // If clicking the already selected train, deselect details
+        setSelectedTrainDetails(null);
+      } else {
+        // Otherwise, set the new details
+        setSelectedTrainDetails(details);
+      }
+      // Deselect station when train is clicked
+      setSelectedStation(null);
+    },
+    [] // No dependencies needed
   );
 
   // Call the /run_simulation API with JSON data
@@ -530,15 +569,71 @@ export default function Home() {
         );
       }
 
+      // The response could come back in various formats, handle accordingly
       const resultData = await response.json();
-      console.log("Simulation API Success:", resultData);
+      console.log("Simulation API Response:", resultData);
 
-      if (Array.isArray(resultData)) {
-        // Check if it's an array (basic validation)
+      let timetableData;
+
+      // Check for known response formats based on simulation_id success message or actual timetable array
+      if (resultData.simulation_id) {
+        // Success message with simulation_id, need to fetch timetable data
+        console.log("Simulation completed with ID:", resultData.simulation_id);
+
+        // Additional call to fetch the timetable data for this simulation
+        try {
+          const timetableResponse = await fetch(
+            `http://localhost:5001/get_timetable/${resultData.simulation_id}`,
+            {
+              method: "GET",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            }
+          );
+
+          if (!timetableResponse.ok) {
+            throw new Error(
+              `Failed to fetch timetable: HTTP ${timetableResponse.status}`
+            );
+          }
+
+          timetableData = await timetableResponse.json();
+          console.log("Timetable data fetched:", timetableData);
+        } catch (timetableError: any) {
+          console.error("Error fetching timetable:", timetableError);
+          toast({
+            title: "Timetable Fetch Error",
+            description: `Simulation completed but couldn't fetch timetable: ${timetableError.message}`,
+            variant: "destructive",
+          });
+          // Continue with empty array as fallback
+          timetableData = [];
+        }
+      } else if (Array.isArray(resultData)) {
+        // Direct timetable array in response
+        timetableData = resultData;
+      } else if (
+        resultData.message === "Simulation completed successfully." &&
+        resultData.simulation_id
+      ) {
+        // Success message with simulation ID
+        console.log("Simulation completed with ID:", resultData.simulation_id);
+        // Use empty array as placeholder since we don't have actual data yet
+        timetableData = [];
+      } else {
+        // Unknown format, log and use empty array
+        console.warn("Unexpected response format:", resultData);
+        timetableData = [];
+      }
+
+      if (Array.isArray(timetableData)) {
+        // We have a valid array of timetable entries
         console.log(
-          `Updating simulationResult state with ${resultData.length} entries.`
+          `Updating simulationResult state with ${timetableData.length} entries.`
         );
-        setSimulationResult(resultData);
+        setSimulationResult(timetableData);
+
         // Reset time to the start of the AM Peak after successful run
         const defaultPeakStart = PEAK_HOURS.AM.start;
         console.log(
@@ -547,23 +642,25 @@ export default function Home() {
         setSimulationTime(defaultPeakStart);
         setIsSimulationRunning(false); // Start paused
         setMapRefreshKey((prev) => prev + 1); // Refresh map
+
         toast({
           title: "Simulation Complete",
-          description: `Timetable generated successfully (${resultData.length} entries).`,
+          description: `Timetable generated successfully (${timetableData.length} entries).`,
           variant: "default",
         });
       } else {
-        // Handle cases where API returns success but unexpected data format
-        console.warn("Simulation API returned non-array data:", resultData);
-        setSimulationResult([]); // Set to empty array to indicate run completed but no schedule
+        // Handle cases where we have a success response but no timetable data yet
+        console.warn("No timetable data available yet:", timetableData);
+        setSimulationResult([]); // Set to empty array
         setApiError(
-          "Simulation successful, but returned unexpected data format."
+          "Simulation successful, but timetable data not available yet."
         );
+
         toast({
-          title: "Simulation Complete (Unexpected Data)",
+          title: "Simulation Complete (No Data)",
           description:
-            "The simulation ran successfully but returned data in an unexpected format.",
-          variant: "default", // Changed from warning
+            "The simulation ran successfully but no timetable data is available yet.",
+          variant: "default",
         });
       }
     } catch (error: any) {
@@ -922,6 +1019,8 @@ export default function Home() {
                   key={mapRefreshKey}
                   selectedStation={selectedStation}
                   onStationClick={handleStationClick}
+                  selectedTrainId={selectedTrainId}
+                  onTrainClick={handleTrainClick}
                   simulationTime={simulationTime}
                   isRunning={isSimulationRunning}
                   simulationTimetable={simulationResult}
@@ -936,6 +1035,7 @@ export default function Home() {
                     })
                   )}
                   turnaroundTime={simulationSettings?.turnaroundTime}
+                  maxCapacity={simulationSettings?.maxCapacity ?? 0}
                 />
               </div>
 
@@ -952,6 +1052,20 @@ export default function Home() {
                   simulationResult && ( // Render only if selected and results exist
                     <StationInfo {...stationData} />
                   )}
+              </div>
+
+              {/* Train details - NEW */}
+              <div
+                className={cn(
+                  "flex-shrink-0 transition-all duration-300 ease-in-out overflow-hidden",
+                  selectedTrainId !== null && selectedTrainDetails !== null
+                    ? "opacity-100 max-h-[500px] mt-4" // Show train info
+                    : "opacity-0 max-h-0 mt-0 pointer-events-none" // Hide train info
+                )}
+              >
+                {selectedTrainId !== null && selectedTrainDetails !== null && (
+                  <TrainInfo {...selectedTrainDetails} /> // Display TrainInfo component
+                )}
               </div>
             </div>
 

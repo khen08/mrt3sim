@@ -416,6 +416,7 @@ class Train:
         
         self.direction = "southbound"
         self.current_station = current_station
+        self.is_active = True
         self.loop_count = 0
         
         self.arrival_time = None
@@ -582,6 +583,7 @@ class EventHandler:
             # Remove train from active list FIRST
             if train in self.simulation.active_trains:
                 self.simulation.active_trains.remove(train)
+                train.is_active = False # Set the train's flag to inactive
                 # Decrement withdrawal counter
                 self.simulation.trains_to_withdraw_count -= 1
 
@@ -600,7 +602,7 @@ class EventHandler:
                 print(f"WARNING: Train {train.train_id} was targeted for withdrawal upon arrival but not found in active_trains list.")
             
             # DO NOT schedule next event (turnaround/departure) for this train.
-            return 
+            return # Add this return statement
         # === END WITHDRAWAL CHECK ===
         
         # --- Normal Arrival Processing (If not withdrawn) ---
@@ -636,6 +638,12 @@ class EventHandler:
     def _handle_departure(self, event):
         train = event.train
         station = event.station
+        
+        # Check if the train is still active before proceeding
+        if not train.is_active: # Check the train's own flag
+            #print(f"DEBUG: Ignoring departure event for inactive train {train.train_id} at {event.time}")
+            return # Ignore event for inactive train
+        
         next_station = self.simulation.get_station_by_id(station.station_id + 1) if train.direction == "southbound" else self.simulation.get_station_by_id(station.station_id - 1)
         departure_time = event.time
         next_segment = station.get_next_segment(train.direction)
@@ -772,6 +780,12 @@ class EventHandler:
     def _handle_turnaround(self, event):
         train = event.train
         station = event.station
+        
+        # Check if the train is still active before proceeding
+        if not train.is_active: # Check the train's own flag
+            #print(f"DEBUG: Ignoring turnaround event for inactive train {train.train_id} at {event.time}")
+            return # Ignore event for inactive train
+        
         departure_time = event.time
         
         # Record Arrival before Turnaround
@@ -1245,7 +1259,8 @@ class Simulation:
         """Run the simulation until the end time."""
         print("Simulation running...")
         start_run_time = py_time.perf_counter() # Record start time
-        schemes = ["Regular", "Skip-stop"] # Add Skip-stop
+        # schemes = ["Regular", "Skip-stop"] # Add Skip-stop
+        schemes = ["Regular"] # Temporarily removing Skip-stop scheme
         self._create_simulation_entry()
         #'''
         for scheme_type in schemes:
