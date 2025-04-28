@@ -41,9 +41,9 @@ def instance_df(obj):
     for var_name, var_value in obj.__dict__.items():
         # Convert lists/dicts/objects to string representation for DataFrame compatibility
         if isinstance(var_value, (list, dict)) or not isinstance(var_value, (int, float, str, bool, type(None))):
-             data[var_name] = str(var_value)
+            data[var_name] = str(var_value)
         else:
-             data[var_name] = var_value
+            data[var_name] = var_value
 
     # Create a DataFrame - wrap values in lists for single-row DataFrame
     df_data = {k: [v] for k, v in data.items()}
@@ -74,9 +74,9 @@ def instances_to_df(obj_list):
         for var_name, var_value in obj.__dict__.items():
             # Convert lists/dicts/objects to string representation for DataFrame compatibility
             if isinstance(var_value, (list, dict)) or not isinstance(var_value, (int, float, str, bool, type(None))):
-                 data[var_name] = str(var_value)
+                data[var_name] = str(var_value)
             else:
-                 data[var_name] = var_value
+                data[var_name] = var_value
         all_data.append(data)
 
     # Create a DataFrame from the list of dictionaries
@@ -94,7 +94,8 @@ class TimetableEntry:
                 travel_time,
                 passengers_boarded,
                 passengers_alighted,
-                current_station_passenger_count
+                current_station_passenger_count,
+                train_status
             ):
         """
         Initialize a Timetable Entity
@@ -120,6 +121,7 @@ class TimetableEntry:
         self.passengers_boarded = passengers_boarded
         self.passengers_alighted = passengers_alighted
         self.current_station_passenger_count = current_station_passenger_count
+        self.train_status = train_status
         
 class TrainSpec:
     def __init__(self, max_capacity, cruising_speed, passthrough_speed, accel_rate, decel_rate):
@@ -547,9 +549,10 @@ class EventHandler:
             # Actual withdrawal logic is handled in _handle_arrival for Station 1 northbound arrivals.
         
     def _record_timetable_entry(self, train, station, arrival_time, departure_time, 
-                                travel_time, boarded=0, alighted=0):
+                                travel_time, train_status, boarded=0, alighted=0):
             """Centralized method to log timetable entries."""
             entry = TimetableEntry(
+                service_type=train.service_type,
                 train_id= train.train_id,
                 station_id = station.station_id,
                 arrival_time = arrival_time,
@@ -558,7 +561,8 @@ class EventHandler:
                 direction = train.direction,
                 passengers_boarded = boarded,
                 passengers_alighted = alighted,
-                current_station_passenger_count = len(station.waiting_passengers)
+                current_station_passenger_count = len(station.waiting_passengers),
+                train_status=train_status
             )
             self.simulation.timetables.append(entry)
 
@@ -572,40 +576,36 @@ class EventHandler:
             station == self.simulation.stations[0] and # Station 1 (North Ave)
             train.direction == "northbound"):
             
-            #print(f"\n--- Train Withdrawal Process Start (Time: {arrival_time}) ---")
-            #print(f"Train {train.train_id} arrived at Station 1 northbound and is targeted for withdrawal.")
-            #print(f"Required withdrawal count: {self.simulation.trains_to_withdraw_count}")
-            #print(f"Active trains BEFORE withdrawal: {[t.train_id for t in self.simulation.active_trains]}")
+            # Calculate end time including final dwell
+            end_of_service_time = arrival_time + timedelta(seconds=self.simulation.dwell_time)
 
-            # Remove train from active list
+            # Remove train from active list FIRST
             if train in self.simulation.active_trains:
                 self.simulation.active_trains.remove(train)
                 # Decrement withdrawal counter
                 self.simulation.trains_to_withdraw_count -= 1
-                #print(f"Successfully withdrew Train {train.train_id}.")
-                #print(f"Active trains AFTER withdrawal: {[t.train_id for t in self.simulation.active_trains]}")
-                #print(f"Remaining trains to withdraw: {self.simulation.trains_to_withdraw_count}")
-                # Record final arrival but do not schedule turnaround/departure
+
+                # Record final arrival with departure time reflecting end of dwell
                 self._record_timetable_entry(
                     train=train, 
                     station=station, 
-                    arrival_time=arrival_time, 
-                    departure_time="WITHDRAWN", # Indicate withdrawn status
-                    travel_time=train.current_journey_travel_time # Log final travel time
+                    arrival_time=arrival_time, # Actual arrival time
+                    departure_time=end_of_service_time, # Time after final dwell
+                    travel_time=train.current_journey_travel_time, # Log final travel time
+                    train_status="inactive" # Set status to inactive
                 )
                 # Clear the platform the train arrived on
                 station.platforms[train.direction] = None
             else:
                 print(f"WARNING: Train {train.train_id} was targeted for withdrawal upon arrival but not found in active_trains list.")
             
-            #print(f"--- Train Withdrawal Process End ---")
-            # DO NOT schedule next event (turnaround) for this train.
+            # DO NOT schedule next event (turnaround/departure) for this train.
             return 
         # === END WITHDRAWAL CHECK ===
         
         # --- Normal Arrival Processing (If not withdrawn) ---
         # Calculate departure time based on dwell time
-        departure_time = arrival_time + self.simulation.dwell_time
+        departure_time = arrival_time + timedelta(seconds=self.simulation.dwell_time)
         ##train.arrival_time = arrival_time
         train.current_station = station
         
@@ -642,10 +642,11 @@ class EventHandler:
         
         # Check for resource availability
         if next_station.platforms[train.direction] is None and next_segment.is_available():
-            #======= HANDLE NEWLY INSERTED TRAINS =======#
+            #======= HANDLE TRAIN STATUS & TRAVEL TIME =======#
+            train_status = "active"
             if train.last_departure_time is None:
-                travel_time = "INITIAL DEPARTURE"
-                train.arrival_time = departure_time - self.simulation.dwell_time
+                travel_time = 0 # Initial departure has 0 travel time for this leg
+                train.arrival_time = departure_time - timedelta(seconds=self.simulation.dwell_time)
             else: 
                 travel_time = train.current_journey_travel_time
             
@@ -668,7 +669,8 @@ class EventHandler:
                 station=station, 
                 arrival_time = train.arrival_time,
                 departure_time = departure_time, 
-                travel_time=travel_time,
+                travel_time=travel_time, # Use calculated travel_time
+                train_status=train_status, # Pass the status
                 boarded=boarded, 
                 alighted=alighted
             )
@@ -763,7 +765,7 @@ class EventHandler:
                 )
             )
 
-            if time.event == final_departure_time:
+            if event.time == final_departure_time:
                 print("LOOPING ERROR STARTS ENDING HERE")
                 self.simulation.event_queue = PriorityQueue()
             
@@ -779,6 +781,7 @@ class EventHandler:
                 arrival_time = train.arrival_time,
                 departure_time = departure_time, 
                 travel_time= train.current_journey_travel_time,
+                train_status="active", # Set status to active
                 boarded=0, 
                 alighted=0
             )
@@ -790,9 +793,9 @@ class EventHandler:
         train.change_direction()
         
         if event.time <= self.simulation.end_time:
-            train.arrival_time = departure_time + self.simulation.turnaround_time
-            train.current_journey_travel_time = self.simulation.turnaround_time.total_seconds()
-            departure_time = train.arrival_time + self.simulation.dwell_time
+            train.arrival_time = departure_time + timedelta(seconds=self.simulation.turnaround_time)
+            train.current_journey_travel_time = self.simulation.turnaround_time
+            departure_time = train.arrival_time + timedelta(seconds=self.simulation.dwell_time)
             self.simulation.schedule_event(
                 Event(
                     departure_time, 
@@ -854,7 +857,7 @@ class EventHandler:
                 station=station
             )
         )
-               
+
 class Simulation:
     def __init__(self, csv_filename, config):
         self.simulation_id = None
@@ -965,14 +968,14 @@ class Simulation:
         if not debug and not self.is_staging: 
             stations_for_db = []
             for station in self.stations:
-                 stations_for_db.append({
-                     'SIMULATION_ID': self.simulation_id,
-                     'STATION_ID': station.station_id,
-                     'STATION_NAME': station.name,
-                     'STATION_TYPE': station.station_type,
-                     'IS_TERMINUS': station.is_terminus,
-                     'ZONE_LENGTH': station.zone_length
-                 })
+                stations_for_db.append({
+                    'SIMULATION_ID': self.simulation_id,
+                    'STATION_ID': station.station_id,
+                    'STATION_NAME': station.name,
+                    'STATION_TYPE': station.station_type,
+                    'IS_TERMINUS': station.is_terminus,
+                    'ZONE_LENGTH': station.zone_length
+                })
             
             if stations_for_db:
                 try:
@@ -1069,23 +1072,23 @@ class Simulation:
             train_specs_entry_id = None
             try:
                 train_specs_entry = db.train_specs.create(
-                     data={
-                         'SIMULATION_ID': self.simulation_id,
-                         'SPEC_NAME': 'REGULAR TRAIN',
-                         'MAX_CAPACITY': train_specs_obj.max_capacity,
-                         'CRUISING_SPEED': self.config['maxSpeed'], # Use original config value
-                         'PASSTHROUGH_SPEED': 20,
-                         'ACCEL_RATE': train_specs_obj.accel_rate,
-                         'DECEL_RATE': train_specs_obj.decel_rate,
-                     }
-                 )
+                    data={
+                        'SIMULATION_ID': self.simulation_id,
+                        'SPEC_NAME': 'REGULAR TRAIN',
+                        'MAX_CAPACITY': train_specs_obj.max_capacity,
+                        'CRUISING_SPEED': self.config['maxSpeed'], # Use original config value
+                        'PASSTHROUGH_SPEED': 20,
+                        'ACCEL_RATE': train_specs_obj.accel_rate,
+                        'DECEL_RATE': train_specs_obj.decel_rate,
+                    }
+                )
                 
                 train_specs_entry_id = train_specs_entry.SPEC_ID
                 print(f"\tSUCCESSFULLY CREATED TRAIN SPECS ENTRY IN DB WITH ID: {train_specs_entry_id}")
             except Exception as e:
-                 print(f"\tERROR during train_specs upsert/create: {e}")
-                 # Handle error appropriately - maybe cannot proceed without spec_id?
-                 return # Exit if spec creation failed
+                print(f"\tERROR during train_specs upsert/create: {e}")
+                # Handle error appropriately - maybe cannot proceed without spec_id?
+                return # Exit if spec creation failed
 
             # 4b. Prepare and Bulk Insert Train Data
             if train_specs_entry_id: # Proceed only if spec ID was obtained
@@ -1205,8 +1208,8 @@ class Simulation:
             print(f"Warning: Found {invalid_rows.sum()} rows with invalid station IDs. These rows will be skipped.")
             melted_df = melted_df[~invalid_rows]
         if melted_df.empty:
-             print("Warning: No valid passenger demand remaining after station ID validation.")
-             return
+            print("Warning: No valid passenger demand remaining after station ID validation.")
+            return
         melted_df['ORIGIN_STATION_TYPE'] = melted_df['ORIGIN_STATION_ID'].map(station_type_map)
         melted_df['DESTINATION_STATION_TYPE'] = melted_df['DESTINATION_STATION_ID'].map(station_type_map)
         melted_df['TRIP_TYPE'] = np.where(
@@ -1227,10 +1230,10 @@ class Simulation:
         ]]
         passenger_records = final_passenger_data.to_dict('records')
         if passenger_records:
-             try:
-                 db.passenger_demand.create_many(data=passenger_records, skip_duplicates=True)
-             except Exception as e:
-                 print(f"Error during passenger bulk insert: {e}")
+            try:
+                db.passenger_demand.create_many(data=passenger_records, skip_duplicates=True)
+            except Exception as e:
+                print(f"Error during passenger bulk insert: {e}")
         else:
             print("No passenger records to insert.")
         
@@ -1249,22 +1252,22 @@ class Simulation:
             try:
                 self.initialize(scheme_type)
 
-                #while self.current_time < self.end_time and not self.event_queue.empty():
-                #    priority, event = self.event_queue.get()  # Get the next event
-                #    # Ensure we don't process events past the end time
-                #    if event.time >= self.end_time:
-                #        self.current_time = event.time # Update time but don't process
-                #        continue # Skip processing this event
-#
-                #    self.current_time = event.time
-                #    self.event_handler.process_event(event)
+                while self.current_time < self.end_time and not self.event_queue.empty():
+                    priority, event = self.event_queue.get()  # Get the next event
+                    # Ensure we don't process events past the end time
+                    if event.time >= self.end_time:
+                        self.current_time = event.time # Update time but don't process
+                        continue # Skip processing this event
+
+                    self.current_time = event.time
+                    self.event_handler.process_event(event)
 
                 # Indicate success for this simulation ID run
                 print(f"Simulation for ID {self.simulation_id} completed up to {self.current_time}.")
                 print(f"Generated {len(self.timetables)} TRAIN_MOVEMENTS entries.")
 
                 # Save results before potentially moving to the next simulation_id or disconnecting
-                #self.save_timetable_to_db()
+                self.save_timetable_to_db()
 
             except Exception as e:
                 print(f"Error during simulation run for ID {self.simulation_id}, Scheme: {scheme_type}: {e}")
@@ -1320,15 +1323,13 @@ class Simulation:
 
             # Skip entries with None arrival time if required by DB schema
             if entry.arrival_time is None and entry.departure_time is None: # Example condition
-                 #print(f"Skipping entry for Train {entry.train_id} at Station {entry.station_id} due to missing times.")
-                 skipped_count += 1
-                 continue
+                #print(f"Skipping entry for Train {entry.train_id} at Station {entry.station_id} due to missing times.")
+                skipped_count += 1
+                continue
             
             travel_time_db = 0 # Default to 0
             if isinstance(entry.travel_time, (int, float)):
                 travel_time_db = int(entry.travel_time)
-            elif entry.travel_time == "INITIAL DEPARTURE":
-                travel_time_db = 0
 
             # Adjust these keys based on your actual Prisma schema for TRAIN_MOVEMENTS
             data = {
@@ -1337,7 +1338,7 @@ class Simulation:
                 "TRAIN_ID": entry.train_id,
                 "STATION_ID": entry.station_id,
                 "DIRECTION": entry.direction,
-                "TRAIN_STATUS": "PLACEHOLDER",#entry.train_status,
+                "TRAIN_STATUS": entry.train_status,
                 "ARRIVAL_TIME": entry.arrival_time,
                 "DEPARTURE_TIME": departure_time_db,
                 "TRAVEL_TIME_SECONDS": travel_time_db, 
@@ -1348,7 +1349,7 @@ class Simulation:
             data_to_insert.append(data)
 
         if skipped_count > 0:
-             print(f"Skipped {skipped_count} entries due to missing time data.")
+            print(f"Skipped {skipped_count} entries due to missing time data.")
 
         if not data_to_insert:
             print("No valid entries remaining to insert after filtering.")
@@ -1505,8 +1506,8 @@ class Simulation:
             datetime_str = df.iloc[0]['DateTime']
 
             if pd.isna(datetime_str):
-                 print(f"Error: First row of 'DateTime' column in '{file_path}' is empty.")
-                 return None
+                print(f"Error: First row of 'DateTime' column in '{file_path}' is empty.")
+                return None
 
             try:
                 # Parse the datetime string and extract the date part
@@ -1522,8 +1523,8 @@ class Simulation:
             print(f"Error: File not found at '{self.file_path}'.")
             return None
         except pd.errors.EmptyDataError:
-             print(f"Error: CSV file '{self.file_path}' is empty.")
-             return None
+            print(f"Error: CSV file '{self.file_path}' is empty.")
+            return None
         except Exception as e:
             print(f"An unexpected error occurred while reading date from '{self.file_path}': {e}")
             return None
