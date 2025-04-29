@@ -7,7 +7,7 @@ import math
 import time as py_time
 
 
-debug = False
+debug = True
 if not debug:
     from connect import db
 else:
@@ -582,6 +582,8 @@ class EventHandler:
             self._handle_turnaround(event)
         elif event.event_type == "service_period_change":
             self._handle_service_period_change(event)
+        elif event.event_type == "train_insertion":
+            self._handle_insertion(event)
             #print(
             #    "\nSERVICE PERIOD CHANGE: ",
             #    event.time.strftime('%H:%M:%S'),
@@ -623,9 +625,10 @@ class EventHandler:
                 self.simulation.schedule_event(
                     Event(
                         time=departure_time,
-                        event_type="train_departure",
+                        event_type="train_insertion",
                         train=train,
-                        station=train.current_station
+                        station=train.current_station,
+                        segment=self.simulation.get_segment_by_id((2,1))
                     )
                 )
                 
@@ -736,6 +739,31 @@ class EventHandler:
                     station=station
                 )
             )
+    
+    def _handle_insertion(self, event):
+        train = event.train
+        segment = event.segment
+        station = event.station
+        
+        # Check if the train is still active before proceeding
+        train.status = "insertion"
+
+        if segment.enter(train):
+            station.platforms[train.direction] = train
+            train.current_journey_travel_time = 0
+            train.arrival_time = event.time + timedelta(minutes=1)
+            
+            #self.simulation.schedule_event(
+            #    Event(
+            #        time=event.time,
+            #        event_type="train_arrival",
+            #        train=train,
+            #        station=station,
+            #    )
+            #)
+        else:
+            # TODO: Handle Insertion reschedule
+            print(f"DEBUG: Train {train.train_id} failed to enter segment {segment.segment_id} at {event.time}")
         
     def _handle_departure(self, event):
         train = event.train
@@ -754,11 +782,7 @@ class EventHandler:
         if next_station.platforms[train.direction] is None and next_segment.is_available():
             #======= HANDLE TRAIN STATUS & TRAVEL TIME =======#
             train_status = "active"
-            if train.last_departure_time is None:
-                travel_time = 0 # Initial departure has 0 travel time for this leg
-                train.arrival_time = departure_time - timedelta(seconds=self.simulation.dwell_time)
-            else: 
-                travel_time = train.current_journey_travel_time
+            travel_time = train.current_journey_travel_time
             
             #======= BOARD/ALIGHT PASSENGERS =======#
             alighted, boarded = station.process_passenger_exchange(
@@ -958,6 +982,8 @@ class EventHandler:
                     segment= segment
                 )
             )
+        else:
+            print(f"DEBUG: Train {train.train_id} failed to enter segment {segment.segment_id} at {current_time}")
     
     def _handle_segment_exit(self, event):
         train = event.train
@@ -1019,7 +1045,7 @@ class Simulation:
         self._initialize_track_segments() # Track segments are the same for all schemes
         self._initialize_trains(scheme_type)
         self._initialize_service_periods(scheme_type)
-        self._initialize_passengers_demand()
+        #self._initialize_passengers_demand()
 
         # Create station map for efficient lookup
         self.station_type_map = {s.station_id: s.station_type for s in self.stations}
@@ -1245,12 +1271,9 @@ class Simulation:
             # Schedule service period start event
             start_datetime = datetime.combine(
                 self.current_time.date(),
-                time(hour=period["start_hour"], minute=0, second=0),
+                time(hour=(period["start_hour"] - 1), minute=30, second=0),
             )  # Set the datetime by the period start hour in config
-            
-            if i != 0:
-                start_datetime -= timedelta(minutes=30)
-
+        
             # Schedule Start of Event
             self.schedule_event(
                 Event(
@@ -1406,11 +1429,12 @@ class Simulation:
         print("Simulation running...")
         start_run_time = py_time.perf_counter() # Record start time
         # schemes = ["Regular", "Skip-stop"] # Add Skip-stop
-        schemes = ["Skip-stop"] # Temporarily removing Skip-stop scheme
+        schemes = ["Regular"] # Temporarily removing Skip-stop scheme
         self._create_simulation_entry()
         #'''
         for scheme_type in schemes:
             try:
+                print(f"\n[RUNNING SIMULATION FOR SCHEME TYPE: {scheme_type}]")
                 self.scheme_type = scheme_type
                 self.initialize(scheme_type)
 
@@ -1419,6 +1443,11 @@ class Simulation:
                     # Ensure we don't process events past the end time
                     if event.time >= self.end_time:
                         self.current_time = event.time # Update time but don't process
+                        if self.current_time == datetime.combine(               
+                            self.current_time.date(),               
+                            time(hour=5, minute=30)             
+                        ):              
+                            self.event_queue = PriorityQueue()              
                         continue # Skip processing this event
 
                     self.current_time = event.time
@@ -1572,6 +1601,10 @@ class Simulation:
     def get_station_by_id(self, station_id):
         """Fast O(1) station lookup by ID."""
         return next((s for s in self.stations if s.station_id == station_id), None)
+    
+    def get_segment_by_id(self, segment_id):
+        """Fast O(1) segment lookup by ID."""
+        return next((s for s in self.track_segments if s.segment_id == segment_id), None)
     
     def calculate_loop_time(self, train):
         total_time = 0
@@ -1733,7 +1766,7 @@ class Simulation:
         
 if __name__ == "__main__":
     """ Method to run the simulation as a standalone script"""
-    debug = False
+    debug = True
     sample_config = {
         'acceleration': 0.8, 
         'deceleration': 0.8, 
