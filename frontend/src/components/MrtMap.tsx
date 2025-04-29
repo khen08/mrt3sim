@@ -626,11 +626,12 @@ export default function MrtMap({
         if (isTurnaround) {
           // --- TURNING AROUND ---
           console.log(
-            `Train ${trainId}: Turning around at station ${eventA.STATION_ID}.`
+            `Train ${trainId}: Turning around at station ${eventA.STATION_ID}. Turnaround time: ${turnaroundTime}s`
           );
+          // Calculate progress using the turnaroundTime prop instead of segmentDuration
           const progress =
-            segmentDuration > 0
-              ? Math.min(1, timeInSegment / segmentDuration)
+            turnaroundTime > 0
+              ? Math.min(1, timeInSegment / turnaroundTime)
               : 0;
           const isNorthTurnaround = eventA.STATION_ID === NORTH_TERMINUS_ID;
           const uturnCenterX = isNorthTurnaround
@@ -735,6 +736,7 @@ export default function MrtMap({
         turningAroundTrains.length > 0
           ? turningAroundTrains.join(", ")
           : "None",
+      "Turnaround Time": turnaroundTime,
     };
 
     // Update state only if necessary
@@ -747,7 +749,13 @@ export default function MrtMap({
     setDebugInfo(currentDebugInfo);
 
     console.log(`[MapEffect] Update End - SimTime: ${simulationTime}`);
-  }, [simulationTimetable, simulationTime, stations, trainEventPairs]);
+  }, [
+    simulationTimetable,
+    simulationTime,
+    stations,
+    trainEventPairs,
+    turnaroundTime,
+  ]);
 
   // Memoize station elements to prevent unnecessary re-renders
   const stationElements = useMemo(() => {

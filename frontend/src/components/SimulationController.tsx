@@ -33,7 +33,7 @@ interface SimulationControllerProps {
 
 // Define peak hour ranges
 const PEAK_HOURS = {
-  AM: { start: "07:00:00", end: "09:00:00" },
+  AM: { start: "04:31:00", end: "10:00:00" },
   PM: { start: "17:00:00", end: "20:00:00" },
 };
 

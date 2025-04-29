@@ -167,7 +167,7 @@ class Passenger_Demand:
             total_wait_seconds += (self.departure_from_origin_time - self.arrival_time).total_seconds()
         # Transfer Wait (if applicable)
         if self.trip_type == 'TRANSFER' and self.departure_from_transfer_time and self.arrival_at_transfer_time:
-            total_wait_seconds += (self.departure_from_transfer_time - self.arrival_at_transfer_time).total_seconds()
+             total_wait_seconds += (self.departure_from_transfer_time - self.arrival_at_transfer_time).total_seconds()
         
         self.wait_time = total_wait_seconds if total_wait_seconds >= 0 else 0 # Store the sum
 
@@ -278,10 +278,10 @@ class Station:
                 self.waiting_demand.append(demand) 
             # Case 3: Transfer trip arrives at final destination (after leg 2)
             elif demand.trip_type == 'TRANSFER' and demand.destination_station_id == self.station_id and demand.status == "in_transit_leg2":
-                alight_here = True
-                demand.status = "completed"
-                demand.completion_time = train_arrival_time
-                demand.calculate_travel_time() 
+                 alight_here = True
+                 demand.status = "completed"
+                 demand.completion_time = train_arrival_time
+                 demand.calculate_travel_time() 
 
             if alight_here:
                 passengers_alighted_count += demand.passenger_count
@@ -294,7 +294,7 @@ class Station:
             can_train_stop_here = (train.service_type == self.station_type or train.service_type == "AB" or self.station_type == "AB")
             
             if not can_train_stop_here:
-                continue # Train doesn't stop here, skip to next demand
+                 continue # Train doesn't stop here, skip to next demand
 
             # Condition 1: Passenger group waiting for their first train
             if demand.status == "waiting_at_origin" and demand.arrival_time <= train_departure_time:
@@ -582,8 +582,6 @@ class EventHandler:
             self._handle_turnaround(event)
         elif event.event_type == "service_period_change":
             self._handle_service_period_change(event)
-        elif event.event_type == "train_insertion":
-            self._handle_insertion(event)
             #print(
             #    "\nSERVICE PERIOD CHANGE: ",
             #    event.time.strftime('%H:%M:%S'),
@@ -625,10 +623,9 @@ class EventHandler:
                 self.simulation.schedule_event(
                     Event(
                         time=departure_time,
-                        event_type="train_insertion",
+                        event_type="train_departure",
                         train=train,
-                        station=train.current_station,
-                        segment=self.simulation.get_segment_by_id((2,1))
+                        station=train.current_station
                     )
                 )
                 
@@ -739,67 +736,7 @@ class EventHandler:
                     station=station
                 )
             )
-    
-    def _handle_insertion(self, event):
-        train = event.train
-        segment = event.segment
-        station = event.station
         
-        # Check if the train is still active before proceeding
-        train.status = "insertion"
-        train.direction = "northbound"  # Ensure train direction is northbound for insertion
-
-        if segment.enter(train):
-            # Train successfully entered segment (2,1)
-            # Calculate arrival time at Station 1 (fixed 1 minute traversal time)
-            arrival_time = event.time + timedelta(minutes=1)
-            
-            # Schedule segment exit/train arrival event at Station 1
-            next_station = self.simulation.get_station_by_id(1)  # Station 1 (northbound)
-            
-            # Track the train's journey
-            train.current_journey_travel_time = 60  # 1 minute in seconds
-            train.arrival_time = arrival_time
-            
-            # Schedule segment exit event (which will then trigger arrival)
-            self.simulation.schedule_event(
-                Event(
-                    time=arrival_time,
-                    event_type="segment_exit",
-                    train=train,
-                    station=next_station,
-                    segment=segment
-                )
-            )
-        else:
-            # Track segment is occupied, need to reschedule insertion
-            # Calculate a new time to attempt insertion based on when the segment will be free
-            required_insertion_time = event.time  # Start with current time
-            buffer_time = timedelta(seconds=10)  # Small buffer
-            
-            if segment.occupied_by is not None:
-                # If segment has next_available time, use that
-                if segment.next_available:
-                    segment_clear_time = segment.next_available + buffer_time
-                    required_insertion_time = max(required_insertion_time, segment_clear_time)
-                # Otherwise use headway-based estimation
-                elif segment.occupied_by.last_departure_time:
-                    segment_clear_time = segment.occupied_by.last_departure_time + timedelta(minutes=self.simulation.active_headway)
-                    required_insertion_time = max(required_insertion_time, segment_clear_time)
-            
-            print(f"DEBUG: Train {train.train_id} failed to enter segment {segment.segment_id} at {event.time}, rescheduling to {required_insertion_time}")
-            
-            # Reschedule the insertion event with the calculated time
-            self.simulation.schedule_event(
-                Event(
-                    time=required_insertion_time,
-                    event_type="train_insertion",
-                    train=train,
-                    station=train.current_station,
-                    segment=segment
-                )
-            )
-    
     def _handle_departure(self, event):
         train = event.train
         station = event.station
@@ -817,7 +754,11 @@ class EventHandler:
         if next_station.platforms[train.direction] is None and next_segment.is_available():
             #======= HANDLE TRAIN STATUS & TRAVEL TIME =======#
             train_status = "active"
-            travel_time = train.current_journey_travel_time
+            if train.last_departure_time is None:
+                travel_time = 0 # Initial departure has 0 travel time for this leg
+                train.arrival_time = departure_time - timedelta(seconds=self.simulation.dwell_time)
+            else: 
+                travel_time = train.current_journey_travel_time
             
             #======= BOARD/ALIGHT PASSENGERS =======#
             alighted, boarded = station.process_passenger_exchange(
@@ -1017,8 +958,6 @@ class EventHandler:
                     segment= segment
                 )
             )
-        else:
-            print(f"DEBUG: Train {train.train_id} failed to enter segment {segment.segment_id} at {current_time}")
     
     def _handle_segment_exit(self, event):
         train = event.train
@@ -1080,7 +1019,7 @@ class Simulation:
         self._initialize_track_segments() # Track segments are the same for all schemes
         self._initialize_trains(scheme_type)
         self._initialize_service_periods(scheme_type)
-        #self._initialize_passengers_demand()
+        self._initialize_passengers_demand()
 
         # Create station map for efficient lookup
         self.station_type_map = {s.station_id: s.station_type for s in self.stations}
@@ -1306,9 +1245,12 @@ class Simulation:
             # Schedule service period start event
             start_datetime = datetime.combine(
                 self.current_time.date(),
-                time(hour=(period["start_hour"] - 1), minute=30, second=0),
+                time(hour=period["start_hour"], minute=0, second=0),
             )  # Set the datetime by the period start hour in config
-        
+            
+            if i != 0:
+                start_datetime -= timedelta(minutes=30)
+
             # Schedule Start of Event
             self.schedule_event(
                 Event(
@@ -1464,12 +1406,11 @@ class Simulation:
         print("Simulation running...")
         start_run_time = py_time.perf_counter() # Record start time
         # schemes = ["Regular", "Skip-stop"] # Add Skip-stop
-        schemes = ["Regular"] # Temporarily removing Skip-stop scheme
+        schemes = ["Skip-stop"] # Temporarily removing Skip-stop scheme
         self._create_simulation_entry()
         #'''
         for scheme_type in schemes:
             try:
-                print(f"\n[RUNNING SIMULATION FOR SCHEME TYPE: {scheme_type}]")
                 self.scheme_type = scheme_type
                 self.initialize(scheme_type)
 
@@ -1478,11 +1419,6 @@ class Simulation:
                     # Ensure we don't process events past the end time
                     if event.time >= self.end_time:
                         self.current_time = event.time # Update time but don't process
-                        if self.current_time == datetime.combine(               
-                            self.current_time.date(),               
-                            time(hour=5, minute=30)             
-                        ):              
-                            self.event_queue = PriorityQueue()              
                         continue # Skip processing this event
 
                     self.current_time = event.time
@@ -1636,10 +1572,6 @@ class Simulation:
     def get_station_by_id(self, station_id):
         """Fast O(1) station lookup by ID."""
         return next((s for s in self.stations if s.station_id == station_id), None)
-    
-    def get_segment_by_id(self, segment_id):
-        """Fast O(1) segment lookup by ID."""
-        return next((s for s in self.track_segments if s.segment_id == segment_id), None)
     
     def calculate_loop_time(self, train):
         total_time = 0
@@ -1801,7 +1733,7 @@ class Simulation:
         
 if __name__ == "__main__":
     """ Method to run the simulation as a standalone script"""
-    debug = True
+    debug = False
     sample_config = {
         'acceleration': 0.8, 
         'deceleration': 0.8, 
