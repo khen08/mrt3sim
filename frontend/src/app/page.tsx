@@ -32,6 +32,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
 import { DarkModeToggle } from "@/components/DarkModeToggle";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // Define interface for the passenger distribution
 interface PassengerDistribution {
@@ -60,7 +68,12 @@ interface SimulationSettings {
   maxSpeed: number;
   maxCapacity: number;
   schemeType: "Regular" | "Skip-Stop";
-  stations: { name: string; distance: number }[];
+  useSkipStop: boolean;
+  stations: {
+    name: string;
+    distance: number;
+    scheme?: "AB" | "A" | "B";
+  }[];
 }
 
 // New interface for the global state sent to backend
@@ -151,10 +164,45 @@ export default function Home() {
         const defaults = await response.json();
         console.log("Received default settings:", defaults);
 
-        // Set the simulation settings state
-        setSimulationSettings(defaults);
+        // Add scheme to stations if not present
+        const defaultScheme = [
+          "AB",
+          "A",
+          "AB",
+          "B",
+          "AB",
+          "A",
+          "AB",
+          "B",
+          "AB",
+          "A",
+          "AB",
+          "B",
+          "AB",
+        ];
+        const stationsWithScheme = defaults.stations.map(
+          (station: any, index: number) => ({
+            ...station,
+            scheme: defaultScheme[index] || "AB",
+          })
+        );
+
+        // Set the simulation settings state with added fields
+        setSimulationSettings({
+          ...defaults,
+          useSkipStop: false,
+          stations: stationsWithScheme,
+        });
+
         // Initially set the config part of simulationInput as well
-        setSimulationInput((prev) => ({ ...prev, config: defaults }));
+        setSimulationInput((prev) => ({
+          ...prev,
+          config: {
+            ...defaults,
+            useSkipStop: false,
+            stations: stationsWithScheme,
+          },
+        }));
       } catch (error: any) {
         console.error("Failed to fetch default settings:", error);
         setApiError(`Failed to load default settings: ${error.message}`);
@@ -310,7 +358,7 @@ export default function Home() {
     [] // No dependencies needed, set functions are stable
   );
 
-  // --- Handle Setting Changes (Unchanged) --- //
+  // --- Handle Setting Changes (Updated) --- //
   const handleSettingChange = useCallback(
     (
       e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | string,
@@ -372,6 +420,60 @@ export default function Home() {
         ); // Debug log
 
         const updatedSettings = { ...prev, stations: updatedStations };
+        // Also update the config part of the global state
+        setSimulationInput((prevInput) => ({
+          ...prevInput,
+          config: updatedSettings,
+        }));
+        return updatedSettings;
+      });
+    },
+    [] // No dependencies needed
+  );
+
+  // --- Handle Station Scheme Change --- //
+  const handleStationSchemeChange = useCallback(
+    (index: number, value: "AB" | "A" | "B") => {
+      setSimulationSettings((prev) => {
+        if (!prev) return null;
+
+        // Create a new stations array with the updated scheme
+        const updatedStations = prev.stations.map((station, i) => {
+          if (i === index) {
+            return { ...station, scheme: value };
+          }
+          return station;
+        });
+
+        console.log(
+          `Station scheme change: Index ${index}, New Scheme ${value}`
+        ); // Debug log
+
+        const updatedSettings = { ...prev, stations: updatedStations };
+        // Also update the config part of the global state
+        setSimulationInput((prevInput) => ({
+          ...prevInput,
+          config: updatedSettings,
+        }));
+        return updatedSettings;
+      });
+    },
+    [] // No dependencies needed
+  );
+
+  // --- Handle Skip-Stop Toggle --- //
+  const handleSkipStopToggle = useCallback(
+    (checked: boolean) => {
+      setSimulationSettings((prev) => {
+        if (!prev) return null;
+
+        // Ensure schemeType is correctly typed as "Regular" | "Skip-Stop"
+        const updatedSettings = {
+          ...prev,
+          useSkipStop: checked,
+          schemeType: checked ? ("Skip-Stop" as const) : ("Regular" as const),
+        };
+
         // Also update the config part of the global state
         setSimulationInput((prevInput) => ({
           ...prevInput,
@@ -491,12 +593,6 @@ export default function Home() {
     setApiError(null);
     setSimulationResult(null); // Clear previous results
 
-    // Ensure the config in simulationInput is up-to-date
-    // const payload: SimulationInput = {
-    //   filename: simulationInput.filename,
-    //   config: simulationSettings, // Use the current settings state
-    // };
-
     // --- Transform settings for backend payload --- //
     if (!simulationSettings) {
       // This check is technically redundant due to earlier checks, but good practice
@@ -516,8 +612,13 @@ export default function Home() {
       .map((station) => station.distance)
       .slice(1); // Slice(1) because the backend expects distances *between* stations
 
-    // Destructure settings to exclude the original 'stations' key AND 'schemeType'
-    const { stations, schemeType, ...otherSettings } = simulationSettings;
+    // Add station schemes if skip-stop is enabled
+    const stationSchemes = simulationSettings.useSkipStop
+      ? simulationSettings.stations.map((station) => station.scheme || "AB")
+      : [];
+
+    // Destructure settings to exclude the original 'stations' key
+    const { stations, ...otherSettings } = simulationSettings;
 
     // Create the payload with the new structure for config
     const payload = {
@@ -528,14 +629,12 @@ export default function Home() {
         // Add the new separated arrays with camelCase keys
         stationNames: stationNames,
         stationDistances: stationDistances,
+        // Include station schemes if skip-stop is enabled
+        ...(simulationSettings.useSkipStop && {
+          stationSchemes: stationSchemes,
+        }),
       },
     };
-    // Remove the undefined keys cleanly - NO LONGER NEEDED with destructuring
-    // delete payload.config.stations;
-    // delete payload.config.schemeType;
-
-    // Update the main simulationInput state just in case (optional)
-    // setSimulationInput(payload); // This might be incorrect now due to type mismatch if SimulationInput type isn't updated
 
     console.log("Sending request to /run_simulation API...");
     console.log("Payload (JSON):", payload);
@@ -878,26 +977,83 @@ export default function Home() {
                           <Label className="text-base font-semibold">
                             Station Management
                           </Label>
-                          <div className="border rounded-md mt-2 max-h-80 overflow-y-auto">
-                            <div className="grid grid-cols-12 gap-4 mb-2 font-medium text-xs sticky top-0 z-10 bg-white dark:bg-gray-800 px-4 py-2 border-b">
+
+                          {/* Skip-Stop Toggle */}
+                          <div className="flex items-center space-x-2 mt-2 mb-4">
+                            <Checkbox
+                              id="useSkipStop"
+                              checked={simulationSettings.useSkipStop}
+                              onCheckedChange={(checked: boolean) =>
+                                handleSkipStopToggle(checked)
+                              }
+                              disabled={isSimulating}
+                            />
+                            <label
+                              htmlFor="useSkipStop"
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                            >
+                              Change Skip-Stop Scheme
+                            </label>
+                          </div>
+
+                          <div className="border rounded-md mt-2 flex-grow">
+                            <div className="grid grid-cols-16 gap-4 mb-2 font-medium text-xs sticky top-0 z-10 bg-white dark:bg-gray-800 px-4 py-2 border-b">
                               <div className="col-span-1">#</div>
-                              <div className="col-span-7">Name</div>
+                              <div className="col-span-5">Name</div>
+                              {/* New column for scheme type */}
+                              <div className="col-span-6">
+                                Scheme Type
+                                <span className="text-xs font-normal text-muted-foreground ml-1">
+                                  (Skip-Stop)
+                                </span>
+                              </div>
                               <div className="col-span-4">
                                 Dist. from Prev (km)
                               </div>
                             </div>
-                            <div className="px-4 pt-2 pb-4">
+                            <div className="px-4 pt-2 pb-4 max-h-full flex-grow">
                               {simulationSettings.stations.map(
                                 (station, index) => (
                                   <div
                                     key={`station-${index}`}
-                                    className="grid grid-cols-12 gap-4 items-center mb-1 text-xs"
+                                    className="grid grid-cols-16 gap-4 items-center mb-2 text-xs"
                                   >
                                     <div className="col-span-1 text-gray-500">
                                       {index + 1}
                                     </div>
-                                    <div className="col-span-7">
+                                    <div className="col-span-5">
                                       {station.name}
+                                    </div>
+                                    {/* New scheme selector */}
+                                    <div className="col-span-6">
+                                      <Select
+                                        disabled={
+                                          !simulationSettings.useSkipStop ||
+                                          isSimulating
+                                        }
+                                        value={station.scheme || "AB"}
+                                        onValueChange={(value) =>
+                                          handleStationSchemeChange(
+                                            index,
+                                            value as "AB" | "A" | "B"
+                                          )
+                                        }
+                                      >
+                                        <SelectTrigger className="h-7 text-xs">
+                                          <SelectValue placeholder="Select Scheme" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="AB">
+                                            AB (Both Stop)
+                                          </SelectItem>
+                                          <SelectItem value="A">
+                                            A (A Trains Only)
+                                          </SelectItem>
+                                          <SelectItem value="B">
+                                            B (B Trains Only)
+                                          </SelectItem>
+                                        </SelectContent>
+                                      </Select>
                                     </div>
                                     <div className="col-span-4">
                                       <Input

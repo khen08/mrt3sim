@@ -25,7 +25,7 @@ DEFAULT_SETTINGS = {
     "deceleration": 0.8,
     "maxSpeed": 60,
     "maxCapacity": 1182,
-    "schemeType": "Regular",#REMOVE THIS
+    "schemeType": "Regular",
     "stations": DEFAULT_STATIONS
 }
 
