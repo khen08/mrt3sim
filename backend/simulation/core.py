@@ -15,7 +15,7 @@ else:
     import os
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import DEFAULT_SETTINGS, DEFAULT_SCHEME, DEFAULT_SERVICE_PERIODS, DEFAULT_ZONE_LENGTH, UPLOAD_FOLDER
+from config import DEFAULT_SETTINGS, DEFAULT_SERVICE_PERIODS, DEFAULT_ZONE_LENGTH, UPLOAD_FOLDER
 import traceback
 
 # --- Helper Function for Headway Calculation ---
@@ -95,6 +95,7 @@ class TimetableEntry:
                 passengers_boarded,
                 passengers_alighted,
                 current_station_passenger_count,
+                current_passenger_count,
                 train_status
             ):
         """
@@ -111,8 +112,8 @@ class TimetableEntry:
             passengers_boarded (int)
             passengers_alighted (int)
         """
-        self.service_type = service_type
         self.train_id = train_id
+        self.service_type = service_type
         self.station_id = station_id
         self.direction = direction
         self.arrival_time = arrival_time
@@ -121,6 +122,7 @@ class TimetableEntry:
         self.passengers_boarded = passengers_boarded
         self.passengers_alighted = passengers_alighted
         self.current_station_passenger_count = current_station_passenger_count
+        self.current_passenger_count = current_passenger_count
         self.train_status = train_status
         
 class TrainSpec:
@@ -132,47 +134,64 @@ class TrainSpec:
         self.decel_rate = decel_rate
 
 # Entity Classes
-class Passenger:
-    def __init__(self, passenger_id, origin_station_id, destination_station_id, arrival_time):
-        """
-        Initialize a Passenger Entity
-        
-        Args:
-            passenger_id (int):                     passenger_id
-            origin_station_id (int):                origin_station_id
-            destination_station_id (int):           destination_station_id
-            arrival_time (datetime):                Time arrived at origin station
-            
-        Attributes:
-            boarding_time (datetime):               Time boarded the train
-            completion_time (datetime):             Time arrived at destination
-            status (str):                            "waiting", "in_transit", or "completed"
-        """
-        self.passenger_id = passenger_id
+class Passenger_Demand:
+    def __init__(self, origin_station_id, destination_station_id, arrival_time, passenger_count, trip_type):
         self.origin_station_id = origin_station_id
         self.destination_station_id = destination_station_id
-        self.service_type = None # What kind of train service this passenger will ride
-        self.arrival_time = arrival_time 
-        self.boarding_time = None
-        self.completion_time = None
-        self.status = "waiting" 
+        self.transfer_station_id = None
+        self.arrival_time = arrival_time # Arrival at origin
+        self.arrival_at_transfer_time = None # Needed if calculating transfer wait time
+        self.departure_from_origin_time = None
+        self.departure_from_transfer_time = None # Added: Time train departed transfer station
+        self.passenger_count = passenger_count
+        self.trip_type = trip_type # DIRECT or TRANSFER
+
+        # self.service_type = None # Removed - Not relevant for demand
+        self.boarding_time = None # First boarding time at origin
+        self.completion_time = None # Final arrival at destination
         
-        self.direction = None
-        self.trip_type = "transfer" # "direct" or "transfer" transfer
-        self.train_id = None
+        self.wait_time = 0 # Calculated: departure_from_origin_time - arrival_time
+        self.travel_time = 0 # Calculated: completion_time - boarding_time
+        
+        # More detailed status for multi-leg trips
+        self.status = "waiting_at_origin" # waiting_at_origin, in_transit_leg1, waiting_for_transfer, in_transit_leg2, completed
+        
+        self.train_id = None # Current train ID
+        self.direction = None # Direction needed for the current/next leg
 
     def calculate_wait_time(self):
-        """Calculate the time waited at the origin station."""
-        if self.boarding_time:
-            return self.boarding_time - self.arrival_time
-        return None
+        """Calculate the total wait time (Origin + Transfer)."""
+        total_wait_seconds = 0
+        # Origin Wait
+        if self.departure_from_origin_time and self.arrival_time:
+            total_wait_seconds += (self.departure_from_origin_time - self.arrival_time).total_seconds()
+        # Transfer Wait (if applicable)
+        if self.trip_type == 'TRANSFER' and self.departure_from_transfer_time and self.arrival_at_transfer_time:
+             total_wait_seconds += (self.departure_from_transfer_time - self.arrival_at_transfer_time).total_seconds()
+        
+        self.wait_time = total_wait_seconds if total_wait_seconds >= 0 else 0 # Store the sum
 
     def calculate_travel_time(self):
-        """Calculate the total travel time."""
-        if self.completion_time and self.boarding_time:
-            return self.completion_time - self.boarding_time
-        return None
-    
+        """Calculate the total time spent physically moving on trains."""
+        total_travel_seconds = 0
+        # Direct trip travel time
+        if self.trip_type == 'DIRECT' and self.completion_time and self.boarding_time:
+            total_travel_seconds = (self.completion_time - self.boarding_time).total_seconds()
+        # Transfer trip travel time (sum of legs)
+        elif self.trip_type == 'TRANSFER':
+            leg1_travel_seconds = 0
+            leg2_travel_seconds = 0
+            # Leg 1: Boarding at origin to Arrival at transfer
+            if self.arrival_at_transfer_time and self.boarding_time:
+                leg1_travel_seconds = (self.arrival_at_transfer_time - self.boarding_time).total_seconds()
+            # Leg 2: Departure from transfer to Arrival at destination
+            if self.completion_time and self.departure_from_transfer_time:
+                leg2_travel_seconds = (self.completion_time - self.departure_from_transfer_time).total_seconds()
+            
+            total_travel_seconds = leg1_travel_seconds + leg2_travel_seconds
+
+        self.travel_time = total_travel_seconds if total_travel_seconds >= 0 else 0 # Store the sum
+
     def find_nearest_transfer(self, stations):
         origin = next((s for s in stations if s.station_id == self.origin_station_id), None)
         destination = next((s for s in stations if s.station_id == self.destination_station_id), None)
@@ -201,7 +220,7 @@ class Passenger:
                 if dist_origin < abs(origin.station_id - best_transfer.station_id):
                     best_transfer = candidate
         
-        return best_transfer
+        return best_transfer.station_id
         
 class Station:
     def __init__(self, station_id, name, zone_length=None,  station_type="AB", is_terminus=False):
@@ -225,7 +244,7 @@ class Station:
         self.name = name
         self.zone_length = zone_length
         self.station_type = station_type
-        self.waiting_passengers = []
+        self.waiting_demand = []
 
         #undocumented
         self.is_terminus = is_terminus
@@ -234,34 +253,106 @@ class Station:
         # Station Platforms
         self.platforms = {"northbound": None, "southbound": None}
 
-    def process_passenger_exchange(self, train, train_arrival_time, train_departure_time):
-        """Board and Alight passengers in current station"""
-        # Alight Passengers
-        passengers_alighted = []
-        for passenger in train.passengers[:]: # Iterate over a copy of the list
-            if passenger.destination_station_id == self.station_id:
-                train.passengers.remove(passenger)
-                passengers_alighted.append(passenger)
-                passenger.status = "completed"  # Update passenger state
-                passenger.completion_time = train_arrival_time  # Record completion time
-    
-        # Load waiting passengers onto the train (up to capacity)
-        passengers_boarded = []
+    def process_passenger_exchange(self, scheme_map, train, train_arrival_time, train_departure_time):
+        """Board and Alight passenger demand groups, handling transfers."""
         
+        passengers_alighted_count = 0
+        passengers_boarded_count = 0
+        
+        # --- Alight Passengers --- #        
+        for demand in train.boarded_demand[:]: 
+            alight_here = False
+            # Case 1: Direct trip arrives at final destination
+            if demand.trip_type == 'DIRECT' and demand.destination_station_id == self.station_id:
+                alight_here = True
+                demand.status = "completed"
+                demand.completion_time = train_arrival_time
+                demand.calculate_travel_time() 
+            # Case 2: Transfer trip arrives at transfer station
+            elif demand.trip_type == 'TRANSFER' and demand.transfer_station_id == self.station_id and demand.status == "in_transit_leg1":
+                alight_here = True
+                demand.status = "waiting_for_transfer"
+                demand.arrival_at_transfer_time = train_arrival_time
+                demand.direction = 'southbound' if demand.destination_station_id > demand.transfer_station_id else 'northbound'
+                demand.train_id = None 
+                self.waiting_demand.append(demand) 
+            # Case 3: Transfer trip arrives at final destination (after leg 2)
+            elif demand.trip_type == 'TRANSFER' and demand.destination_station_id == self.station_id and demand.status == "in_transit_leg2":
+                 alight_here = True
+                 demand.status = "completed"
+                 demand.completion_time = train_arrival_time
+                 demand.calculate_travel_time() 
 
-        for passenger in self.waiting_passengers[:]:  # Iterate over a copy of the list
-            if passenger.arrival_time <= train_departure_time and passenger.direction == train.direction:
-                if len(train.passengers) < train.capacity:
-                    self.waiting_passengers.remove(passenger)
-                    train.passengers.append(passenger)
-                    passengers_boarded.append(passenger)
-                    passenger.status = "in_transit"
-                    passenger.boarding_time = train_arrival_time
-                    passenger.train_id = train.train_id
-                #else:
-                #    print(train.train_id, train_arrival_time, passenger.passenger_id, len(train.passengers))
-                    
-        return len(passengers_alighted), len(passengers_boarded)
+            if alight_here:
+                passengers_alighted_count += demand.passenger_count
+                train.current_passenger_count -= demand.passenger_count
+                train.boarded_demand.remove(demand)
+        
+        # --- Board Passengers --- #        
+        for demand in self.waiting_demand[:]: 
+            board_this_train = False
+            can_train_stop_here = (train.service_type == self.station_type or train.service_type == "AB" or self.station_type == "AB")
+            
+            if not can_train_stop_here:
+                 continue # Train doesn't stop here, skip to next demand
+
+            # Condition 1: Passenger group waiting for their first train
+            if demand.status == "waiting_at_origin" and demand.arrival_time <= train_departure_time:
+                if demand.direction == train.direction:
+                    # Check if train serves the *next required stop* (transfer or destination)
+                    next_stop_id = demand.transfer_station_id if demand.trip_type == 'TRANSFER' else demand.destination_station_id
+                    next_stop_type = scheme_map.get(next_stop_id)
+                    if next_stop_type is None:
+                        print(f"Warning: Could not find station type for next stop {next_stop_id} in scheme map.")
+                    else:
+                        can_train_reach_next_stop = (train.service_type == next_stop_type or train.service_type == "AB" or next_stop_type == "AB")
+                        if can_train_reach_next_stop:
+                            board_this_train = True
+
+            # Condition 2: Passenger group waiting for transfer
+            elif demand.status == "waiting_for_transfer" and demand.arrival_at_transfer_time <= train_departure_time:
+                if demand.direction == train.direction: # Direction should already be set for leg 2
+                    # Check train service is compatible with *final destination* station type
+                    dest_station_type = scheme_map.get(demand.destination_station_id)
+                    if dest_station_type is None:
+                        print(f"Warning: Could not find station type for destination {demand.destination_station_id} in scheme map.")
+                    else:
+                         can_train_reach_final_dest = (train.service_type == dest_station_type or train.service_type == "AB" or dest_station_type == "AB")
+                         if can_train_reach_final_dest:
+                             board_this_train = True
+
+            # Perform boarding if compatible and space available
+            if board_this_train:
+                available_space = train.capacity - train.current_passenger_count
+                if available_space <= 0:
+                    break # No more space on this train                 
+                num_to_board = min(available_space, demand.passenger_count)
+                
+                if num_to_board > 0:
+                    if num_to_board == demand.passenger_count: # Full group boards                       
+                        self.waiting_demand.remove(demand)                         
+                        if demand.status == "waiting_at_origin":
+                            demand.boarding_time = train_arrival_time 
+                            demand.departure_from_origin_time = train_departure_time
+                            demand.calculate_wait_time()
+                            demand.status = "in_transit_leg1"
+                        elif demand.status == "waiting_for_transfer":
+                            # Don't overwrite original boarding_time for travel calc
+                            demand.status = "in_transit_leg2"
+                            demand.departure_from_transfer_time = train_departure_time # Set departure time from transfer
+                        
+                        demand.train_id = train.train_id
+                        train.boarded_demand.append(demand)
+                        
+                        passengers_boarded_count += num_to_board
+                        train.current_passenger_count += num_to_board
+                    else:
+                        # TODO: Implement partial boarding logic if needed
+                        # Create a new demand object for the boarded portion
+                        # Reduce the count of the original demand object
+                        pass 
+                        
+        return passengers_alighted_count, passengers_boarded_count
 
     def should_stop(self, train):
         """Determine if the train should stop at this station based on service type."""
@@ -390,7 +481,8 @@ class Train:
             
         Attributes:
             active: Boolean to indicate if a train is in service
-            passengers: List of passenger entities who boarded
+            boarded_demand: List of Passenger_Demand objects who boarded
+            current_passenger_count: Current number of individual passengers on board
             trip_count: Number of trips the specific train entity has taken 
         """
         self.train_id = train_id
@@ -412,7 +504,8 @@ class Train:
         self.current_speed = 0.0
         
         self.service_type = service_type
-        self.passengers = []
+        self.boarded_demand = [] # Renamed from self.passengers
+        self.current_passenger_count = 0 # Added
         
         self.direction = "southbound"
         self.current_station = current_station
@@ -425,22 +518,18 @@ class Train:
 
     def board_passengers(self, boarding_passengers):
         """Add passengers to the train."""
-        if len(self.passengers) + len(boarding_passengers) <= self.capacity:
-            self.passengers.extend(boarding_passengers)
+        if self.current_passenger_count + len(boarding_passengers) <= self.capacity:
+            # This needs rethinking if boarding_passengers becomes demand objects
+            self.boarded_demand.extend(boarding_passengers) # Placeholder
+            self.current_passenger_count += len(boarding_passengers) # Placeholder
         else:
             # Logic for handling overcapacity (e.g., leave some passengers behind)
             pass
 
     def alight_passengers(self, station):
         """Remove passengers whose destination is the current station."""
-        remaining_passengers = []
-        for passenger in self.passengers:
-            if passenger.destination_station == station:
-                # Logic for handling alighted passengers (e.g., update their status)
-                pass
-            else:
-                remaining_passengers.append(passenger)
-        self.passengers = remaining_passengers
+        # This logic will move to process_passenger_exchange
+        pass
     
     def change_direction(self):
         """Reverse the train's direction."""
@@ -448,10 +537,11 @@ class Train:
 
     def calculate_load_factor(self):
         """Calculate the current occupancy percentage."""
-        return (len(self.passengers) / self.capacity * 100)
+        if self.capacity == 0: return 0 # Avoid division by zero
+        return (self.current_passenger_count / self.capacity * 100)
 
 class Event:
-    def __init__(self, time, event_type, simulation_id=None, period=None, train=None, station=None, segment=None):
+    def __init__(self, time, event_type, period=None, train=None, station=None, segment=None):
         """
         Initialize a Simulation Event
 
@@ -545,7 +635,7 @@ class EventHandler:
         # Withdraw trains if needed
         elif current_active_count > target_train_count:
             trains_to_withdraw = current_active_count - target_train_count
-            self.simulation.trains_to_withdraw_count = trains_to_withdraw # Khen
+            self.simulation.trains_to_withdraw_count = trains_to_withdraw
             #print(f"SERVICE PERIOD CHANGE: Need to withdraw {trains_to_withdraw} trains.")
             # Actual withdrawal logic is handled in _handle_arrival for Station 1 northbound arrivals.
         
@@ -562,7 +652,8 @@ class EventHandler:
                 direction = train.direction,
                 passengers_boarded = boarded,
                 passengers_alighted = alighted,
-                current_station_passenger_count = len(station.waiting_passengers),
+                current_station_passenger_count = sum(demand.passenger_count for demand in station.waiting_demand if demand.arrival_time <= departure_time),
+                current_passenger_count = train.current_passenger_count,
                 train_status=train_status
             )
             self.simulation.timetables.append(entry)
@@ -573,7 +664,7 @@ class EventHandler:
         arrival_time = event.time
         
         # === WITHDRAWAL CHECK (Upon Northbound Arrival at Station 1) === #
-        if (self.simulation.trains_to_withdraw_count > 0 and # Khen
+        if (self.simulation.trains_to_withdraw_count > 0 and
             station == self.simulation.stations[0] and # Station 1 (North Ave)
             train.direction == "northbound"):
             
@@ -587,6 +678,14 @@ class EventHandler:
                 # Decrement withdrawal counter
                 self.simulation.trains_to_withdraw_count -= 1
 
+                #======= BOARD/ALIGHT PASSENGERS =======#
+                alighted, boarded = station.process_passenger_exchange(
+                    scheme_map=self.simulation.station_type_map, # Pass the map
+                    train=train, 
+                    train_arrival_time=train.arrival_time, 
+                    train_departure_time=end_of_service_time
+                )
+
                 # Record final arrival with departure time reflecting end of dwell
                 self._record_timetable_entry(
                     train=train, 
@@ -594,7 +693,9 @@ class EventHandler:
                     arrival_time=arrival_time, # Actual arrival time
                     departure_time=end_of_service_time, # Time after final dwell
                     travel_time=train.current_journey_travel_time, # Log final travel time
-                    train_status="inactive" # Set status to inactive
+                    train_status="inactive", # Set status to inactive
+                    boarded=boarded,
+                    alighted=alighted
                 )
                 # Clear the platform the train arrived on
                 station.platforms[train.direction] = None
@@ -603,6 +704,7 @@ class EventHandler:
             
             # DO NOT schedule next event (turnaround/departure) for this train.
             return # Add this return statement
+        
         # === END WITHDRAWAL CHECK ===
         
         # --- Normal Arrival Processing (If not withdrawn) ---
@@ -660,16 +762,11 @@ class EventHandler:
             
             #======= BOARD/ALIGHT PASSENGERS =======#
             alighted, boarded = station.process_passenger_exchange(
-                train, 
+                scheme_map=self.simulation.station_type_map, # Pass the map
+                train=train, 
                 train_arrival_time=train.arrival_time, 
                 train_departure_time=departure_time
             )
-            
-            #print(
-            #    "\nPassengers",
-            #    "\nAlighted:", alighted,
-            #    "\nBoarded:", boarded
-            #)
             
             #======= RECORD TO TIMETABLE =======#
             self._record_timetable_entry(
@@ -699,12 +796,12 @@ class EventHandler:
             )
             
         else: # Resources are not available
-            print(
-                f"\nRESCHEDULE: {event.time}\nCURRENT Station: {station.station_id} "
-                f"| Train: {train.train_id} | Next Platform Occupied by: "
-                f"{next_station.platforms[train.direction].train_id if next_station.platforms[train.direction] is not None else None} "
-                f"| Segment {next_segment.segment_id}, Available: {next_segment.is_available()}"
-            )
+            #print(
+            #    f"\nRESCHEDULE: {event.time}\nCURRENT Station: {station.station_id} "
+            #    f"| Train: {train.train_id} | Next Platform Occupied by: "
+            #    f"{next_station.platforms[train.direction].train_id if next_station.platforms[train.direction] is not None else None} "
+            #    f"| Segment {next_segment.segment_id}, Available: {next_segment.is_available()}"
+            #)
 
             # Calculate the earliest required departure time based on original schedule and conflicts
             required_departure_time = event.time # Start with the original scheduled time
@@ -721,7 +818,7 @@ class EventHandler:
                 if preceding_train.last_departure_time: # Fallback to previous logic if arrival not readily available
                     station_clear_time = preceding_train.last_departure_time + timedelta(minutes=self.simulation.active_headway)
                     required_departure_time = max(required_departure_time, station_clear_time)
-                    print(f"Due to station {next_station.station_id} Occupied by {preceding_train.train_id}, requires departure after {station_clear_time} (using headway fallback)")
+                    #print(f"Due to station {next_station.station_id} Occupied by {preceding_train.train_id}, requires departure after {station_clear_time} (using headway fallback)")
 
             # Check segment conflict for the NEXT segment
             if next_segment.occupied_by is not None:
@@ -730,12 +827,12 @@ class EventHandler:
                 if next_segment.next_available: 
                     segment_clear_time = next_segment.next_available + buffer_time_conflict
                     required_departure_time = max(required_departure_time, segment_clear_time)
-                    print(f"Due to segment {next_segment.segment_id} Occupied by {preceding_train_on_segment.train_id}, requires departure after {segment_clear_time}")
+                    #print(f"Due to segment {next_segment.segment_id} Occupied by {preceding_train_on_segment.train_id}, requires departure after {segment_clear_time}")
                 # Fallback if next_available isn't set (shouldn't happen if occupied)
                 elif preceding_train_on_segment.last_departure_time: 
                     segment_clear_time = preceding_train_on_segment.last_departure_time + timedelta(minutes=self.simulation.active_headway)
                     required_departure_time = max(required_departure_time, segment_clear_time)
-                    print(f"Due to segment {next_segment.segment_id} Occupied by {preceding_train_on_segment.train_id}, requires departure after {segment_clear_time} (using headway fallback)")
+                    #print(f"Due to segment {next_segment.segment_id} Occupied by {preceding_train_on_segment.train_id}, requires departure after {segment_clear_time} (using headway fallback)")
 
 
             # Check for simultaneous departure conflicts at the CURRENT station
@@ -754,14 +851,14 @@ class EventHandler:
                         
                         original_conflict_time = final_departure_time
                         final_departure_time += timedelta(seconds=10) # Add 10s delay
-                        print(f"-> Simultaneous departure conflict detected at {original_conflict_time}. Adding 10s delay for train {train.train_id}.")
+                        #print(f"-> Simultaneous departure conflict detected at {original_conflict_time}. Adding 10s delay for train {train.train_id}.")
                         conflict_found = True
                         break # Re-check the queue with the new time
 
                 if not conflict_found:
                     break # Exit the while loop if no conflict was found in this pass
 
-            print(f"-> Final rescheduled departure for train {train.train_id} at station {station.station_id} is {final_departure_time}")
+            #print(f"-> Final rescheduled departure for train {train.train_id} at station {station.station_id} is {final_departure_time}")
 
             # Reschedule the event with the final calculated time.
             self.simulation.schedule_event(
@@ -787,6 +884,14 @@ class EventHandler:
             return # Ignore event for inactive train
         
         departure_time = event.time
+
+        #======= BOARD/ALIGHT PASSENGERS =======#
+        alighted, boarded = station.process_passenger_exchange(
+            scheme_map=self.simulation.station_type_map, # Pass the map
+            train=train, 
+            train_arrival_time=train.arrival_time, 
+            train_departure_time=departure_time
+        )
         
         # Record Arrival before Turnaround
         self._record_timetable_entry(
@@ -795,9 +900,9 @@ class EventHandler:
                 arrival_time = train.arrival_time,
                 departure_time = departure_time, 
                 travel_time= train.current_journey_travel_time,
-                train_status="active", # Set status to active
-                boarded=0, 
-                alighted=0
+                train_status="active",
+                boarded=boarded, 
+                alighted=alighted
             )
         
         # Clear Station Platform
@@ -878,6 +983,7 @@ class Simulation:
         self.passenger_data_file = csv_filename
         self.config = config
         self.is_staging = False
+        self.scheme_type = None
 
         self.start_time = None
         self.end_time = None
@@ -887,10 +993,9 @@ class Simulation:
         
         self.trains = []
         self.stations = []
+        self.scheme = config["scheme"]
         self.track_segments = []
-        self.passengers = []##########
         self.passenger_demand = []
-        self.timetables = []
         self.service_periods = None
         self.active_trains = []
         self.active_headway = 0
@@ -902,9 +1007,6 @@ class Simulation:
         self.timetables = []
     
     def initialize(self, scheme_type):
-        self.stations.clear()
-        self.track_segments.clear()
-        self.trains.clear()
         self.service_periods = None
         self.active_trains = []
         self.active_headway = 0
@@ -917,15 +1019,16 @@ class Simulation:
         self._initialize_track_segments() # Track segments are the same for all schemes
         self._initialize_trains(scheme_type)
         self._initialize_service_periods(scheme_type)
-
-        if scheme_type != "Regular":
-            print(f"\nLOOP TIME A: {timedelta(seconds=self.calculate_loop_time(self.trains[1]))}")
-            print(f"\nLOOP TIME B: {timedelta(seconds=self.calculate_loop_time(self.trains[2]))}")
         self._initialize_passengers_demand()
+
+        # Create station map for efficient lookup
+        self.station_type_map = {s.station_id: s.station_type for s in self.stations}
+
         # print([t.train_id for t in self.trains])
         # print([s.station_id for s in self.stations])
         # print([ts.segment_id for ts in self.track_segments])
         # print(self.service_periods)
+        #print(self.passenger_demand)
         
         self.is_staging = True
 
@@ -966,7 +1069,7 @@ class Simulation:
         self.stations.clear()
         station_names = self.config["stationNames"]
         num_stations = len(station_names)
-        station_types = DEFAULT_SCHEME
+        station_types = self.scheme
 
         for station_id, (station_name, station_type) in enumerate(zip(station_names, station_types), start=1):
             self.stations.append(
@@ -978,6 +1081,8 @@ class Simulation:
                     is_terminus=station_id == 1 or station_id == num_stations
                 )
             )
+
+        print(f"\tINITIALIZED {len(self.stations)} STATIONS IN MEMORY")
 
         if not debug and not self.is_staging: 
             stations_for_db = []
@@ -1003,6 +1108,7 @@ class Simulation:
         print("\n[INITIALIZING TRACK SEGMENTS]")
         station_distances = self.config['stationDistances']
         station_count = len(self.config['stationNames'])
+        self.track_segments.clear()
         
         # 1. Initialize Track Segments in Memory
         segments_in_memory = []
@@ -1038,6 +1144,8 @@ class Simulation:
                 if station.station_id == ts.start_station_id:
                     station.tracks[ts.direction] = ts
 
+        print(f"\tINITIALIZED {len(self.track_segments)} TRACK SEGMENTS IN MEMORY")
+
         if not debug and not self.is_staging:
             segments_for_db = []
             for segment in self.track_segments:
@@ -1059,6 +1167,7 @@ class Simulation:
 
     def _initialize_trains(self, scheme_type):
         print("\n[INITIALIZING TRAINS & TRAIN_SPEC(s)]")
+        self.trains.clear()
         
         train_count = 0
         for period in DEFAULT_SERVICE_PERIODS:
@@ -1081,6 +1190,7 @@ class Simulation:
                     current_station=self.stations[0] # All trains start at North Avenue (Station 1)
                 )
             )
+        print(f"\tINITIALIZED {len(self.trains)} TRAINS IN MEMORY")
 
         if not debug and not self.is_staging:
             train_specs_entry_id = None
@@ -1128,7 +1238,7 @@ class Simulation:
         self.service_periods = DEFAULT_SERVICE_PERIODS
 
         loop_time = int(self.calculate_loop_time(self.trains[0]) / 60)  # Loop Time in minutes
-        print(f"\tLOOP TIME: {timedelta(minutes=loop_time)}")
+        
         for i, period in enumerate(self.service_periods):
             period["headway"] = custom_round(loop_time / period["train_count"])
 
@@ -1166,9 +1276,13 @@ class Simulation:
         indented_df_string = '\n'.join(['\t' + line for line in df_periods.to_string().splitlines()])
 
         # Print the result
-        print("\tService Periods:")
+        print("\tINITIALIZED SERVICE PERIODS:")
         print(indented_df_string)
-        print("\n") # Add a final newline if desired
+        if scheme_type == "Regular":
+            print(f"\tLOOP TIME: {timedelta(minutes=loop_time)}")
+        else:
+            print(f"\tLOOP TIME A: {timedelta(minutes=loop_time)}")
+            print(f"\tLOOP TIME B: {timedelta(minutes=int(self.calculate_loop_time(self.trains[1]) / 60))}")
 
         # Update the SERVICE_PERIODS field in the database with calculated headways
         if not debug:
@@ -1185,22 +1299,37 @@ class Simulation:
                 print(f"\tERROR updating SERVICE_PERIODS in DB for SIMULATION_ID: {self.simulation_id}: {e}")
 
     def _initialize_passengers_demand(self):
-        print("\n[INITIALIZING PASSENGERS DEMAND]")
+        print("\n[INITIALIZING PASSENGER DEMAND OBJECTS]")
         station_type_map = {s.station_id: s.station_type for s in self.stations}
         valid_station_ids = set(station_type_map.keys())
-        
+        self.passenger_demand.clear() # Clear previous demand objects
+
         file_path = UPLOAD_FOLDER + "\\" + self.passenger_data_file
-        df = pd.read_csv(file_path)
+        try:
+            df = pd.read_csv(file_path)
+        except FileNotFoundError:
+            print(f"Error: Passenger data file not found at '{file_path}'. Aborting passenger initialization.")
+            return
+        except pd.errors.EmptyDataError:
+            print(f"Error: Passenger data file '{file_path}' is empty. Aborting passenger initialization.")
+            return
+        except Exception as e:
+            print(f"Error reading passenger data CSV '{file_path}': {e}. Aborting passenger initialization.")
+            return
+
+        # --- Data Processing --- #
         id_vars = []
         if 'DateTime' in df.columns:
             id_vars.append('DateTime')
         od_columns = [col for col in df.columns if ',' in col]
+
         if not id_vars:
             print("Error: 'DateTime' column not found in CSV. Cannot process passengers.")
             return
         if not od_columns:
             print("Error: No OD pair columns (e.g., '1,2') found in CSV. Cannot process passengers.")
             return
+
         melted_df = df.melt(
             id_vars=id_vars,
             value_vars=od_columns,
@@ -1211,19 +1340,24 @@ class Simulation:
         melted_df = melted_df.dropna(subset=['PASSENGER_COUNT'])
         melted_df = melted_df[melted_df['PASSENGER_COUNT'] > 0]
         melted_df['PASSENGER_COUNT'] = melted_df['PASSENGER_COUNT'].astype(int)
+
         if melted_df.empty:
             print("Warning: No valid passenger demand found after melting and filtering.")
             return
+
         melted_df[['ORIGIN_STATION_ID', 'DESTINATION_STATION_ID']] = melted_df['OD_PAIR'].str.strip('"').str.split(',', expand=True).astype(int)
         invalid_origin = ~melted_df['ORIGIN_STATION_ID'].isin(valid_station_ids)
         invalid_destination = ~melted_df['DESTINATION_STATION_ID'].isin(valid_station_ids)
         invalid_rows = invalid_origin | invalid_destination
+
         if invalid_rows.any():
             print(f"Warning: Found {invalid_rows.sum()} rows with invalid station IDs. These rows will be skipped.")
             melted_df = melted_df[~invalid_rows]
+
         if melted_df.empty:
             print("Warning: No valid passenger demand remaining after station ID validation.")
             return
+
         melted_df['ORIGIN_STATION_TYPE'] = melted_df['ORIGIN_STATION_ID'].map(station_type_map)
         melted_df['DESTINATION_STATION_TYPE'] = melted_df['DESTINATION_STATION_ID'].map(station_type_map)
         melted_df['TRIP_TYPE'] = np.where(
@@ -1233,24 +1367,36 @@ class Simulation:
             'DIRECT',
             'TRANSFER'
         )
-        melted_df['SIMULATION_ID'] = self.simulation_id
-        final_passenger_data = melted_df[[
-            'SIMULATION_ID',
-            'ARRIVAL_TIME_AT_ORIGIN',
-            'ORIGIN_STATION_ID',
-            'DESTINATION_STATION_ID',
-            'TRIP_TYPE',
-            'PASSENGER_COUNT'
-        ]]
-        passenger_records = final_passenger_data.to_dict('records')
-        if passenger_records:
-            try:
-                db.passenger_demand.create_many(data=passenger_records, skip_duplicates=True)
-            except Exception as e:
-                print(f"Error during passenger bulk insert: {e}")
-        else:
-            print("No passenger records to insert.")
-        
+
+        # --- Create Passenger_Demand Objects in Memory --- #
+        for index, row in melted_df.iterrows():
+            demand = Passenger_Demand(
+                origin_station_id=row['ORIGIN_STATION_ID'],
+                destination_station_id=row['DESTINATION_STATION_ID'],
+                arrival_time=row['ARRIVAL_TIME_AT_ORIGIN'],
+                passenger_count=row['PASSENGER_COUNT'],
+                trip_type=row['TRIP_TYPE']
+            )
+            demand.direction = 'southbound' if demand.destination_station_id > demand.origin_station_id else 'northbound'
+            self.passenger_demand.append(demand)
+
+        print(f"\tINITIALIZED {len(self.passenger_demand)} PASSENGER DEMAND OBJECTS IN MEMORY")
+
+        # --- Calculate and Store Total Passenger Count --- #
+        total_passenger_count = sum(demand.passenger_count for demand in self.passenger_demand)
+        print(f"\tTOTAL PASSENGER COUNT FROM DEMAND DATA: {total_passenger_count}")
+
+        for demand in self.passenger_demand:
+            for station in self.stations:
+                # --- Add Passenger_Demand object to Station waiting_demand list --- #
+                if station.station_id == demand.origin_station_id:
+                    station.waiting_demand.append(demand)
+                
+                # --- Add Transfer Station ID and Direction --- #
+                if demand.trip_type == "TRANSFER":
+                    demand.transfer_station_id = int(demand.find_nearest_transfer(self.stations))
+                    demand.direction = 'southbound' if demand.transfer_station_id > demand.origin_station_id else 'northbound'
+
     def schedule_event(self, event):
         """Add an event to the priority queue."""
         self.event_queue.put((event.time, event))  # Use (priority, item) format
@@ -1260,11 +1406,12 @@ class Simulation:
         print("Simulation running...")
         start_run_time = py_time.perf_counter() # Record start time
         # schemes = ["Regular", "Skip-stop"] # Add Skip-stop
-        schemes = ["Regular"] # Temporarily removing Skip-stop scheme
+        schemes = ["Skip-stop"] # Temporarily removing Skip-stop scheme
         self._create_simulation_entry()
         #'''
         for scheme_type in schemes:
             try:
+                self.scheme_type = scheme_type
                 self.initialize(scheme_type)
 
                 while self.current_time < self.end_time and not self.event_queue.empty():
@@ -1278,11 +1425,13 @@ class Simulation:
                     self.event_handler.process_event(event)
 
                 # Indicate success for this simulation ID run
-                print(f"Simulation for ID {self.simulation_id} completed up to {self.current_time}.")
+                print(f"\nSimulation for ID {self.simulation_id} completed up to {self.current_time}.")
                 print(f"Generated {len(self.timetables)} TRAIN_MOVEMENTS entries.")
 
                 # Save results before potentially moving to the next simulation_id or disconnecting
-                self.save_timetable_to_db()
+                if not debug:
+                    self.save_timetable_to_db()
+                    self.save_passenger_demand_to_db()
 
             except Exception as e:
                 print(f"Error during simulation run for ID {self.simulation_id}, Scheme: {scheme_type}: {e}")
@@ -1348,9 +1497,10 @@ class Simulation:
 
             # Adjust these keys based on your actual Prisma schema for TRAIN_MOVEMENTS
             data = {
-                "SIMULATION_ID": self.simulation_id, # Add simulation ID for context
-                "SERVICE_TYPE": entry.service_type,
+                "SIMULATION_ID": self.simulation_id,
+                "SCHEME_TYPE": self.scheme_type,
                 "TRAIN_ID": entry.train_id,
+                "TRAIN_SERVICE_TYPE": entry.service_type,
                 "STATION_ID": entry.station_id,
                 "DIRECTION": entry.direction,
                 "TRAIN_STATUS": entry.train_status,
@@ -1360,6 +1510,7 @@ class Simulation:
                 "PASSENGERS_BOARDED": entry.passengers_boarded,
                 "PASSENGERS_ALIGHTED": entry.passengers_alighted,
                 "CURRENT_STATION_PASSENGER_COUNT": entry.current_station_passenger_count,
+                "CURRENT_PASSENGER_COUNT": entry.current_passenger_count,
             }
             data_to_insert.append(data)
 
@@ -1381,6 +1532,42 @@ class Simulation:
         except Exception as e:
             print(f"Error inserting timetable data into database: {e}")
             # Consider logging the failed data or implementing retry logic if necessary
+
+    def save_passenger_demand_to_db(self):
+        # --- Prepare Data for Database Insertion --- #
+        total_passenger_count = sum(demand.passenger_count for demand in self.passenger_demand)
+        if not debug and not self.is_staging:
+            # Update the main simulation entry with the total count
+            try:
+                db.simulations.update(
+                    where={'SIMULATION_ID': self.simulation_id},
+                    data={'TOTAL_PASSENGER_COUNT': total_passenger_count}
+                )
+                print(f"\tSUCCESSFULLY updated TOTAL_PASSENGER_COUNT in DB for SIMULATION_ID: {self.simulation_id}")
+            except Exception as e:
+                print(f"\tERROR updating TOTAL_PASSENGER_COUNT in DB for SIMULATION_ID: {self.simulation_id}: {e}")
+
+            passenger_records_for_db = []
+            for demand in self.passenger_demand:
+                passenger_records_for_db.append({
+                    'SIMULATION_ID': demand.simulation_id,
+                    'ARRIVAL_TIME_AT_ORIGIN': demand.arrival_time,
+                    'DEPARTURE_TIME_FROM_ORIGIN': demand.departure_from_origin_time,
+                    'ORIGIN_STATION_ID': demand.origin_station_id,
+                    'DESTINATION_STATION_ID': demand.destination_station_id,
+                    'TRIP_TYPE': demand.trip_type,
+                    'PASSENGER_COUNT': demand.passenger_count
+                })
+
+            # --- Bulk Insert into Database --- #
+            if passenger_records_for_db:
+                try:
+                    result = db.passenger_demand.create_many(data=passenger_records_for_db, skip_duplicates=True)
+                    print(f"\tATTEMPTED TO CREATE {len(passenger_records_for_db)} PASSENGER DEMAND ENTRIES IN DB. SUCCESSFULLY INSERTED: {result} ROWS")
+                except Exception as e:
+                    print(f"\tERROR during passenger_demand bulk insert: {e}")
+            else:
+                print("\tNo passenger demand records to insert into the database.")
 
     def get_station_by_id(self, station_id):
         """Fast O(1) station lookup by ID."""
@@ -1555,7 +1742,8 @@ if __name__ == "__main__":
         'maxSpeed': 60, 
         'turnaroundTime': 180, 
         'stationNames': ['North Avenue', 'Quezon Avenue', 'GMA-Kamuning', 'Cubao', 'Santolan-Annapolis', 'Ortigas', 'Shaw Boulevard', 'Boni Avenue', 'Guadalupe', 'Buendia', 'Ayala', 'Magallanes', 'Taft Avenue'], 
-        'stationDistances': [1.2, 1.1, 1.8, 1.5, 1.4, 0.9, 1, 1.1, 1.3, 1, 1.2, 1.7]
+        'stationDistances': [1.2, 1.1, 1.8, 1.5, 1.4, 0.9, 1, 1.1, 1.3, 1, 1.2, 1.7],
+        'scheme': ['AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB']
         }
     test_sim = Simulation("4-12-23-SAMPLE-minute-level.csv", sample_config)
 
@@ -1566,6 +1754,8 @@ if __name__ == "__main__":
     track_segments = instances_to_df(test_sim.track_segments)
     trains = instances_to_df(test_sim.trains)
     service_periods = test_sim.service_periods
+    passenger_demand = instances_to_df(test_sim.passenger_demand)
+    train_movements = instances_to_df(test_sim.timetables)
 
     print("\nSimulation script finished.")
 

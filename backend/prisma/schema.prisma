@@ -138,8 +138,9 @@ model TRAINS {
 model TRAIN_MOVEMENTS {
   MOVEMENT_ID                     Int       @id @default(autoincrement())
   SIMULATION_ID                   Int
-  SERVICE_TYPE                    String    @db.VarChar(10) // Regular, Skip-stop
+  SCHEME_TYPE                     String    @db.VarChar(10) // Regular, Skip-stop
   TRAIN_ID                        Int
+  TRAIN_SERVICE_TYPE              String    @db.VarChar(10) // A or B
   STATION_ID                      Int
   DIRECTION                       String    @db.VarChar(10)
   TRAIN_STATUS                    String    @db.VarChar(10) // IN_TRANSIT, TURNAROUND, WITHDRAWN
@@ -149,6 +150,7 @@ model TRAIN_MOVEMENTS {
   PASSENGERS_BOARDED              Int       @default(0)
   PASSENGERS_ALIGHTED             Int       @default(0)
   CURRENT_STATION_PASSENGER_COUNT Int       @default(0)
+  CURRENT_PASSENGER_COUNT         Int       @default(0)
 
   // Relation back to SIMULATIONS
   simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
@@ -162,11 +164,17 @@ model TRAIN_MOVEMENTS {
 
 model PASSENGER_DEMAND {
   SIMULATION_ID          Int
-  ARRIVAL_TIME_AT_ORIGIN DateTime  @db.DateTime // Time the demand appears at the origin
+  SCHEME_TYPE            String    @db.VarChar(10) // Regular, Skip-stop
   ORIGIN_STATION_ID      Int
   DESTINATION_STATION_ID Int
-  TRIP_TYPE              String    @db.VarChar(10) // direct, transfer - Represents the nature of the journey needed
-  PASSENGER_COUNT        Int // Number of passengers for this specific time and OD pair
+  ARRIVAL_TIME_AT_ORIGIN DateTime  @db.DateTime // Time the demand appears at the origin
+  DEPARTURE_TIME_FROM_ORIGIN DateTime? @db.DateTime // Time the demand departs from the origin
+  ARRIVAL_TIME_AT_TRANSFER DateTime? @db.DateTime // Time the demand arrives at the transfer station
+  DEPARTURE_TIME_FROM_TRANSFER DateTime? @db.DateTime // Time the demand departs from the transfer station
+  WAIT_TIME                Int       @default(0)
+  TRAVEL_TIME              Int       @default(0)
+  TRIP_TYPE                String    @db.VarChar(10) // direct, transfer - Represents the nature of the journey needed
+  PASSENGER_COUNT          Int // Number of passengers for this specific time and OD pair
 
   // Relation back to SIMULATIONS
   simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
