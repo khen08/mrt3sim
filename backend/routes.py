@@ -107,13 +107,19 @@ def run_simulation():
         print("--- Simulation Configuration ---")
         print(json.dumps(config, indent=2))
         print(f"--- Using data file: {secure_name} ---")
+        
+        # Determine if we are using skip-stop scheme
+        scheme_type = "Regular"
+        if config.get("useSkipStop", False):
+            scheme_type = "Skip-Stop"
+            print(f"Using Skip-Stop scheme with station schemes: {config.get('stationSchemes', [])}")
+        else:
+            print("Using Regular scheme (all trains stop at all stations)")
 
         # Instantiate the Simulation class
         sim = Simulation(csv_filename=secure_name, config=config)
 
-        # Run the simulation
-        # The sim.run() method now handles initialization, event processing,
-        # database interaction, and its own exception handling.
+        # Run the simulation with the specified scheme type
         sim.run()
 
         # Check if simulation ran successfully (indicated by simulation_id being set)
