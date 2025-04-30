@@ -291,7 +291,7 @@ const SimulationController = ({
   };
 
   // Speed preset options
-  const speedPresets = [0.5, 1, 2, 5, 10];
+  const speedPresets = [0.5, 1, 2, 5, 10, 20, 30];
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-700 p-4 shadow-sm">
