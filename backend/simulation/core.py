@@ -597,10 +597,10 @@ class EventHandler:
             # Schedule departure event for trains with adaptive headway, starting after initial delay
             departure_time = event.time + initial_delay
             
-            print(f"[SERVICE PERIOD CHANGE] Deploying {trains_to_deploy} trains for period: {period['name']}")
-            print(f"System metrics: Segment congestion: {metrics['segment_congestion']:.2f}")
-            print(f"Using headway multiplier: {headway_multiplier:.2f}x (Base headway: {self.simulation.active_headway}min)")
-            print(f"Initial insertion delay: {initial_delay.total_seconds()/60:.1f} minutes")
+            #print(f"[SERVICE PERIOD CHANGE] Deploying {trains_to_deploy} trains for period: {period['name']}")
+            #print(f"System metrics: Segment congestion: {metrics['segment_congestion']:.2f}")
+            #print(f"Using headway multiplier: {headway_multiplier:.2f}x (Base headway: {self.simulation.active_headway}min)")
+            #print(f"Initial insertion delay: {initial_delay.total_seconds()/60:.1f} minutes")
             
             # Distribute insertions more evenly across a longer timespan to reduce congestion
             # Calculate an appropriate spread factor based on how many trains we're adding
@@ -623,12 +623,12 @@ class EventHandler:
                 )
                 
                 # Log the scheduled insertion
-                print(f"[ADAPTIVE DEPLOYMENT] Scheduled Train {train.train_id} insertion at {departure_time}")
+                #print(f"[ADAPTIVE DEPLOYMENT] Scheduled Train {train.train_id} insertion at {departure_time}")
                 
                 # Get segment (2,1) current state for monitoring
                 insertion_segment = self.simulation.get_segment_by_id((2,1))
                 segment_status = "Available" if insertion_segment.is_available() else f"Occupied by Train {insertion_segment.occupied_by.train_id}"
-                print(f"Insertion segment status: {segment_status}")
+                #print(f"Insertion segment status: {segment_status}")
                 
                 # Increment departure time by adaptive headway with spreading
                 adaptive_headway = self.simulation.active_headway * headway_multiplier * spread_factor
@@ -639,7 +639,7 @@ class EventHandler:
                     # Add extra buffer every few trains
                     buffer_minutes = self.simulation.active_headway * 0.5
                     departure_time += timedelta(minutes=buffer_minutes)
-                    print(f"Adding extra {buffer_minutes:.1f} minute buffer after Train {train.train_id}")
+                    #print(f"Adding extra {buffer_minutes:.1f} minute buffer after Train {train.train_id}")
                 
                 # After scheduling each train, recalculate metrics as the system state will change
                 if i < trains_to_deploy - 1:  # No need to recalculate after the last train
@@ -650,7 +650,7 @@ class EventHandler:
         elif current_active_count > target_train_count:
             trains_to_withdraw = current_active_count - target_train_count
             self.simulation.trains_to_withdraw_count = trains_to_withdraw
-            print(f"[SERVICE PERIOD CHANGE] Need to withdraw {trains_to_withdraw} trains for period: {period['name']}")
+            #print(f"[SERVICE PERIOD CHANGE] Need to withdraw {trains_to_withdraw} trains for period: {period['name']}")
             # Actual withdrawal logic is handled in _handle_arrival for Station 1 northbound arrivals.
         
     def _record_timetable_entry(self, train, station, arrival_time, departure_time, 
@@ -721,10 +721,19 @@ class EventHandler:
         
         # === END WITHDRAWAL CHECK ===
         
-        # --- Normal Arrival Processing (If not withdrawn) ---
-        # Calculate departure time based on dwell time
-        departure_time = arrival_time + timedelta(seconds=self.simulation.dwell_time)
-        ##train.arrival_time = arrival_time
+        # --- Normal Arrival Processing ---
+        if self.simulation.scheme_type == "REGULAR":
+            # Calculate departure time based on dwell time
+            departure_time = arrival_time + timedelta(seconds=self.simulation.dwell_time)
+        else:
+            # For Skip-stop schemes, we need to check if the train should stop at the station
+            if not station.should_stop(train):
+                # Train should not stop, so we can schedule a departure immediately
+                departure_time = arrival_time
+            else:
+                # Train should stop, so we need to schedule a dwell event
+                departure_time = arrival_time + timedelta(seconds=self.simulation.dwell_time)
+        
         train.current_station = station
         
         # Occupy Current Station
@@ -732,8 +741,8 @@ class EventHandler:
         
         if station.is_terminus:
             # Schedule turnaround event
-            print(f"\n[ARRIVAL] Train {train.train_id} arrived at terminus Station {station.station_id} ({station.name}) at {arrival_time}")
-            print(f"[ARRIVAL] Current direction: {train.direction}, scheduling turnaround event for {departure_time}")
+            #print(f"\n[ARRIVAL] Train {train.train_id} arrived at terminus Station {station.station_id} ({station.name}) at {arrival_time}")
+            #print(f"[ARRIVAL] Current direction: {train.direction}, scheduling turnaround event for {departure_time}")
             
             self.simulation.schedule_event(
                 Event(
@@ -745,7 +754,7 @@ class EventHandler:
             )
             
             # Add extra debug to verify station is marked as terminus
-            print(f"[ARRIVAL] Confirming Station {station.station_id} is_terminus={station.is_terminus}")
+            #print(f"[ARRIVAL] Confirming Station {station.station_id} is_terminus={station.is_terminus}")
         else:
             # Schedule departure event
             self.simulation.schedule_event(
@@ -782,10 +791,10 @@ class EventHandler:
             # Apply the adaptive headway based on system metrics
             reschedule_time = event.time + timedelta(minutes=adaptive_headway)
             
-            print(f"\n[ADAPTIVE INSERTION] Train {train.train_id} insertion at {event.time} conflicts with Train {conflicting_segment_enter_event.train.train_id}.")
-            print(f"System metrics: Segment congestion: {metrics['segment_congestion']:.2f}, Upcoming arrivals: {metrics['upcoming_arrivals_station1']}")
-            print(f"Using headway multiplier: {headway_multiplier:.2f} × {self.simulation.active_headway}min = {adaptive_headway:.2f}min")
-            print(f"Rescheduling to {reschedule_time}")
+            #print(f"\n[ADAPTIVE INSERTION] Train {train.train_id} insertion at {event.time} conflicts with Train {conflicting_segment_enter_event.train.train_id}.")
+            #print(f"System metrics: Segment congestion: {metrics['segment_congestion']:.2f}, Upcoming arrivals: {metrics['upcoming_arrivals_station1']}")
+            #print(f"Using headway multiplier: {headway_multiplier:.2f} × {self.simulation.active_headway}min = {adaptive_headway:.2f}min")
+            #print(f"Rescheduling to {reschedule_time}")
             
             self.simulation.schedule_event(
                 Event(
@@ -824,9 +833,9 @@ class EventHandler:
                 required_time = next_departure.time + buffer_time
                 
                 if required_time > current_time:
-                    print(f"[ADAPTIVE INSERTION] Station 1 northbound platform occupied until {next_departure.time}.")
-                    print(f"System metrics: Segment congestion: {metrics['segment_congestion']:.2f}, Buffer: {buffer_time.total_seconds()}s")
-                    print(f"Rescheduling Train {train.train_id} insertion to {required_time}")
+                    #print(f"[ADAPTIVE INSERTION] Station 1 northbound platform occupied until {next_departure.time}.")
+                    #print(f"System metrics: Segment congestion: {metrics['segment_congestion']:.2f}, Buffer: {buffer_time.total_seconds()}s")
+                    #print(f"Rescheduling Train {train.train_id} insertion to {required_time}")
                     
                     self.simulation.schedule_event(
                         Event(
@@ -858,8 +867,8 @@ class EventHandler:
             train.arrival_time = arrival_time
             
             # Add debug info with system metrics
-            print(f"[INSERTION SUCCESS] Train {train.train_id} inserted at {event.time}, ETA at Station 1: {arrival_time}")
-            print(f"Current system metrics: Active trains: {metrics['active_trains']}, Segment congestion: {metrics['segment_congestion']:.2f}")
+            #print(f"[INSERTION SUCCESS] Train {train.train_id} inserted at {event.time}, ETA at Station 1: {arrival_time}")
+            #print(f"Current system metrics: Active trains: {metrics['active_trains']}, Segment congestion: {metrics['segment_congestion']:.2f}")
             
             # Schedule segment exit event (which will then trigger arrival)
             self.simulation.schedule_event(
@@ -879,15 +888,15 @@ class EventHandler:
             conflicting_exit_event = self.simulation.get_event_by_type("segment_exit", segment=segment)
             if conflicting_exit_event and conflicting_exit_event.train:
                 exit_time = conflicting_exit_event.time
-                print(f"Segment {segment.segment_id} expected to be cleared by Train {conflicting_exit_event.train.train_id} at {exit_time}")
+                #print(f"Segment {segment.segment_id} expected to be cleared by Train {conflicting_exit_event.train.train_id} at {exit_time}")
                 
                 # Apply adaptive headway using system metrics
                 buffer_time = timedelta(minutes=adaptive_headway)
                 required_insertion_time = exit_time + buffer_time
                 
-                print(f"[ADAPTIVE INSERTION] System metrics: Congestion: {metrics['segment_congestion']:.2f}, Headway multiplier: {headway_multiplier:.2f}")
-                print(f"Using adaptive headway: {adaptive_headway:.2f} minutes ({headway_multiplier:.2f} × {self.simulation.active_headway}min)")
-                print(f"Rescheduling Train {train.train_id} insertion to {required_insertion_time}")
+                #print(f"[ADAPTIVE INSERTION] System metrics: Congestion: {metrics['segment_congestion']:.2f}, Headway multiplier: {headway_multiplier:.2f}")
+                #print(f"Using adaptive headway: {adaptive_headway:.2f} minutes ({headway_multiplier:.2f} × {self.simulation.active_headway}min)")
+                #print(f"Rescheduling Train {train.train_id} insertion to {required_insertion_time}")
                 
                 # Reschedule the insertion event with the calculated time
                 self.simulation.schedule_event(
@@ -900,12 +909,12 @@ class EventHandler:
                 )
             else:
                 # If no exit event is found but segment is still occupied
-                print(f"Segment {segment.segment_id} occupied, but no exit event found in queue.")
+                #print(f"Segment {segment.segment_id} occupied, but no exit event found in queue.")
                 # Use adaptive headway for reschedule
                 fallback_time = event.time + timedelta(minutes=adaptive_headway)
                 required_insertion_time = fallback_time  # Define the variable for the safety check below
-                print(f"[FALLBACK] Using adaptive headway: {adaptive_headway:.2f}min")
-                print(f"Rescheduling Train {train.train_id} insertion to {fallback_time}")
+                #print(f"[FALLBACK] Using adaptive headway: {adaptive_headway:.2f}min")
+                #print(f"Rescheduling Train {train.train_id} insertion to {fallback_time}")
                 
                 self.simulation.schedule_event(
                     Event(
@@ -919,14 +928,14 @@ class EventHandler:
             # Safety check to prevent infinite loops - only run if we rescheduled with same timestamp
             try:
                 if 'required_insertion_time' in locals() and event.time == required_insertion_time:
-                    print("\n[INSERTION] DEBUG: POTENTIAL LOOP DETECTED")
-                    print(f"Event Time: {event.time}")
-                    print(f"Required Insertion Time: {required_insertion_time}")
-                    print(f"Train ID: {train.train_id}")
-                    print(f"Segment ID: {segment.segment_id}")
+                    #print("\n[INSERTION] DEBUG: POTENTIAL LOOP DETECTED")
+                    #print(f"Event Time: {event.time}")
+                    #print(f"Required Insertion Time: {required_insertion_time}")
+                    #print(f"Train ID: {train.train_id}")
+                    #print(f"Segment ID: {segment.segment_id}")
                     
                     # Reset the simulation event queue
-                    print("Resetting event queue to prevent infinite loop.")
+                    #print("Resetting event queue to prevent infinite loop.")
                     self.simulation.event_queue = PriorityQueue()
             except Exception as e:
                 print(f"Error in insertion safety check: {str(e)}")
@@ -935,6 +944,8 @@ class EventHandler:
     def _handle_departure(self, event):
         train = event.train
         station = event.station
+        alighted = 0
+        boarded = 0
         
         # Check if the train is still active before proceeding
         if not train.is_active: # Check the train's own flag
@@ -951,12 +962,14 @@ class EventHandler:
             train.status = "active"
             
             #======= BOARD/ALIGHT PASSENGERS =======#
-            alighted, boarded = station.process_passenger_exchange(
-                scheme_map=self.simulation.station_type_map, # Pass the map
-                train=train, 
-                train_arrival_time=train.arrival_time, 
-                train_departure_time=departure_time
-            )
+            # For skip-stop schemes, we need to check if the train should stop at the station
+            if station.should_stop(train):
+                alighted, boarded = station.process_passenger_exchange(
+                    scheme_map=self.simulation.station_type_map, # Pass the map
+                    train=train, 
+                    train_arrival_time=train.arrival_time, 
+                    train_departure_time=departure_time
+                )
             
             #======= RECORD TO TIMETABLE =======#
             self._record_timetable_entry(
@@ -1008,8 +1021,8 @@ class EventHandler:
             segment_conflict_found = False
             if next_segment.occupied_by is not None:
                 segment_conflict_found = True
-                print(f"\n[DEPARTURE CONFLICT] Train {train.train_id} at Station {station.station_id} cannot depart at {event.time}")
-                print(f"Segment {next_segment.segment_id} is occupied by Train {next_segment.occupied_by.train_id}")
+                #print(f"\n[DEPARTURE CONFLICT] Train {train.train_id} at Station {station.station_id} cannot depart at {event.time}")
+                #print(f"Segment {next_segment.segment_id} is occupied by Train {next_segment.occupied_by.train_id}")
                 
                 # Get the segment exit event for the occupying train
                 segment_exit_events = [e for _, e in self.simulation.event_queue.queue 
@@ -1021,15 +1034,15 @@ class EventHandler:
                     earliest_exit = min(segment_exit_events, key=lambda e: e.time)
                     # Use minimal buffer for departures to reduce station dwell time
                     segment_clear_time = earliest_exit.time + buffer_time_conflict
-                    print(f"Segment will be clear at {earliest_exit.time}, scheduling after {segment_clear_time}")
+                    #print(f"Segment will be clear at {earliest_exit.time}, scheduling after {segment_clear_time}")
                     required_departure_time = max(required_departure_time, segment_clear_time)
                 else:
                     # Fallback if no exit event found (unusual but possible)
                     # Use smaller headway multiplier for departures than for insertions
                     departure_headway_multiplier = max(1.0, metrics["recommended_headway_multiplier"] * 0.8)
                     fallback_clear_time = event.time + timedelta(minutes=self.simulation.active_headway * departure_headway_multiplier)
-                    print(f"No segment exit event found. Using reduced adaptive headway: {self.simulation.active_headway * departure_headway_multiplier:.2f}min")
-                    print(f"Fallback clear time: {fallback_clear_time}")
+                    #print(f"No segment exit event found. Using reduced adaptive headway: {self.simulation.active_headway * departure_headway_multiplier:.2f}min")
+                    #print(f"Fallback clear time: {fallback_clear_time}")
                     required_departure_time = max(required_departure_time, fallback_clear_time)
 
             # Check platform conflict at the NEXT station
@@ -1037,7 +1050,7 @@ class EventHandler:
             if next_station.platforms[train.direction] is not None:
                 platform_conflict_found = True
                 preceding_train = next_station.platforms[train.direction]
-                print(f"Platform at Station {next_station.station_id} is occupied by Train {preceding_train.train_id}")
+                #print(f"Platform at Station {next_station.station_id} is occupied by Train {preceding_train.train_id}")
                 
                 # Look for departure events for the occupying train
                 platform_clear_events = [e for _, e in self.simulation.event_queue.queue 
@@ -1048,13 +1061,13 @@ class EventHandler:
                 if platform_clear_events:
                     earliest_departure = min(platform_clear_events, key=lambda e: e.time)
                     platform_clear_time = earliest_departure.time + buffer_time_conflict
-                    print(f"Platform will be clear after train departs at {earliest_departure.time}, scheduling after {platform_clear_time}")
+                    #print(f"Platform will be clear after train departs at {earliest_departure.time}, scheduling after {platform_clear_time}")
                     required_departure_time = max(required_departure_time, platform_clear_time)
                 else:
                     # Fallback if no departure event found - use a smaller multiplier for departures
                     departure_headway_multiplier = max(1.0, metrics["recommended_headway_multiplier"] * 0.8)
                     fallback_clear_time = event.time + timedelta(minutes=self.simulation.active_headway * departure_headway_multiplier)
-                    print(f"No platform departure event found. Using reduced adaptive headway: {fallback_clear_time}")
+                    #print(f"No platform departure event found. Using reduced adaptive headway: {fallback_clear_time}")
                     required_departure_time = max(required_departure_time, fallback_clear_time)
 
             # Check for simultaneous departure conflicts at the CURRENT station
@@ -1083,8 +1096,8 @@ class EventHandler:
             
             if current_dwell_duration > max_allowed_dwell:
                 # Cap the dwell time to avoid excessive delays
-                print(f"WARNING: Excessive dwell time detected for Train {train.train_id} at Station {station.station_id}")
-                print(f"Current calculated dwell: {current_dwell_duration:.1f}s, Max allowed: {max_allowed_dwell:.1f}s")
+                #print(f"WARNING: Excessive dwell time detected for Train {train.train_id} at Station {station.station_id}")
+                #print(f"Current calculated dwell: {current_dwell_duration:.1f}s, Max allowed: {max_allowed_dwell:.1f}s")
                 
                 # Calculate a more reasonable departure time
                 adjusted_departure_time = train.arrival_time + timedelta(seconds=max_allowed_dwell)
@@ -1093,16 +1106,16 @@ class EventHandler:
                 # (to avoid moving departures earlier than scheduled)
                 if adjusted_departure_time > event.time:
                     final_departure_time = adjusted_departure_time
-                    print(f"Capping dwell time to {max_allowed_dwell:.1f}s, new departure: {final_departure_time}")
+                    #print(f"Capping dwell time to {max_allowed_dwell:.1f}s, new departure: {final_departure_time}")
             
             # If we had to reschedule, log the details
             if final_departure_time != event.time:
-                print(f"[ADAPTIVE DEPARTURE] Rescheduling Train {train.train_id} departure from {event.time} to {final_departure_time}")
-                if segment_conflict_found:
-                    print(f"Reason: Segment {next_segment.segment_id} occupied")
-                if platform_conflict_found:
-                    print(f"Reason: Next station platform occupied")
-                print(f"System congestion metrics: {metrics['segment_congestion']:.2f}, Buffer factor: {buffer_factor}")
+                #print(f"[ADAPTIVE DEPARTURE] Rescheduling Train {train.train_id} departure from {event.time} to {final_departure_time}")
+                #if segment_conflict_found:
+                #    print(f"Reason: Segment {next_segment.segment_id} occupied")
+                #if platform_conflict_found:
+                #    print(f"Reason: Next station platform occupied")
+                #print(f"System congestion metrics: {metrics['segment_congestion']:.2f}, Buffer factor: {buffer_factor}")
                 
                 # Reschedule the event with the final calculated time
                 self.simulation.schedule_event(
@@ -1117,14 +1130,14 @@ class EventHandler:
             
             # SAFETY CHECK: This should never happen with proper scheduling, but add protection
             if event.time == final_departure_time and (next_segment.occupied_by is not None or next_station.platforms[train.direction] is not None):
-                print("\n[DEPARTURE] WARNING: Could not properly reschedule departing train due to conflicts")
-                print(f"Train {train.train_id} at Station {station.station_id}, Time: {event.time}")
+                #print("\n[DEPARTURE] WARNING: Could not properly reschedule departing train due to conflicts")
+                #print(f"Train {train.train_id} at Station {station.station_id}, Time: {event.time}")
                 
                 # Force a smaller delay to prevent infinite loops but avoid excessive dwells
                 forced_delay = timedelta(minutes=self.simulation.active_headway * 0.8)  # Reduced from 1.5 to 0.8
                 forced_departure_time = event.time + forced_delay
                 
-                print(f"FORCING delay of {forced_delay.total_seconds()/60:.1f} minutes to {forced_departure_time}")
+                #print(f"FORCING delay of {forced_delay.total_seconds()/60:.1f} minutes to {forced_departure_time}")
                 
                 self.simulation.schedule_event(
                     Event(
@@ -1141,11 +1154,11 @@ class EventHandler:
         station = event.station
         
         # Verbose debug message for turnarounds
-        print(f"\n[TURNAROUND] Processing turnaround event for Train {train.train_id} at Station {station.station_id} (time: {event.time})")
+        #print(f"\n[TURNAROUND] Processing turnaround event for Train {train.train_id} at Station {station.station_id} (time: {event.time})")
         
         # Check if the train is still active before proceeding
         if not train.is_active: # Check the train's own flag
-            print(f"[TURNAROUND] ERROR: Ignoring turnaround event for inactive train {train.train_id} at {event.time}")
+            #print(f"[TURNAROUND] ERROR: Ignoring turnaround event for inactive train {train.train_id} at {event.time}")
             return # Ignore event for inactive train
         
         departure_time = event.time
@@ -1173,11 +1186,11 @@ class EventHandler:
         # Clear Station Platform
         previous_direction = train.direction
         station.platforms[previous_direction] = None
-        print(f"[TURNAROUND] Cleared platform at Station {station.station_id} direction {previous_direction}")
+        #print(f"[TURNAROUND] Cleared platform at Station {station.station_id} direction {previous_direction}")
         
         # Change train direction
         train.change_direction()
-        print(f"[TURNAROUND] Changed train direction from {previous_direction} to {train.direction}")
+        #print(f"[TURNAROUND] Changed train direction from {previous_direction} to {train.direction}")
         
         if event.time <= self.simulation.end_time:
             # Calculate turnaround time and new departure time
@@ -1185,13 +1198,13 @@ class EventHandler:
             train.current_journey_travel_time = self.simulation.turnaround_time
             next_departure_time = train.arrival_time + timedelta(seconds=self.simulation.dwell_time)
             
-            print(f"[TURNAROUND] Scheduling Train {train.train_id} departure from Station {station.station_id} at {next_departure_time}")
-            print(f"[TURNAROUND] Turnaround duration: {self.simulation.turnaround_time}s, Dwell time: {self.simulation.dwell_time}s")
+            #print(f"[TURNAROUND] Scheduling Train {train.train_id} departure from Station {station.station_id} at {next_departure_time}")
+            #print(f"[TURNAROUND] Turnaround duration: {self.simulation.turnaround_time}s, Dwell time: {self.simulation.dwell_time}s")
             
             # Make sure the platform in the new direction is available
-            if station.platforms[train.direction] is not None:
-                print(f"[TURNAROUND] WARNING: Platform at Station {station.station_id} direction {train.direction} already occupied by Train {station.platforms[train.direction].train_id}!")
-                # We could handle this conflict if needed
+            #if station.platforms[train.direction] is not None:
+            #    print(f"[TURNAROUND] WARNING: Platform at Station {station.station_id} direction {train.direction} already occupied by Train {station.platforms[train.direction].train_id}!")
+            #    # We could handle this conflict if needed
             
             # Schedule the departure after turnaround
             self.simulation.schedule_event(
@@ -1388,7 +1401,7 @@ class Simulation:
         
         self.trains = []
         self.stations = []
-        self.scheme = config["scheme"]
+        self.scheme_pattern = config["schemePattern"]
         self.track_segments = []
         self.passenger_demand = []
         self.service_periods = None
@@ -1414,7 +1427,7 @@ class Simulation:
         self._initialize_track_segments() # Track segments are the same for all schemes
         self._initialize_trains(scheme_type)
         self._initialize_service_periods(scheme_type)
-        #self._initialize_passengers_demand()
+        self._initialize_passengers_demand()
 
         # Create station map for efficient lookup
         self.station_type_map = {s.station_id: s.station_type for s in self.stations}
@@ -1464,7 +1477,7 @@ class Simulation:
         self.stations.clear()
         station_names = self.config["stationNames"]
         num_stations = len(station_names)
-        station_types = self.scheme
+        station_types = self.scheme_pattern
 
         for station_id, (station_name, station_type) in enumerate(zip(station_names, station_types), start=1):
             self.stations.append(
@@ -1472,7 +1485,7 @@ class Simulation:
                     station_id=station_id,
                     name=station_name,
                     zone_length=DEFAULT_ZONE_LENGTH, # Assuming DEFAULT_ZONE_LENGTH is available
-                    station_type="AB" if scheme_type == "Regular" else station_type,
+                    station_type="AB" if scheme_type == "REGULAR" else station_type,
                     is_terminus=station_id == 1 or station_id == num_stations
                 )
             )
@@ -1581,7 +1594,7 @@ class Simulation:
                 Train(
                     train_id=train_id,
                     train_specs=train_specs_obj, 
-                    service_type="AB" if scheme_type == "Regular" else "B" if train_id % 2 == 0 else "A",
+                    service_type="AB" if scheme_type == "REGULAR" else "B" if train_id % 2 == 0 else "A",
                     current_station=self.stations[0] # All trains start at North Avenue (Station 1)
                 )
             )
@@ -1670,11 +1683,11 @@ class Simulation:
         # Print the result
         print("\tINITIALIZED SERVICE PERIODS:")
         print(indented_df_string)
-        if scheme_type == "Regular":
+        if scheme_type == "REGULAR":
             print(f"\tLOOP TIME: {timedelta(minutes=loop_time)}")
         else:
-            print(f"\tLOOP TIME A: {timedelta(minutes=loop_time)}")
-            print(f"\tLOOP TIME B: {timedelta(minutes=int(self.calculate_loop_time(self.trains[1]) / 60))}")
+            print(f"\tLOOP TIME FOR A TRAINS: {timedelta(minutes=loop_time)}")
+            print(f"\tLOOP TIME FOR B TRAINS: {timedelta(minutes=int(self.calculate_loop_time(self.trains[1]) / 60))}")
 
         # Update the SERVICE_PERIODS field in the database with calculated headways
         if not debug:
@@ -1797,16 +1810,16 @@ class Simulation:
         """Run the simulation until the end time."""
         print("Simulation running...")
         start_run_time = py_time.perf_counter() # Record start time
-        # schemes = ["Regular", "Skip-stop"] # Add Skip-stop
-        schemes = ["Regular"] # Temporarily removing Skip-stop scheme
+        # schemes = ["REGULAR", "SKIP-STOP"] # Add Skip-stop
+        schemes = ["SKIP-STOP"] # Temporarily removing Skip-stop scheme
         self._create_simulation_entry()
         #'''
         for scheme_type in schemes:
             try:
-                print(f"\n[RUNNING SIMULATION FOR SCHEME TYPE: {scheme_type}]")
                 self.scheme_type = scheme_type
                 self.initialize(scheme_type)
 
+                print(f"\n[RUNNING SIMULATION FOR SCHEME TYPE: {scheme_type}]")
                 self.event_history = []
                 while self.current_time < self.end_time and not self.event_queue.empty():
                     priority, event = self.event_queue.get()  # Get the next event
@@ -1820,8 +1833,9 @@ class Simulation:
                     self.event_handler.process_event(event)
 
                 # Indicate success for this simulation ID run
-                print(f"\nSimulation for ID {self.simulation_id} completed up to {self.current_time}.")
-                print(f"Generated {len(self.timetables)} TRAIN_MOVEMENTS entries.")
+                print(f"\n[SIMULATION COMPLETED]")
+                print(f"SIMULATION_ID: {self.simulation_id} COMPLETED UP TO {self.current_time.strftime('%H:%M:%S')}")
+                print(f"GENERATED {len(self.timetables)} TRAIN_MOVEMENTS ENTRIES")
 
                 # Save results before potentially moving to the next simulation_id or disconnecting
                 if not debug:
@@ -1844,23 +1858,26 @@ class Simulation:
                 # Decide if you want to stop all simulations or continue with the next ID
                 break # Stop processing further simulation IDs on error
         #'''
-        end_run_time = py_time.perf_counter() # Record end time
+        end_run_time = py_time.perf_counter()
         run_duration = end_run_time - start_run_time
-        print(f"Total simulation run() execution time: {run_duration:.4f} seconds")
+        print(f"\n[SIMULATION.RUN() EXECUTION TIME: {run_duration:.3f} SECONDS]")
 
         # Disconnect shared Prisma client after all simulations in the queue are attempted or completed
         if not debug and db.is_connected():
             print("Disconnecting shared DB client after simulation run.")
             db.disconnect()
 
+        # return run_duration
+
     def save_timetable_to_db(self):
         """Formats timetable entries and bulk inserts them into the TRAIN_MOVEMENTS table."""
+        print(f"\n[SAVING TRAIN_MOVEMENTS TO DB]")
         if not self.timetables:
-            print("No timetable entries generated to save.")
+            print("\tERROR: No timetable entries generated to save.")
             return
 
         if not db.is_connected():
-            print("Error: Database is not connected. Cannot save timetable.")
+            print("\tERROR: Database is not connected. Cannot save timetable.")
             # Optionally try to reconnect if desired, but better practice is to save before disconnect.
             # try:
             #     db.connect()
@@ -1870,7 +1887,7 @@ class Simulation:
             return
 
 
-        print(f"Preparing {len(self.timetables)} timetable entries for database insertion...")
+        print(f"\tPREPARING {len(self.timetables)} TIMETABLE ENTRIES FOR DATABASE INSERTION...")
         data_to_insert = []
         skipped_count = 0
         for entry in self.timetables:
@@ -1929,9 +1946,10 @@ class Simulation:
             # Consider logging the failed data or implementing retry logic if necessary
 
     def save_passenger_demand_to_db(self):
+        print(f"\n[SAVING PASSENGER DEMAND TO DB]")
         # --- Prepare Data for Database Insertion --- #
         total_passenger_count = sum(demand.passenger_count for demand in self.passenger_demand)
-        if not debug and not self.is_staging:
+        if not debug:
             # Update the main simulation entry with the total count
             try:
                 db.simulations.update(
@@ -2112,8 +2130,6 @@ class Simulation:
             # DEBUGGING
             calculate_loop_debug()
             current_station = next_station # set current to next for looping
-        
-        print(f"CUMULATIVE TOTAL TIME: {total_time}")
 
         return total_time
 
@@ -2161,17 +2177,16 @@ class Simulation:
         
 if __name__ == "__main__":
     """ Method to run the simulation as a standalone script"""
-    debug = True
     sample_config = {
         'acceleration': 0.8, 
         'deceleration': 0.8, 
         'dwellTime': 60, 
         'maxCapacity': 1182, 
         'maxSpeed': 60, 
-        'turnaroundTime': 180, 
+        'turnaroundTime': 300, 
         'stationNames': ['North Avenue', 'Quezon Avenue', 'GMA-Kamuning', 'Cubao', 'Santolan-Annapolis', 'Ortigas', 'Shaw Boulevard', 'Boni Avenue', 'Guadalupe', 'Buendia', 'Ayala', 'Magallanes', 'Taft Avenue'], 
         'stationDistances': [1.2, 1.1, 1.8, 1.5, 1.4, 0.9, 1, 1.1, 1.3, 1, 1.2, 1.7],
-        'scheme': ['AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB']
+        'schemePattern': ['AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB']
         }
     test_sim = Simulation("4-12-23-SAMPLE-minute-level.csv", sample_config)
 
