@@ -102,20 +102,7 @@ class TimetableEntry:
                 current_passenger_count,
                 train_status
             ):
-        """
-        Initialize a Timetable Entity
-        
-        Args:
-            train_id (int)
-            station_id (int)
-            scheduled_arrival (datetime)
-            scheduled_departure (datetime)
-        Attributes:
-            arrival_time (datetime)
-            departure_time (datetime)
-            passengers_boarded (int)
-            passengers_alighted (int)
-        """
+        self.train_status = train_status
         self.train_id = train_id
         self.service_type = service_type
         self.station_id = station_id
@@ -127,7 +114,6 @@ class TimetableEntry:
         self.passengers_alighted = passengers_alighted
         self.current_station_passenger_count = current_station_passenger_count
         self.current_passenger_count = current_passenger_count
-        self.train_status = train_status
         
 class TrainSpec:
     def __init__(self, max_capacity, cruising_speed, passthrough_speed, accel_rate, decel_rate):
@@ -228,22 +214,6 @@ class Passenger_Demand:
         
 class Station:
     def __init__(self, station_id, name, zone_length=None,  station_type="AB", is_terminus=False):
-        """
-        Initialize a Station Entity
-        
-        Args:
-            station_id (int):                       Assigned number to identify station entity
-            name (str):                             User-input assigned name
-            zone_length (int):                      Length of the station in meters
-            station_type (str):                     Determine what type of station in an AB Scheme
-        
-        Attributes:
-            is_terminus (boolean):                  If a station is a depot
-            waiting_passengers (list[Passenger()]): List of passengers waiting at the station
-            dwell_time (float):                     Time for loading/unloading (in minutes)
-            turnaround_time (float):                Time for direction change (in minutes)
-            statistics ():                          Metrics for this station
-        """
         self.station_id = station_id
         self.name = name
         self.zone_length = zone_length
@@ -390,17 +360,19 @@ class TrackSegment:
         self.direction = direction
         self.occupied_by = None
         
-        self.last_exit_time = None###
-        self.next_available = None#
+        self.last_entry_time = None ####
+        self.last_exit_time = None ####
+        self.next_available = None ####
         
     def is_available(self):
         """Check if the segment is free to enter."""
         # Logic to check if the segment is available (e.g., no train is on it)
         return self.occupied_by is None
 
-    def enter(self, train):
+    def enter(self, train, time):
         """Mark the segment as occupied."""
         if self.occupied_by is None:
+            self.last_entry_time = time
             self.occupied_by = train
             return True
         return False
@@ -471,24 +443,13 @@ class TrackSegment:
 
                 train.current_speed = passthrough_speed
             
+            if self.last_entry_time:
+                self.next_available = self.last_entry_time + timedelta(seconds=total_time)
+
             return int(total_time)
     
 class Train:
     def __init__(self, train_id, train_specs, service_type="AB", current_station=None):
-        """
-        Initialize a Train Entity
-        
-        Args:
-            train_id: Assigned number to identify train entity
-            train_specs: Contains train characteristics
-            service_type: Determine which stations the train will serve ("AB", "A", "B")
-            
-        Attributes:
-            active: Boolean to indicate if a train is in service
-            boarded_demand: List of Passenger_Demand objects who boarded
-            current_passenger_count: Current number of individual passengers on board
-            trip_count: Number of trips the specific train entity has taken 
-        """
         self.train_id = train_id
         # Train Specifications
         self.capacity = train_specs.max_capacity
@@ -546,28 +507,53 @@ class Train:
 
 class Event:
     def __init__(self, time, event_type, period=None, train=None, station=None, segment=None):
-        """
-        Initialize a Simulation Event
-
-        Args:
-            time (datetime): Time of the event
-            event_type (str): Type of event (e.g., "train_arrival")
-            period (dict, optional): Service period data for period change events.
-            train (Train, optional): Train involved in the event.
-            station (Station, optional): Station involved in the event.
-            segment (TrackSegment, optional): Track segment involved in the event.
-        """
         self.time = time
         self.event_type = event_type
-        self.period = period
         self.train = train
         self.station = station
         self.segment = segment
+        self.period = period
 
+    # PRIORITIZE INSERTION EVENTS BEFORE DEPARTURE EVENTS
+    #def __lt__(self, other):
+    #    """Comparison for priority queue.
+    #    Primary sort: Earlier events have higher priority.
+    #    Secondary sort (if times are equal): Prioritize specific event types.
+    #    """
+    #    if self.time != other.time:
+    #        return self.time < other.time
+
+    #    # Times are equal, apply secondary sort based on event type priority
+    #    # Lower number means higher priority (processed first)
+    #    priority_map = {
+    #        "train_insertion": 0,
+    #        "train_departure": 1,
+    #        # Assign a default higher number (lower priority) to other types
+    #        # to ensure insertion/departure come before others if needed,
+    #        # or handle conflicts explicitly if other types matter.
+    #        "segment_enter": 2,
+    #        "segment_exit": 3,
+    #        "train_arrival": 4,
+    #        "turnaround": 5,
+    #        "service_period_change": -1 # Give highest priority if needed? Or lowest? Let's put it low for now.
+    #    }
+    #    # Use a large default for unknown types or types not explicitly listed
+    #    self_priority = priority_map.get(self.event_type, 99)
+    #    other_priority = priority_map.get(other.event_type, 99)
+
+    #    if self_priority != other_priority:
+    #        return self_priority < other_priority
+
+    #    # Optional: If times and type priorities are equal, you could add
+    #    # a tertiary sort key (e.g., train_id, station_id) if needed
+    #    # for deterministic ordering. For now, return False.
+    #    return False
+    
+    # OLD implementation
     def __lt__(self, other):
         """Comparison for priority queue (earlier events have higher priority)."""
         return self.time < other.time
-    
+
 class EventHandler:
     def __init__(self, simulation):
         self.simulation = simulation
@@ -746,13 +732,37 @@ class EventHandler:
     def _handle_insertion(self, event):
         train = event.train
         segment = event.segment
-        station = event.station
-        
+
+        # --- Check for Segment Enter Conflict ---
+        # Find if another train is scheduled to ENTER the same segment at the same time
+        conflicting_segment_enter_event = self.simulation.get_event_by_type(
+            "segment_enter",
+            segment=segment
+        )
+
+        if conflicting_segment_enter_event and conflicting_segment_enter_event.time == event.time:
+            # CONFLICT DETECTED: Another train wants to enter the segment simultaneously.
+            # Delay this insertion.
+            reschedule_time = event.time + timedelta(minutes=self.simulation.active_headway) # Add a small delay (e.g., 10 seconds)
+            print(f"\n[INSERTION CONFLICT] Train {train.train_id} insertion at {event.time} conflicts with Train {conflicting_segment_enter_event.train.train_id} entering segment {segment.segment_id}. Rescheduling insertion to {reschedule_time}")
+            
+            self.simulation.schedule_event(
+                Event(
+                    time=reschedule_time,
+                    event_type="train_insertion",
+                    train=train,
+                    segment=segment
+                )
+            )
+            return # Stop processing this event now
+
+        # --- End Conflict Check ---
+
         # Check if the train is still active before proceeding
         train.status = "insertion"
         train.direction = "northbound"  # Ensure train direction is northbound for insertion
 
-        if segment.enter(train):
+        if segment.enter(train, event.time):
             # Train successfully entered segment (2,1)
             # Calculate arrival time at Station 1 (fixed 1 minute traversal time)
             arrival_time = event.time + timedelta(minutes=1)
@@ -779,32 +789,46 @@ class EventHandler:
             )
         else:
             # Track segment is occupied, need to reschedule insertion
-            # Calculate a new time to attempt insertion based on when the segment will be free
-            required_insertion_time = event.time  # Start with current time
-            buffer_time = timedelta(seconds=10)  # Small buffer
             
-            if segment.occupied_by is not None:
-                # If segment has next_available time, use that
-                if segment.next_available:
-                    segment_clear_time = segment.next_available + buffer_time
-                    required_insertion_time = max(required_insertion_time, segment_clear_time)
-                # Otherwise use headway-based estimation
-                elif segment.occupied_by.last_departure_time:
-                    segment_clear_time = segment.occupied_by.last_departure_time + timedelta(minutes=self.simulation.active_headway)
-                    required_insertion_time = max(required_insertion_time, segment_clear_time)
-            
+            # Assuming you want to print the conflicting train ID if available
+            conflicting_exit_event = self.simulation.get_event_by_type("segment_exit", segment=segment)
+            if conflicting_exit_event and conflicting_exit_event.train:
+                print(f"Segment {segment.segment_id} expected to be cleared by Train {conflicting_exit_event.train.train_id} at {conflicting_exit_event.time}")
+            else:
+                 print(f"Segment {segment.segment_id} occupied, but no exit event found in queue.")
+
+            required_insertion_time = conflicting_exit_event.time + timedelta(minutes=self.simulation.active_headway)
             print(f"[INSERTION] DEBUG: Train {train.train_id} failed to enter segment {segment.segment_id} at {event.time}, rescheduling to {required_insertion_time}")
-            print(self.simulation.get_event_by_type("segment_exit", segment=segment).train.train_id)
-            # Reschedule the insertion event with the calculated time
+            # Reschedule the insertion event with the calculated time.
+            # Make sure to pass the original segment object.
             self.simulation.schedule_event(
                 Event(
                     time=required_insertion_time,
                     event_type="train_insertion",
                     train=train,
-                    station=train.current_station,
-                    segment=segment
+                    segment=segment # Pass the segment object
+                    # station=train.current_station, # Pass station if needed
                 )
             )
+
+            if event.time == required_insertion_time:
+                print("\n[INSERTION] DEBUG: LOOPING ERROR")
+                print(f"Event Time: {event.time}")
+                print(f"Required Insertion Time: {required_insertion_time}")
+                print(f"Train ID: {train.train_id}")
+                print(f"Segment ID: {segment.segment_id}")
+                # Format the DataFrame for better printing
+                queue_df = pd.DataFrame(
+                    [(s.time, s.event_type,
+                      s.train.train_id if s.train else None,
+                      s.station.station_id if s.station else None,
+                      s.segment.segment_id if s.segment else None) # Add segment ID
+                     for _, s in self.simulation.event_queue.queue], # Iterate through (priority, event) tuples
+                    columns=['Time', 'Type', 'Train', 'Station', 'Segment'] # Add Segment column
+                )
+                print(f"Queue:\n{queue_df.to_string()}")
+                self.simulation.event_queue = PriorityQueue()
+            
     
     def _handle_departure(self, event):
         train = event.train
@@ -907,12 +931,15 @@ class EventHandler:
             # Keep checking and adjusting until no more simultaneous conflicts exist for the final_departure_time
             while True:
                 conflict_found = False
+                #print(f"\n[DEPARTURE] DEBUG: Checking for conflicts at station {station.station_id} for train {train.train_id} at time {final_departure_time}")
+                #print(f"Existing Event Time: {event.time}")
                 for _, existing_event in queue_snapshot:
                     # Check for departure events from the same station by a different train at the exact same time
                     if (existing_event.time == final_departure_time and
-                        existing_event.event_type == "train_departure" and
+                        (existing_event.event_type == "train_departure" or existing_event.event_type == "train_insertion") and
                         existing_event.station == station and
                         existing_event.train != train):
+                        print(f"\n\nConflict Found: {conflict_found}")
                         
                         original_conflict_time = final_departure_time
                         final_departure_time += timedelta(seconds=10) # Add 10s delay
@@ -1014,7 +1041,7 @@ class EventHandler:
         current_time = event.time
 
             
-        if segment.enter(train):    # Successfully entered segment
+        if segment.enter(train, event.time):    # Successfully entered segment
             station.platforms[train.direction] = None
             stops = next_station.should_stop(train)  # can change to passenger exchange logic
             segment_distance = segment.distance #get distance from each of the available stations
@@ -1679,6 +1706,14 @@ class Simulation:
     def get_event_by_type(self, event_type, station=None, segment=None):
         return next((
             e for _, e in self.event_queue.queue # Iterate through (priority, event) tuples
+            if e.event_type == event_type and
+            (station is None or e.station == station) and
+            (segment is None or e.segment == segment)
+        ), None)
+    
+    def get_event_from_history_by_type(self, event_type, station=None, segment=None):
+        return next((
+            e for e in self.event_history # Iterate through (priority, event) tuples
             if e.event_type == event_type and
             (station is None or e.station == station) and
             (segment is None or e.segment == segment)
