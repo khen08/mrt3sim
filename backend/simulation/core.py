@@ -7,7 +7,7 @@ import math
 import time as py_time
 
 
-debug = False
+debug = True
 if not debug:
     from connect import db
 else:
@@ -52,19 +52,6 @@ def instance_df(obj):
     return df
 
 def instances_to_df(obj_list):
-    """
-    Converts a list of objects into a pandas DataFrame.
-
-    Each object in the list becomes a row in the DataFrame, with object
-    attributes becoming columns. Non-primitive attribute values are
-    converted to strings.
-
-    Args:
-        obj_list (list): A list of objects.
-
-    Returns:
-        pd.DataFrame: A DataFrame representing the list of objects.
-    """
     all_data = []
     if not obj_list:
         return pd.DataFrame() # Return empty DataFrame if list is empty
@@ -72,11 +59,28 @@ def instances_to_df(obj_list):
     for obj in obj_list:
         data = {}
         for var_name, var_value in obj.__dict__.items():
-            # Convert lists/dicts/objects to string representation for DataFrame compatibility
-            if isinstance(var_value, (list, dict)) or not isinstance(var_value, (int, float, str, bool, type(None))):
+            # Specific handling for known simulation object types
+            if isinstance(var_value, Station):
+                data[var_name] = var_value.station_id
+            elif isinstance(var_value, TrackSegment):
+                data[var_name] = var_value.segment_id # Assuming segment_id exists
+            elif isinstance(var_value, Train):
+                data[var_name] = var_value.train_id
+            elif isinstance(var_value, Passenger_Demand):
+                # Represent OD pair as a string for simplicity in DataFrame
+                data[var_name] = f"{var_value.origin_station_id}-{var_value.destination_station_id}"
+            # Handle datetime objects
+            elif isinstance(var_value, datetime):
+                data[var_name] = var_value.strftime('%H:%M:%S')
+            # Handle lists and dictionaries by converting to string
+            elif isinstance(var_value, (list, dict)):
                 data[var_name] = str(var_value)
-            else:
+            # Handle basic types directly (int, float, str, bool, None)
+            elif isinstance(var_value, (int, float, str, bool, type(None))):
                 data[var_name] = var_value
+            # Fallback for any other unexpected object types: convert to string
+            else:
+                data[var_name] = str(var_value)
         all_data.append(data)
 
     # Create a DataFrame from the list of dictionaries
@@ -627,7 +631,6 @@ class EventHandler:
                         time=departure_time,
                         event_type="train_insertion",
                         train=train,
-                        station=train.current_station,
                         segment=self.simulation.get_segment_by_id((2,1))
                     )
                 )
@@ -756,6 +759,9 @@ class EventHandler:
             
             # Schedule segment exit/train arrival event at Station 1
             next_station = self.simulation.get_station_by_id(1)  # Station 1 (northbound)
+
+            # Update last departure time from insertion rail
+            train.last_departure_time = event.time
             
             # Track the train's journey
             train.current_journey_travel_time = 60  # 1 minute in seconds
@@ -787,8 +793,8 @@ class EventHandler:
                     segment_clear_time = segment.occupied_by.last_departure_time + timedelta(minutes=self.simulation.active_headway)
                     required_insertion_time = max(required_insertion_time, segment_clear_time)
             
-            print(f"DEBUG: Train {train.train_id} failed to enter segment {segment.segment_id} at {event.time}, rescheduling to {required_insertion_time}")
-            
+            print(f"[INSERTION] DEBUG: Train {train.train_id} failed to enter segment {segment.segment_id} at {event.time}, rescheduling to {required_insertion_time}")
+            print(self.simulation.get_event_by_type("segment_exit", segment=segment).train.train_id)
             # Reschedule the insertion event with the calculated time
             self.simulation.schedule_event(
                 Event(
@@ -815,9 +821,9 @@ class EventHandler:
         
         # Check for resource availability
         if next_station.platforms[train.direction] is None and next_segment.is_available():
-            #======= HANDLE TRAIN STATUS & TRAVEL TIME =======#
-            train_status = "active"
+            #======= TRAVEL TIME =======#
             travel_time = train.current_journey_travel_time
+            train.status = "active"
             
             #======= BOARD/ALIGHT PASSENGERS =======#
             alighted, boarded = station.process_passenger_exchange(
@@ -834,7 +840,7 @@ class EventHandler:
                 arrival_time = train.arrival_time,
                 departure_time = departure_time, 
                 travel_time=travel_time, # Use calculated travel_time
-                train_status=train_status, # Pass the status
+                train_status=train.status,
                 boarded=boarded, 
                 alighted=alighted
             )
@@ -912,6 +918,7 @@ class EventHandler:
                         final_departure_time += timedelta(seconds=10) # Add 10s delay
                         #print(f"-> Simultaneous departure conflict detected at {original_conflict_time}. Adding 10s delay for train {train.train_id}.")
                         conflict_found = True
+                        print(f"Conflict Found: {conflict_found}")
                         break # Re-check the queue with the new time
 
                 if not conflict_found:
@@ -930,9 +937,25 @@ class EventHandler:
             )
 
             if event.time == final_departure_time:
-                print("LOOPING ERROR STARTS ENDING HERE")
-                self.simulation.event_queue = PriorityQueue()
-            
+                print("\n[DEPARTURE] DEBUG: LOOPING ERROR")
+                print(f"Event Time: {event.time}")
+                print(f"Final Departure Time: {final_departure_time}")
+                print(f"Train ID: {train.train_id}")
+                print(f"Station ID: {station.station_id}")
+                print(f"Next Station ID: {next_station.station_id} Platform Occupied by: {next_station.platforms[train.direction].train_id if next_station.platforms[train.direction] else None}")
+                print(f"Next Segment ID: {next_segment.segment_id} Segment Occupied by: {next_segment.occupied_by.train_id if next_segment.occupied_by else None}")
+                # Format the DataFrame for better printing
+                queue_df = pd.DataFrame(
+                    [(s.time, s.event_type,
+                      s.train.train_id if s.train else None,
+                      s.station.station_id if s.station else None,
+                      s.segment.segment_id if s.segment else None) # Add segment ID
+                     for _, s in self.simulation.event_queue.queue], # Iterate through (priority, event) tuples
+                    columns=['Time', 'Type', 'Train', 'Station', 'Segment'] # Add Segment column
+                )
+                print(f"Queue:\n{queue_df.to_string()}")
+                self.simulation.event_queue = PriorityQueue() # Clear the queue to stop looping
+
     def _handle_turnaround(self, event):
         train = event.train
         station = event.station
@@ -959,7 +982,7 @@ class EventHandler:
                 arrival_time = train.arrival_time,
                 departure_time = departure_time, 
                 travel_time= train.current_journey_travel_time,
-                train_status="active",
+                train_status=train.status,
                 boarded=boarded, 
                 alighted=alighted
             )
@@ -1018,8 +1041,23 @@ class EventHandler:
                 )
             )
         else:
-            print(f"DEBUG: Train {train.train_id} failed to enter segment {segment.segment_id} at {current_time}")
-    
+            print(f"\n[SEGMENT ENTER] DEBUG: Train {train.train_id} failed to enter segment {segment.segment_id} at {current_time}")
+            print(f"Event Time: {current_time}")
+            print(f"Train ID: {train.train_id}")
+            print(f"Segment ID: {segment.segment_id}")
+            print(f"Next Segment ID: {segment.segment_id} Segment Occupied by: {segment.occupied_by.train_id if segment.occupied_by else None}")
+            # Format the DataFrame for better printing
+            queue_df = pd.DataFrame(
+                [(s.time, s.event_type,
+                  s.train.train_id if s.train else None,
+                  s.station.station_id if s.station else None,
+                  s.segment.segment_id if s.segment else None) # Add segment ID
+                 for _, s in self.simulation.event_queue.queue], # Iterate through (priority, event) tuples
+                columns=['Time', 'Type', 'Train', 'Station', 'Segment'] # Add Segment column
+            )
+            print(f"Queue:\n{queue_df.to_string()}")
+            self.simulation.event_queue = PriorityQueue() # Clear the queue to stop looping
+            
     def _handle_segment_exit(self, event):
         train = event.train
         station = event.station
@@ -1473,16 +1511,13 @@ class Simulation:
                 self.scheme_type = scheme_type
                 self.initialize(scheme_type)
 
+                self.event_history = []
                 while self.current_time < self.end_time and not self.event_queue.empty():
                     priority, event = self.event_queue.get()  # Get the next event
+                    self.event_history.append(event)
                     # Ensure we don't process events past the end time
                     if event.time >= self.end_time:
-                        self.current_time = event.time # Update time but don't process
-                        if self.current_time == datetime.combine(               
-                            self.current_time.date(),               
-                            time(hour=5, minute=30)             
-                        ):              
-                            self.event_queue = PriorityQueue()              
+                        self.current_time = event.time              
                         continue # Skip processing this event
 
                     self.current_time = event.time
@@ -1641,6 +1676,14 @@ class Simulation:
         """Fast O(1) segment lookup by ID."""
         return next((s for s in self.track_segments if s.segment_id == segment_id), None)
     
+    def get_event_by_type(self, event_type, station=None, segment=None):
+        return next((
+            e for _, e in self.event_queue.queue # Iterate through (priority, event) tuples
+            if e.event_type == event_type and
+            (station is None or e.station == station) and
+            (segment is None or e.segment == segment)
+        ), None)
+    
     def calculate_loop_time(self, train):
         total_time = 0
         start_station = train.current_station
@@ -1680,6 +1723,16 @@ class Simulation:
                     return segment
             return None
 
+        def calculate_loop_debug(is_debug=False):
+            if is_debug:
+                print(f"\nCurrent Station: {current_station.station_id}-{current_station.station_type}")
+                print(f"Next Station: {next_station.station_id}-{next_station.station_type}")
+                print(f"Segment: {segment.segment_id}")
+                print(f"Stops: {stops}")
+                print(f"Traversal Time: {traversal_time}")
+                print(f"Total Time: {total_time}")
+
+
         # Traverse to the further point
         while True:
             # Get next, not set
@@ -1709,13 +1762,11 @@ class Simulation:
             stops = next_station.should_stop(train)  # can change to passenger exchange logic
             segment_distance = segment.distance #get distance from each of the available stations
             traversal_time = segment.calculate_traversal_time(train, stops, segment_distance)
-
-            total_time += traversal_time + dwell_time
+            total_time += traversal_time
+            total_time += dwell_time if stops else 0
+            # DEBUGGING
+            calculate_loop_debug()
             current_station = next_station
-
-        # Loop back until reach intial
-        # Reset stations
-        #current_station = next_station
         
         # Main Loop again back towards it
         while True:
@@ -1723,7 +1774,6 @@ class Simulation:
 
             # Check if its base destination if its looped to starting position
             if next_station == start_station:
-                # if starting station has been hit.
 
                 segment = get_segment(current_station, next_station, direction)
 
@@ -1736,8 +1786,9 @@ class Simulation:
 
                 segment_distance = segment.distance #get distance from each of the available stations
                 traversal_time = segment.calculate_traversal_time(train, stops, segment_distance)
-
-                total_time += traversal_time + dwell_time  # loop back for complete calculations
+                total_time += traversal_time + dwell_time
+                # DEBUGGING
+                calculate_loop_debug()
                 break  # now return proper loop
             
             segment = get_segment(current_station, next_station, direction)
@@ -1752,9 +1803,13 @@ class Simulation:
             stops = next_station.should_stop(train)  # can change to passenger exchange logic
             segment_distance = segment.distance #get distance from each of the available stations
             traversal_time = segment.calculate_traversal_time(train, stops, segment_distance)
-            
-            total_time += traversal_time + dwell_time
+            total_time += traversal_time
+            total_time += dwell_time if stops else 0
+            # DEBUGGING
+            calculate_loop_debug()
             current_station = next_station # set current to next for looping
+        
+        print(f"CUMULATIVE TOTAL TIME: {total_time}")
 
         return total_time
 
@@ -1824,6 +1879,7 @@ if __name__ == "__main__":
     service_periods = test_sim.service_periods
     passenger_demand = instances_to_df(test_sim.passenger_demand)
     train_movements = instances_to_df(test_sim.timetables)
+    event_history = instances_to_df(test_sim.event_history)
 
     print("\nSimulation script finished.")
 
