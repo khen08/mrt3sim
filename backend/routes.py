@@ -108,17 +108,16 @@ def run_simulation():
         print(json.dumps(config, indent=2))
         print(f"--- Using data file: {secure_name} ---")
         
-        # Determine if we are using skip-stop scheme
-        scheme_type = "Regular"
-        if config.get("useSkipStop", False):
-            scheme_type = "Skip-Stop"
+        # Determine scheme type from schemeType
+        scheme_type = config.get("schemeType", "REGULAR")
+        if scheme_type == "SKIP-STOP":
             print(f"Using Skip-Stop scheme with station schemes: {config.get('stationSchemes', [])}")
-            # Add station schemes to config
-            config["scheme"] = config.get("stationSchemes", ["AB"] * len(config["stationNames"]))
+            # Add station scheme pattern to config
+            config["schemePattern"] = config.get("stationSchemes", ["AB"] * len(config["stationNames"]))
         else:
             print("Using Regular scheme (all trains stop at all stations)")
             # For regular scheme, all stations are "AB" type
-            config["scheme"] = ["AB"] * len(config["stationNames"])
+            config["schemePattern"] = ["AB"] * len(config["stationNames"])
 
         # Instantiate the Simulation class
         sim = Simulation(csv_filename=secure_name, config=config)

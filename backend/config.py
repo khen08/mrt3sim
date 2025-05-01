@@ -18,6 +18,8 @@ DEFAULT_STATIONS = [
     {"name": "Taft Avenue", "distance": 1.7},
 ]
 
+DEFAULT_SCHEME = ['AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB']
+
 DEFAULT_SETTINGS = {
     "dwellTime": 60,
     "turnaroundTime": 300,
@@ -25,11 +27,11 @@ DEFAULT_SETTINGS = {
     "deceleration": 0.8,
     "maxSpeed": 60,
     "maxCapacity": 1182,
-    "schemeType": "Regular",
+    "schemeType": "REGULAR",
+    "schemePattern": DEFAULT_SCHEME,
     "stations": DEFAULT_STATIONS
 }
 
-DEFAULT_SCHEME = ['AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB']
 DEFAULT_SERVICE_PERIODS = [
     {
         'name': 'Initial',

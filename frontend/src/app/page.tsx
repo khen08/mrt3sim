@@ -67,8 +67,8 @@ interface SimulationSettings {
   deceleration: number;
   maxSpeed: number;
   maxCapacity: number;
-  schemeType: "Regular" | "Skip-Stop";
-  useSkipStop: boolean;
+  schemeType: "REGULAR" | "SKIP-STOP";
+  schemePattern: string[]; // Array of station schemes: ["AB", "A", "AB", "B", ...]
   stations: {
     name: string;
     distance: number;
@@ -164,33 +164,21 @@ export default function Home() {
         const defaults = await response.json();
         console.log("Received default settings:", defaults);
 
+        // Get the scheme pattern from defaults
+        const defaultSchemePattern = defaults.schemePattern;
+
         // Add scheme to stations if not present
-        const defaultScheme = [
-          "AB",
-          "A",
-          "AB",
-          "B",
-          "AB",
-          "A",
-          "AB",
-          "B",
-          "AB",
-          "A",
-          "AB",
-          "B",
-          "AB",
-        ];
         const stationsWithScheme = defaults.stations.map(
           (station: any, index: number) => ({
             ...station,
-            scheme: defaultScheme[index] || "AB",
+            scheme: defaultSchemePattern[index] || "AB",
           })
         );
 
         // Set the simulation settings state with added fields
         setSimulationSettings({
           ...defaults,
-          useSkipStop: false,
+          schemePattern: defaultSchemePattern,
           stations: stationsWithScheme,
         });
 
@@ -199,7 +187,7 @@ export default function Home() {
           ...prev,
           config: {
             ...defaults,
-            useSkipStop: false,
+            schemePattern: defaultSchemePattern,
             stations: stationsWithScheme,
           },
         }));
@@ -445,11 +433,21 @@ export default function Home() {
           return station;
         });
 
+        // Also update the schemePattern array to match station schemes
+        const updatedSchemePattern = updatedStations.map(
+          (station) => station.scheme || "AB"
+        );
+
         console.log(
           `Station scheme change: Index ${index}, New Scheme ${value}`
         ); // Debug log
 
-        const updatedSettings = { ...prev, stations: updatedStations };
+        const updatedSettings = {
+          ...prev,
+          stations: updatedStations,
+          schemePattern: updatedSchemePattern,
+        };
+
         // Also update the config part of the global state
         setSimulationInput((prevInput) => ({
           ...prevInput,
@@ -467,11 +465,18 @@ export default function Home() {
       setSimulationSettings((prev) => {
         if (!prev) return null;
 
-        // Ensure schemeType is correctly typed as "Regular" | "Skip-Stop"
+        // Create array of "AB" values for regular mode with the same length as stations
+        const regularPattern = Array(prev.stations.length).fill("AB");
+
+        // Ensure both schemeType and schemePattern are correctly set
         const updatedSettings = {
           ...prev,
-          useSkipStop: checked,
-          schemeType: checked ? ("Skip-Stop" as const) : ("Regular" as const),
+          schemeType: checked ? ("SKIP-STOP" as const) : ("REGULAR" as const),
+          // For skip-stop, use the current station schemes or default pattern
+          // For regular, use all "AB"
+          schemePattern: checked
+            ? prev.stations.map((station) => station.scheme || "AB")
+            : regularPattern,
         };
 
         // Also update the config part of the global state
@@ -613,9 +618,10 @@ export default function Home() {
       .slice(1); // Slice(1) because the backend expects distances *between* stations
 
     // Add station schemes if skip-stop is enabled
-    const stationSchemes = simulationSettings.useSkipStop
-      ? simulationSettings.stations.map((station) => station.scheme || "AB")
-      : [];
+    const stationSchemes =
+      simulationSettings.schemeType === "SKIP-STOP"
+        ? simulationSettings.stations.map((station) => station.scheme || "AB")
+        : [];
 
     // Destructure settings to exclude the original 'stations' key
     const { stations, ...otherSettings } = simulationSettings;
@@ -629,8 +635,14 @@ export default function Home() {
         // Add the new separated arrays with camelCase keys
         stationNames: stationNames,
         stationDistances: stationDistances,
+        // Explicitly include schemePattern (from settings or derived from stations)
+        schemePattern:
+          simulationSettings.schemePattern ||
+          (simulationSettings.schemeType === "SKIP-STOP"
+            ? stationSchemes
+            : Array(stationNames.length).fill("AB")),
         // Include station schemes if skip-stop is enabled
-        ...(simulationSettings.useSkipStop && {
+        ...(simulationSettings.schemeType === "SKIP-STOP" && {
           stationSchemes: stationSchemes,
         }),
       },
@@ -982,7 +994,9 @@ export default function Home() {
                           <div className="flex items-center space-x-2 mt-2 mb-4">
                             <Checkbox
                               id="useSkipStop"
-                              checked={simulationSettings.useSkipStop}
+                              checked={
+                                simulationSettings.schemeType === "SKIP-STOP"
+                              }
                               onCheckedChange={(checked: boolean) =>
                                 handleSkipStopToggle(checked)
                               }
@@ -992,7 +1006,7 @@ export default function Home() {
                               htmlFor="useSkipStop"
                               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                             >
-                              Change Skip-Stop Scheme
+                              Change Skip-Stop Pattern
                             </label>
                           </div>
 
@@ -1001,12 +1015,7 @@ export default function Home() {
                               <div className="col-span-1">#</div>
                               <div className="col-span-5">Name</div>
                               {/* New column for scheme type */}
-                              <div className="col-span-6">
-                                Scheme Type
-                                <span className="text-xs font-normal text-muted-foreground ml-1">
-                                  (Skip-Stop)
-                                </span>
-                              </div>
+                              <div className="col-span-6">Scheme Pattern</div>
                               <div className="col-span-4">
                                 Dist. from Prev (km)
                               </div>
@@ -1028,7 +1037,7 @@ export default function Home() {
                                     <div className="col-span-6">
                                       <Select
                                         disabled={
-                                          !simulationSettings.useSkipStop ||
+                                          !simulationSettings.schemeType ||
                                           isSimulating
                                         }
                                         value={station.scheme || "AB"}
