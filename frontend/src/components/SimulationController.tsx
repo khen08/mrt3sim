@@ -27,6 +27,7 @@ interface SimulationControllerProps {
   endTime: string;
   onTimeUpdate: (time: string) => void;
   onSimulationStateChange: (isRunning: boolean) => void;
+  onSchemeChange?: (scheme: "REGULAR" | "SKIP-STOP") => void;
   isLoading: boolean;
   hasTimetableData: boolean;
 }
@@ -52,6 +53,7 @@ const SimulationController = ({
   endTime: dataEndTime,
   onTimeUpdate,
   onSimulationStateChange,
+  onSchemeChange,
   isLoading,
   hasTimetableData,
 }: SimulationControllerProps) => {
@@ -217,10 +219,17 @@ const SimulationController = ({
       if (newScheme !== visualScheme) {
         console.log(`Switching visual scheme to: ${newScheme}`);
         setVisualScheme(newScheme);
-        // Potentially trigger map updates or other visual changes if needed
+
+        // Call the parent component's handler if provided
+        if (onSchemeChange) {
+          // Convert from UI scheme type to backend scheme type
+          const backendScheme =
+            newScheme === "Regular" ? "REGULAR" : "SKIP-STOP";
+          onSchemeChange(backendScheme);
+        }
       }
     },
-    [visualScheme]
+    [visualScheme, onSchemeChange]
   );
 
   // --- Manual Time Input Handlers --- //

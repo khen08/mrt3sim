@@ -120,9 +120,12 @@ export default function Home() {
   const [simulationSettings, setSimulationSettings] =
     useState<SimulationSettings | null>(null);
 
-  // State for simulation control/display
-  const [simulationTime, setSimulationTime] = useState(PEAK_HOURS.AM.start); // Default start time
+  // State for simulation time and view
+  const [simulationTime, setSimulationTime] = useState(PEAK_HOURS.AM.start);
   const [isSimulationRunning, setIsSimulationRunning] = useState(false);
+  const [selectedScheme, setSelectedScheme] = useState<"REGULAR" | "SKIP-STOP">(
+    "REGULAR"
+  );
   const [selectedStation, setSelectedStation] = useState<number | null>(null);
   const [selectedTrainId, setSelectedTrainId] = useState<number | null>(null);
   const [selectedTrainDetails, setSelectedTrainDetails] =
@@ -140,6 +143,9 @@ export default function Home() {
 
   // --- State for Sidebar Collapse --- //
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // State to prevent duplicate logging
+  const [hasLoggedSchemeType, setHasLoggedSchemeType] = useState(false);
 
   // --- Fetch Default Settings on Mount --- //
   useEffect(() => {
@@ -802,6 +808,47 @@ export default function Home() {
   // Show upload if no file *object* is stored (meaning no successful upload yet)
   const showUploadView = !uploadedFileObject;
 
+  // Handle scheme change from SimulationController
+  const handleSchemeChange = useCallback(
+    (scheme: "REGULAR" | "SKIP-STOP") => {
+      console.log(`Switching to ${scheme} scheme visualization`);
+
+      // Log the timetable structure to help debug
+      if (scheme === "SKIP-STOP" && simulationResult) {
+        // Count total entries with SKIP-STOP scheme
+        const skipStopEntries = simulationResult.filter(
+          (entry) =>
+            entry.SCHEME_TYPE === "SKIP-STOP" ||
+            entry.SERVICE_TYPE === "SKIP-STOP"
+        ).length;
+
+        console.log(
+          `Found ${skipStopEntries} SKIP-STOP entries in simulationResult`
+        );
+
+        // Look for service types in the data
+        const trainServiceTypes: Record<number, string> = {};
+        simulationResult.forEach((entry) => {
+          if (entry.TRAIN_SERVICE_TYPE) {
+            const trainId = entry.TRAIN_ID;
+            if (!trainServiceTypes[trainId]) {
+              trainServiceTypes[trainId] = entry.TRAIN_SERVICE_TYPE;
+            }
+          }
+        });
+
+        console.log("Train service types found:", trainServiceTypes);
+      }
+
+      setSelectedScheme(scheme);
+      // Reset logging flag to see data for the new scheme selection
+      setHasLoggedSchemeType(false);
+      // Refresh map to reflect the new scheme
+      setMapRefreshKey((prev) => prev + 1);
+    },
+    [simulationResult]
+  );
+
   return (
     <main className="flex h-screen bg-gray-100 dark:bg-gray-900 relative overflow-hidden">
       {/* Sidebar for Settings */}
@@ -1037,8 +1084,8 @@ export default function Home() {
                                     <div className="col-span-6">
                                       <Select
                                         disabled={
-                                          !simulationSettings.schemeType ||
-                                          isSimulating
+                                          simulationSettings.schemeType !==
+                                            "SKIP-STOP" || isSimulating
                                         }
                                         value={station.scheme || "AB"}
                                         onValueChange={(value) =>
@@ -1188,7 +1235,28 @@ export default function Home() {
                   onTrainClick={handleTrainClick}
                   simulationTime={simulationTime}
                   isRunning={isSimulationRunning}
-                  simulationTimetable={simulationResult}
+                  simulationTimetable={simulationResult?.filter((entry) => {
+                    // Debug logging to check actual values
+                    if (
+                      simulationResult &&
+                      simulationResult.length > 0 &&
+                      !hasLoggedSchemeType
+                    ) {
+                      console.log("Current selectedScheme:", selectedScheme);
+                      console.log(
+                        "Sample entries from timetable:",
+                        JSON.stringify(simulationResult.slice(0, 3), null, 2)
+                      );
+                      setHasLoggedSchemeType(true);
+                    }
+
+                    // Try both SCHEME_TYPE and SERVICE_TYPE as the backend might use either
+                    return (
+                      !entry.SCHEME_TYPE ||
+                      entry.SCHEME_TYPE === selectedScheme ||
+                      entry.SERVICE_TYPE === selectedScheme
+                    );
+                  })}
                   // Pass station list and turnaround time from settings
                   stations={simulationSettings?.stations.map(
                     (station, index) => ({
@@ -1201,6 +1269,7 @@ export default function Home() {
                   )}
                   turnaroundTime={simulationSettings?.turnaroundTime}
                   maxCapacity={simulationSettings?.maxCapacity ?? 0}
+                  selectedScheme={selectedScheme}
                 />
               </div>
 
@@ -1247,6 +1316,7 @@ export default function Home() {
                 hasTimetableData={
                   !!simulationResult && simulationResult.length > 0
                 }
+                onSchemeChange={handleSchemeChange}
               />
             </div>
           </div>

@@ -43,6 +43,7 @@ interface SimulationTimetableEntry {
   MOVEMENT_ID?: number;
   SIMULATION_ID?: number;
   SERVICE_TYPE?: string; // Regular, Skip-stop
+  SCHEME_TYPE?: string; // "REGULAR" or "SKIP-STOP" - This is the scheme type for the entry
   TRAIN_ID: number; // Changed from "Train ID"
   STATION_ID: number; // Changed from NStation
   DIRECTION: string; // northbound, southbound (case-sensitive!)
@@ -85,6 +86,9 @@ interface MrtMapProps {
   simulationTimetable?: SimulationTimetableEntry[] | null; // Use the API response type
   turnaroundTime?: number; // Added prop for turnaround duration
   maxCapacity?: number; // NEW: Max capacity for calculating TrainInfoData
+
+  // NEW: Current selected scheme (for displaying appropriate legend)
+  selectedScheme?: "REGULAR" | "SKIP-STOP";
 }
 
 // Define the station positions along the HORIZONTAL line
@@ -223,7 +227,7 @@ function timeToSeconds(timeStr: string): number {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
-// Helper function to get station X position by ID (Renamed from getStationYById)
+// Helper to get station X position by ID (Renamed from getStationYById)
 function getStationXById(stationId: number): number {
   return STATIONS_BY_ID[stationId]?.x ?? 0;
 }
@@ -249,12 +253,17 @@ export default function MrtMap({
   simulationTimetable = null,
   turnaroundTime = 60, // Use prop with default
   maxCapacity = 0, // NEW: Accept maxCapacity prop
+  selectedScheme,
 }: MrtMapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [trainStates, setTrainStates] = useState<TrainState[]>([]);
   // State for debug information displayed on the map
   const [debugInfo, setDebugInfo] = useState<Record<string, any>>({});
   const [inactiveTrainCount, setInactiveTrainCount] = useState(0); // State for dynamic box width
+
+  // Debug states
+  const [hasLoggedRawData, setHasLoggedRawData] = useState(false);
+  const [hasLoggedNormalizedData, setHasLoggedNormalizedData] = useState(false);
 
   // Store event pairs for click handling - Memoize for performance
   const trainEventPairs = useMemo(() => {
@@ -264,10 +273,27 @@ export default function MrtMap({
       return pairs;
     }
     const currentSimSeconds = timeToSeconds(simulationTime);
+
+    // Debug the raw data first
+    if (selectedScheme === "SKIP-STOP" && !hasLoggedRawData) {
+      console.log(
+        "Raw timetable entries for train 1:",
+        simulationTimetable
+          .filter((entry) => {
+            const anyEntry = entry as any;
+            return anyEntry.TRAIN_ID === 1 || anyEntry["Train ID"] === 1;
+          })
+          .slice(0, 3)
+      );
+      setHasLoggedRawData(true);
+    }
+
     const normalizedTimetable = simulationTimetable.map((entry) => {
       const anyEntry = entry as any;
       const isNewFormat = "TRAIN_ID" in anyEntry || "MOVEMENT_ID" in anyEntry;
-      return {
+
+      // Create the normalized entry - preserve ALL fields from original
+      const normalizedEntry = {
         TRAIN_ID: isNewFormat ? anyEntry.TRAIN_ID : anyEntry["Train ID"],
         STATION_ID: isNewFormat ? anyEntry.STATION_ID : anyEntry.NStation,
         DIRECTION: (isNewFormat
@@ -283,8 +309,24 @@ export default function MrtMap({
         DEPARTURE_TIME: isNewFormat
           ? anyEntry.DEPARTURE_TIME
           : anyEntry["Departure Time"],
+        SCHEME_TYPE: anyEntry.SCHEME_TYPE,
+        TRAIN_SERVICE_TYPE: anyEntry.TRAIN_SERVICE_TYPE,
+        SERVICE_TYPE: anyEntry.SERVICE_TYPE,
+        // Add any other fields that might be needed
+        ...anyEntry, // Include all original properties
       };
+
+      return normalizedEntry;
     });
+
+    // Debug the normalized data after processing
+    if (selectedScheme === "SKIP-STOP" && !hasLoggedNormalizedData) {
+      console.log(
+        "Normalized timetable entries for train 1:",
+        normalizedTimetable.filter((entry) => entry.TRAIN_ID === 1).slice(0, 3)
+      );
+      setHasLoggedNormalizedData(true);
+    }
 
     const timetableByTrain = normalizedTimetable.reduce((acc, entry) => {
       if (
@@ -301,7 +343,7 @@ export default function MrtMap({
     }, {} as { [key: number]: any[] });
 
     for (const trainId in timetableByTrain) {
-      timetableByTrain[trainId].sort((a, b) => {
+      timetableByTrain[trainId].sort((a: any, b: any) => {
         const arrA = timeToSeconds(a.ARRIVAL_TIME!);
         const arrB = timeToSeconds(b.ARRIVAL_TIME!);
         return arrA - arrB;
@@ -346,7 +388,157 @@ export default function MrtMap({
       pairs[trainId] = { eventA, eventB };
     }
     return pairs;
-  }, [simulationTimetable, simulationTime]);
+  }, [
+    simulationTimetable,
+    simulationTime,
+    selectedScheme,
+    hasLoggedRawData,
+    hasLoggedNormalizedData,
+  ]);
+
+  // Function to get train y position
+  const getTrainYPosition = (direction: Direction) => {
+    return direction === "southbound" ? TRACK.southboundY : TRACK.northboundY;
+  };
+
+  // Function to get train service type
+  const getTrainServiceType = (trainId: number) => {
+    // Get from eventPairs if possible
+    const trainEvents = trainEventPairs[trainId];
+    if (trainEvents && (trainEvents.eventA || trainEvents.eventB)) {
+      const event = trainEvents.eventA || trainEvents.eventB;
+      if (event?.TRAIN_SERVICE_TYPE) {
+        return event.TRAIN_SERVICE_TYPE;
+      }
+    }
+
+    // Fallback: search through the entire timetable
+    if (simulationTimetable) {
+      // Look through all entries for this train
+      for (const entry of simulationTimetable) {
+        const anyEntry = entry as any;
+        if (
+          (anyEntry.TRAIN_ID === trainId || anyEntry["Train ID"] === trainId) &&
+          anyEntry.TRAIN_SERVICE_TYPE
+        ) {
+          console.log(
+            `Found TRAIN_SERVICE_TYPE for train ${trainId} in timetable:`,
+            anyEntry.TRAIN_SERVICE_TYPE
+          );
+          return anyEntry.TRAIN_SERVICE_TYPE;
+        }
+      }
+    }
+
+    console.log(`No TRAIN_SERVICE_TYPE found for train ${trainId}`);
+    return null;
+  };
+
+  // When all else fails, assign service types by train ID as fallback
+  // This is used only if we can't get the data from backend
+  const getFallbackTrainServiceType = (trainId: number): string => {
+    if (selectedScheme !== "SKIP-STOP") return "AB";
+
+    // For demo purposes, Train 1, 3, 5, etc. are A trains
+    // Train 2, 4, 6, etc. are B trains
+    if (trainId % 2 === 1) return "A";
+    return "B";
+  };
+
+  // Get train service type with fallback
+  const getEffectiveTrainServiceType = (trainId: number): string => {
+    const serviceType = getTrainServiceType(trainId);
+    if (serviceType) {
+      return serviceType;
+    }
+    // Use fallback if no data from backend
+    return getFallbackTrainServiceType(trainId);
+  };
+
+  // Function to determine if a train stops at a specific station in skip-stop mode
+  const trainStopsAtStation = (trainId: number, stationId: number): boolean => {
+    const trainServiceType = getEffectiveTrainServiceType(trainId);
+
+    // If it's not skip-stop or service type isn't A or B, train stops at all stations
+    if (!trainServiceType || trainServiceType === "AB") return true;
+
+    // Get corresponding station scheme pattern
+    if (selectedScheme === "SKIP-STOP") {
+      // For stations with id numbers, determine based on pattern:
+      // A trains: stop at A and AB stations
+      // B trains: stop at B and AB stations
+      if (trainServiceType === "A") {
+        // A train stops at type A and AB stations (1, 3, 5, 7, 9, 11, 13)
+        return stationId % 2 === 1;
+      } else if (trainServiceType === "B") {
+        // B train stops at type B and AB stations (1, 2, 4, 6, 8, 10, 12, 13)
+        return stationId % 2 === 0 || stationId === 1 || stationId === 13;
+      }
+    }
+
+    return true; // Default behavior: train stops at all stations
+  };
+
+  // --- NEW: Handle Train Click on Map --- //
+  const handleMapTrainClick = useCallback(
+    (trainId: number) => {
+      if (!onTrainClick) return;
+
+      const state = trainStates.find((ts) => ts.id === trainId);
+      const events = trainEventPairs[trainId];
+
+      if (!state || !events) {
+        console.error(
+          `Could not find state or events for clicked train ${trainId}`
+        );
+        return;
+      }
+
+      const { eventA, eventB } = events;
+      let statusString = "Unknown";
+      let relevantStationName: string | null = null;
+      let scheduledTime: string | null = null;
+
+      if (state.isInDepot) {
+        statusString = "Inactive";
+      } else if (state.isTurningAround) {
+        statusString = `Turning Around`;
+        if (eventA) {
+          relevantStationName =
+            STATIONS_BY_ID[eventA.STATION_ID]?.name ??
+            `Station ${eventA.STATION_ID}`;
+          scheduledTime = eventB?.ARRIVAL_TIME ?? null; // Departure time of the turnaround completion
+        }
+      } else if (state.isStopped) {
+        statusString = `At Station`;
+        if (eventA) {
+          relevantStationName =
+            STATIONS_BY_ID[eventA.STATION_ID]?.name ??
+            `Station ${eventA.STATION_ID}`;
+          scheduledTime = eventA.DEPARTURE_TIME ?? null;
+        }
+      } else if (!state.isStopped && eventA && eventB) {
+        statusString = `In Transit`;
+        relevantStationName =
+          STATIONS_BY_ID[eventB.STATION_ID]?.name ??
+          `Station ${eventB.STATION_ID}`;
+        scheduledTime = eventB.ARRIVAL_TIME ?? null;
+      }
+
+      const details: TrainInfoData = {
+        id: trainId,
+        direction: state.direction,
+        status: statusString,
+        load: 0, // Hardcoded as per requirement
+        capacity: maxCapacity, // Use prop passed down
+        relevantStationName,
+        scheduledTime,
+      };
+
+      onTrainClick(trainId, details);
+    },
+    [trainStates, trainEventPairs, onTrainClick, maxCapacity] // Dependencies for the handler
+  );
 
   // --- Timetable Processing useEffect (Now primarily sets trainStates) ---
   useEffect(() => {
@@ -371,13 +563,30 @@ export default function MrtMap({
     const normalizedTimetable = simulationTimetable.map((entry) => {
       const anyEntry = entry as any;
       const isNewFormat = "TRAIN_ID" in anyEntry || "MOVEMENT_ID" in anyEntry;
+
+      // Debug logging to inspect train service types to understand skip-stop behavior
+      if (anyEntry.TRAIN_ID === 1 || anyEntry.TRAIN_ID === 2) {
+        console.log(
+          `Train ${anyEntry.TRAIN_ID} entry at Station ${anyEntry.STATION_ID}:`,
+          {
+            SCHEME_TYPE: anyEntry.SCHEME_TYPE,
+            TRAIN_SERVICE_TYPE: anyEntry.TRAIN_SERVICE_TYPE,
+            ARRIVAL_TIME: anyEntry.ARRIVAL_TIME,
+            DEPARTURE_TIME: anyEntry.DEPARTURE_TIME,
+            // When ARRIVAL_TIME equals DEPARTURE_TIME, the train is not stopping at this station
+            SKIPPING:
+              anyEntry.ARRIVAL_TIME === anyEntry.DEPARTURE_TIME ? "YES" : "NO",
+          }
+        );
+      }
+
       return {
         TRAIN_ID: isNewFormat ? anyEntry.TRAIN_ID : anyEntry["Train ID"],
         STATION_ID: isNewFormat ? anyEntry.STATION_ID : anyEntry.NStation,
         DIRECTION: (isNewFormat
           ? anyEntry.DIRECTION || "southbound"
           : anyEntry.Direction || "southbound"
-        ).toLowerCase() as Direction, // Ensure type is Direction
+        ).toLowerCase() as Direction,
         TRAIN_STATUS: isNewFormat
           ? anyEntry.TRAIN_STATUS || "active"
           : anyEntry["Train Status"] || "active",
@@ -387,6 +596,10 @@ export default function MrtMap({
         DEPARTURE_TIME: isNewFormat
           ? anyEntry.DEPARTURE_TIME
           : anyEntry["Departure Time"],
+        // Preserve these fields for skip-stop functionality
+        SCHEME_TYPE: anyEntry.SCHEME_TYPE,
+        TRAIN_SERVICE_TYPE: anyEntry.TRAIN_SERVICE_TYPE,
+        SERVICE_TYPE: anyEntry.SERVICE_TYPE,
       };
     });
 
@@ -405,9 +618,9 @@ export default function MrtMap({
     }, {} as { [key: number]: any[] });
 
     for (const trainId in timetableByTrain) {
-      timetableByTrain[trainId].sort((a, b) => {
-        const arrA = timeToSeconds(a.ARRIVAL_TIME!); // Assume non-null after filter
-        const arrB = timeToSeconds(b.ARRIVAL_TIME!); // Assume non-null after filter
+      timetableByTrain[trainId].sort((a: any, b: any) => {
+        const arrA = timeToSeconds(a.ARRIVAL_TIME!);
+        const arrB = timeToSeconds(b.ARRIVAL_TIME!);
         return arrA - arrB;
       });
     }
@@ -766,6 +979,26 @@ export default function MrtMap({
         ? SELECTED_STATION_STROKE_WIDTH
         : STATION_STROKE_WIDTH;
 
+      // Determine station skipping highlights for the selected train
+      let stationSkipHighlight = null;
+      if (selectedTrainId && selectedScheme === "SKIP-STOP") {
+        const willTrainStop = trainStopsAtStation(selectedTrainId, station.id);
+
+        if (!willTrainStop) {
+          // Add a visual indicator that this station will be skipped by the selected train
+          stationSkipHighlight = (
+            <circle
+              cx={0}
+              cy={0}
+              r={radius + 8}
+              className="fill-none stroke-red-500/50 dark:stroke-red-400/50"
+              strokeWidth={1.5}
+              strokeDasharray="4,4"
+            />
+          );
+        }
+      }
+
       return (
         <g
           key={`station-group-${station.id}`}
@@ -775,6 +1008,7 @@ export default function MrtMap({
             TRACK.stationCenterY
           })`}
         >
+          {stationSkipHighlight}
           <circle
             cx={0}
             cy={0}
@@ -811,73 +1045,14 @@ export default function MrtMap({
         </g>
       );
     });
-  }, [stations, selectedStation, onStationClick]);
-
-  // Function to get Y position based on direction
-  const getTrainYPosition = (direction: Direction) => {
-    return direction === "southbound" ? TRACK.southboundY : TRACK.northboundY;
-  };
-
-  // --- NEW: Handle Train Click on Map --- //
-  const handleMapTrainClick = useCallback(
-    (trainId: number) => {
-      if (!onTrainClick) return;
-
-      const state = trainStates.find((ts) => ts.id === trainId);
-      const events = trainEventPairs[trainId];
-
-      if (!state || !events) {
-        console.error(
-          `Could not find state or events for clicked train ${trainId}`
-        );
-        return;
-      }
-
-      const { eventA, eventB } = events;
-      let statusString = "Unknown";
-      let relevantStationName: string | null = null;
-      let scheduledTime: string | null = null;
-
-      if (state.isInDepot) {
-        statusString = "Inactive";
-      } else if (state.isTurningAround) {
-        statusString = `Turning Around`;
-        if (eventA) {
-          relevantStationName =
-            STATIONS_BY_ID[eventA.STATION_ID]?.name ??
-            `Station ${eventA.STATION_ID}`;
-          scheduledTime = eventB?.ARRIVAL_TIME ?? null; // Departure time of the turnaround completion
-        }
-      } else if (state.isStopped) {
-        statusString = `At Station`;
-        if (eventA) {
-          relevantStationName =
-            STATIONS_BY_ID[eventA.STATION_ID]?.name ??
-            `Station ${eventA.STATION_ID}`;
-          scheduledTime = eventA.DEPARTURE_TIME ?? null;
-        }
-      } else if (!state.isStopped && eventA && eventB) {
-        statusString = `In Transit`;
-        relevantStationName =
-          STATIONS_BY_ID[eventB.STATION_ID]?.name ??
-          `Station ${eventB.STATION_ID}`;
-        scheduledTime = eventB.ARRIVAL_TIME ?? null;
-      }
-
-      const details: TrainInfoData = {
-        id: trainId,
-        direction: state.direction,
-        status: statusString,
-        load: 0, // Hardcoded as per requirement
-        capacity: maxCapacity, // Use prop passed down
-        relevantStationName,
-        scheduledTime,
-      };
-
-      onTrainClick(trainId, details);
-    },
-    [trainStates, trainEventPairs, onTrainClick, maxCapacity] // Dependencies for the handler
-  );
+  }, [
+    stations,
+    selectedStation,
+    onStationClick,
+    selectedTrainId,
+    selectedScheme,
+    trainStopsAtStation,
+  ]);
 
   // Memoize train elements with new design
   const trainElements = useMemo(() => {
@@ -906,6 +1081,13 @@ export default function MrtMap({
           ? THEME.train.southbound
           : THEME.train.northbound;
 
+        // Get train service type for visual indicator
+        const trainServiceType = getEffectiveTrainServiceType(train.id);
+        const isSkipStopTrain =
+          selectedScheme === "SKIP-STOP" &&
+          trainServiceType &&
+          trainServiceType !== "AB";
+
         // Arrow points definition (base orientation, points right = 0 degrees)
         let arrowPoints = `0,0 ${arrowWidth},${
           arrowHeight / 2
@@ -917,6 +1099,42 @@ export default function MrtMap({
         // NO transitions here for instant teleportation
         const groupTransform = `translate(${train.x}, ${train.y}) rotate(${train.rotation})`;
 
+        // Get current station if train is stopped
+        let currentStationId = null;
+        if (train.isStopped && !train.isTurningAround && !train.isInDepot) {
+          // Get the eventA (current station) from the train event pairs
+          const events = trainEventPairs[train.id];
+          if (events && events.eventA) {
+            currentStationId = events.eventA.STATION_ID;
+          }
+        }
+
+        // Get information about next station for in-transit trains
+        let nextStationId = null;
+        if (!train.isStopped && !train.isTurningAround && !train.isInDepot) {
+          // Get the eventB (next station) from the train event pairs
+          const events = trainEventPairs[train.id];
+          if (events && events.eventB) {
+            nextStationId = events.eventB.STATION_ID;
+          }
+        }
+
+        // Check if the train is approaching a station it will skip
+        const willSkipNextStation =
+          nextStationId !== null &&
+          selectedScheme === "SKIP-STOP" &&
+          !trainStopsAtStation(train.id, nextStationId);
+
+        // Debug logging for skip-stop trains
+        if (
+          (selectedScheme === "SKIP-STOP" && train.id === 1) ||
+          train.id === 2
+        ) {
+          console.log(
+            `Train ${train.id} display: ServiceType=${trainServiceType}, isSkipStopTrain=${isSkipStopTrain}`
+          );
+        }
+
         return (
           <g
             key={`train-${train.id}`}
@@ -926,7 +1144,7 @@ export default function MrtMap({
               train.isInDepot ? "opacity-80" : ""
             } ${
               selectedTrainId === train.id ? "train-selected-highlight" : ""
-            }`}
+            } ${willSkipNextStation ? "skipping-station" : ""}`}
           >
             {/* Standard Train Visual (Square + Arrow + Text) */}
             {/* Apply slight opacity reduction if turning around, but not full hiding */}
@@ -958,6 +1176,22 @@ export default function MrtMap({
               >
                 {train.id}
               </text>
+
+              {/* Service type indicator for A or B trains */}
+              {isSkipStopTrain && (
+                <circle
+                  cx={0}
+                  cy={-halfTrainSize / 1.5}
+                  r={trainSize / 4}
+                  className={
+                    trainServiceType === "A"
+                      ? "fill-yellow-500 dark:fill-yellow-400"
+                      : "fill-green-500 dark:fill-green-400"
+                  }
+                  strokeWidth={1}
+                  stroke="white"
+                />
+              )}
             </g>
 
             {/* Loading Circle (Rendered only during turnaround visual phase) */}
@@ -993,7 +1227,13 @@ export default function MrtMap({
           </g>
         );
       });
-  }, [trainStates, selectedTrainId, handleMapTrainClick]);
+  }, [
+    trainStates,
+    selectedTrainId,
+    handleMapTrainClick,
+    trainEventPairs,
+    selectedScheme,
+  ]);
 
   const stationLabelElements = useMemo(() => {
     return stations.map((station) => {
@@ -1027,6 +1267,19 @@ export default function MrtMap({
           .train-selected-highlight {
             filter: url(#train-highlight);
             opacity: 1 !important; /* Ensure selected is fully opaque */
+          }
+          
+          .skipping-station {
+            animation: pulse-skipping 1.5s infinite alternate;
+          }
+          
+          @keyframes pulse-skipping {
+            0% {
+              filter: none;
+            }
+            100% {
+              filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.7));
+            }
           }
         `}
       </style>
@@ -1194,24 +1447,40 @@ export default function MrtMap({
 
         {/* Legend */}
         <div
-          className={`absolute bottom-2 right-2 p-2 rounded shadow text-xs z-10 flex space-x-4 ${THEME.legend}`}
+          className={`absolute bottom-2 right-2 p-2 rounded shadow text-xs z-10 flex flex-col space-y-2 ${THEME.legend}`}
         >
-          <div className="flex items-center">
-            {/* Use dedicated legend indicator theme color and increase height */}
-            <div
-              className={`w-4 h-2 mr-2 rounded-sm ${THEME.legendIndicator.southbound}`}
-            ></div>
-            {/* Use HTML text theme color */}
-            <span className={`${THEME.textHtmlPrimary}`}>Southbound</span>
+          <div className="flex space-x-4">
+            <div className="flex items-center">
+              {/* Use dedicated legend indicator theme color and increase height */}
+              <div
+                className={`w-4 h-2 mr-2 rounded-sm ${THEME.legendIndicator.southbound}`}
+              ></div>
+              {/* Use HTML text theme color */}
+              <span className={THEME.textHtmlPrimary}>Southbound</span>
+            </div>
+            <div className="flex items-center">
+              {/* Use dedicated legend indicator theme color and increase height */}
+              <div
+                className={`w-4 h-2 mr-2 rounded-sm ${THEME.legendIndicator.northbound}`}
+              ></div>
+              {/* Use HTML text theme color */}
+              <span className={THEME.textHtmlPrimary}>Northbound</span>
+            </div>
           </div>
-          <div className="flex items-center">
-            {/* Use dedicated legend indicator theme color and increase height */}
-            <div
-              className={`w-4 h-2 mr-2 rounded-sm ${THEME.legendIndicator.northbound}`}
-            ></div>
-            {/* Use HTML text theme color */}
-            <span className={`${THEME.textHtmlPrimary}`}>Northbound</span>
-          </div>
+
+          {/* Skip-stop legend - only show when SKIP-STOP scheme is selected */}
+          {selectedScheme === "SKIP-STOP" && (
+            <div className="flex space-x-4">
+              <div className="flex items-center">
+                <div className="w-3 h-3 mr-2 rounded-full bg-yellow-500 dark:bg-yellow-400"></div>
+                <span className={THEME.textHtmlPrimary}>A-Train</span>
+              </div>
+              <div className="flex items-center">
+                <div className="w-3 h-3 mr-2 rounded-full bg-green-500 dark:bg-green-400"></div>
+                <span className={THEME.textHtmlPrimary}>B-Train</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </>
