@@ -223,9 +223,9 @@ class Station:
         #undocumented
         self.is_terminus = is_terminus
         # Adjacent tracks towards next station
-        self.tracks = {"northbound": None, "southbound": None}
+        self.tracks = {"NORTHBOUND": None, "SOUTHBOUND": None}
         # Station Platforms
-        self.platforms = {"northbound": None, "southbound": None}
+        self.platforms = {"NORTHBOUND": None, "SOUTHBOUND": None}
 
     def process_passenger_exchange(self, scheme_map, train, train_arrival_time, train_departure_time):
         """Board and Alight passenger demand groups, handling transfers."""
@@ -247,7 +247,7 @@ class Station:
                 alight_here = True
                 demand.status = "waiting_for_transfer"
                 demand.arrival_at_transfer_time = train_arrival_time
-                demand.direction = 'southbound' if demand.destination_station_id > demand.transfer_station_id else 'northbound'
+                demand.direction = "SOUTHBOUND" if demand.destination_station_id > demand.transfer_station_id else "NORTHBOUND"
                 demand.train_id = None 
                 self.waiting_demand.append(demand) 
             # Case 3: Transfer trip arrives at final destination (after leg 2)
@@ -472,7 +472,7 @@ class Train:
         self.boarded_demand = [] # Renamed from self.passengers
         self.current_passenger_count = 0 # Added
         
-        self.direction = "southbound"
+        self.direction = "SOUTHBOUND"
         self.current_station = current_station
         self.is_active = True
         self.loop_count = 0
@@ -498,7 +498,7 @@ class Train:
     
     def change_direction(self):
         """Reverse the train's direction."""
-        self.direction = "southbound" if self.direction == "northbound" else "northbound"
+        self.direction = "SOUTHBOUND" if self.direction == "NORTHBOUND" else "NORTHBOUND"
 
     def calculate_load_factor(self):
         """Calculate the current occupancy percentage."""
@@ -671,7 +671,7 @@ class EventHandler:
         # === WITHDRAWAL CHECK (Upon Northbound Arrival at Station 1) === #
         if (self.simulation.trains_to_withdraw_count > 0 and
             station == self.simulation.stations[0] and # Station 1 (North Ave)
-            train.direction == "northbound"):
+            train.direction == "NORTHBOUND"):
             
             # Calculate end time including final dwell
             end_of_service_time = arrival_time + timedelta(seconds=self.simulation.dwell_time)
@@ -698,7 +698,7 @@ class EventHandler:
                     arrival_time=arrival_time, # Actual arrival time
                     departure_time=end_of_service_time, # Time after final dwell
                     travel_time=train.current_journey_travel_time, # Log final travel time
-                    train_status="inactive", # Set status to inactive
+                    train_status="INACTIVE", # Set status to inactive
                     boarded=boarded,
                     alighted=alighted
                 )
@@ -804,12 +804,12 @@ class EventHandler:
         station1 = self.simulation.get_station_by_id(1)
         
         # Check if station 1 northbound platform is available
-        if station1.platforms.get("northbound") is not None:
+        if station1.platforms.get("NORTHBOUND") is not None:
             # Platform is occupied - find when it will be free
             departure_events = [e for _, e in self.simulation.event_queue.queue 
                                 if e.event_type == "train_departure" and 
                                 e.station == station1 and 
-                                e.train.direction == "northbound"]
+                                e.train.direction == "NORTHBOUND"]
             
             if departure_events:
                 # Get the earliest departure time
@@ -839,8 +839,8 @@ class EventHandler:
                     return
         
         # Check if the train is still active before proceeding
-        train.status = "insertion"
-        train.direction = "northbound"  # Ensure train direction is northbound for insertion
+        train.status = "INSERTION"
+        train.direction = "NORTHBOUND"  # Ensure train direction is northbound for insertion
 
         if segment.enter(train, event.time):
             # Train successfully entered segment (2,1)
@@ -942,7 +942,7 @@ class EventHandler:
         if not train.is_active: # Check the train's own flag
             return # Ignore event for inactive train
         
-        next_station = self.simulation.get_station_by_id(station.station_id + 1) if train.direction == "southbound" else self.simulation.get_station_by_id(station.station_id - 1)
+        next_station = self.simulation.get_station_by_id(station.station_id + 1) if train.direction == "SOUTHBOUND" else self.simulation.get_station_by_id(station.station_id - 1)
         departure_time = event.time
         next_segment = station.get_next_segment(train.direction)
         
@@ -950,7 +950,7 @@ class EventHandler:
         if next_station.platforms[train.direction] is None and next_segment.is_available():
             #======= TRAVEL TIME =======#
             travel_time = train.current_journey_travel_time
-            train.status = "active"
+            train.status = "ACTIVE"
             
             #======= BOARD/ALIGHT PASSENGERS =======#
             # For skip-stop schemes, we need to check if the train should stop at the station
@@ -1346,7 +1346,7 @@ class EventHandler:
         for _, event in self.simulation.event_queue.queue:
             if (event.event_type == "segment_exit" and 
                 event.station and event.station.station_id == 1 and
-                event.train.direction == "northbound"):
+                event.train.direction == "NORTHBOUND"):
                 upcoming_arrivals += 1
         
         # Calculate optimal headway adjustment based on metrics
@@ -1392,10 +1392,11 @@ class Simulation:
         self.trains = []
         self.stations = []
         self.scheme_pattern = config["schemePattern"]
-        print(self.scheme_pattern)
+
         self.track_segments = []
         self.passenger_demand = []
         self.service_periods = DEFAULT_SERVICE_PERIODS
+        self.loop_times = {}
         self.active_trains = []
         self.active_headway = 0
         self.trains_to_withdraw_count = 0
@@ -1421,12 +1422,6 @@ class Simulation:
 
         # Create station map for efficient lookup
         self.station_type_map = {s.station_id: s.station_type for s in self.stations}
-
-        # print([t.train_id for t in self.trains])
-        # print([s.station_id for s in self.stations])
-        # print([ts.segment_id for ts in self.track_segments])
-        # print(self.service_periods)
-        #print(self.passenger_demand)
         
     def _create_simulation_entry(self):
         """Create a simulation entry in the database."""
@@ -1468,7 +1463,7 @@ class Simulation:
             self.stations.append(
                 Station(
                     station_id=station_id,
-                    name=station_name,
+                    name=station_name.upper(),
                     zone_length=DEFAULT_ZONE_LENGTH, # Assuming DEFAULT_ZONE_LENGTH is available
                     station_type="AB" if scheme_type == "REGULAR" else station_type,
                     is_terminus=station_id == 1 or station_id == num_stations
@@ -1512,7 +1507,7 @@ class Simulation:
                     start_station_id=idx,
                     end_station_id=idx + 1,
                     distance=distance * 1000, # Convert km to m
-                    direction='southbound'
+                    direction='SOUTHBOUND'
                 )
             )
         # Northbound segments
@@ -1524,7 +1519,7 @@ class Simulation:
                     start_station_id=start_id,
                     end_station_id=end_id,
                     distance=distance * 1000, # Convert km to m
-                    direction='northbound'
+                    direction="NORTHBOUND"
                 )
             )
             
@@ -1649,6 +1644,7 @@ class Simulation:
                 )
             )
 
+        self.loop_times[f"{scheme_type}_LOOP_TIME"] = loop_time
         # Create the DataFrame first
         df_periods = pd.DataFrame(
             [
@@ -1675,15 +1671,13 @@ class Simulation:
         # Update the SERVICE_PERIODS field in the database with calculated headways
         if not debug :
             # Construct the correct database column name by replacing hyphen with underscore
-            db_column_name = f"{scheme_type.replace('-', '_').upper()}_LOOP_TIME_MINUTES"
             try:
                 updated_service_periods_json = json.dumps(self.service_periods)
                 db.simulations.update(
                     where={'SIMULATION_ID': self.simulation_id},
-                    data={'SERVICE_PERIODS': updated_service_periods_json, db_column_name: loop_time}
+                    data={'SERVICE_PERIODS': updated_service_periods_json}
                 )
                 print(f"  [DB:UPDATE] SUCCESSFULLY updated SERVICE_PERIODS in SIMULATION for SIMULATION_ID: {self.simulation_id}")
-                print(f"  [DB:UPDATE] SUCCESSFULLY updated {db_column_name} in SIMULATION for SIMULATION_ID: {self.simulation_id}")
             except Exception as e:
                 print(f"  [DB:UPDATE] ERROR updating SERVICE_PERIODS in SIMULATION for SIMULATION_ID: {self.simulation_id}: {e}")
 
@@ -1766,7 +1760,7 @@ class Simulation:
                 passenger_count=row['PASSENGER_COUNT'],
                 trip_type=row['TRIP_TYPE']
             )
-            demand.direction = 'southbound' if demand.destination_station_id > demand.origin_station_id else 'northbound'
+            demand.direction = "SOUTHBOUND" if demand.destination_station_id > demand.origin_station_id else "NORTHBOUND"
             self.passenger_demand.append(demand)
 
         print(f"  INITIALIZED {len(self.passenger_demand)} PASSENGER DEMAND OBJECTS IN MEMORY")
@@ -1784,7 +1778,7 @@ class Simulation:
                 # --- Add Transfer Station ID and Direction --- #
                 if demand.trip_type == "TRANSFER":
                     demand.transfer_station_id = int(demand.find_nearest_transfer(self.stations))
-                    demand.direction = 'southbound' if demand.transfer_station_id > demand.origin_station_id else 'northbound'
+                    demand.direction = "SOUTHBOUND" if demand.transfer_station_id > demand.origin_station_id else "NORTHBOUND"
 
     def schedule_event(self, event):
         """Add an event to the priority queue."""
@@ -1823,6 +1817,9 @@ class Simulation:
 
                 # Save results before potentially moving to the next simulation_id or disconnecting
                 if not debug:
+                    # Compute and save metrics first
+                    travel_time, wait_time, completed_passenger_count = self.compute_metrics()
+                    self.save_metrics_to_db(travel_time, wait_time, completed_passenger_count)
                     self.save_timetable_to_db()
                     self.save_passenger_demand_to_db()
 
@@ -1934,18 +1931,7 @@ class Simulation:
     def save_passenger_demand_to_db(self):
         print(f"\n[SAVING PASSENGER DEMAND TO DB]")
         # --- Prepare Data for Database Insertion --- #
-        total_passenger_count = sum(demand.passenger_count for demand in self.passenger_demand)
         if not debug:
-            # Update the main simulation entry with the total count
-            try:
-                db.simulations.update(
-                    where={'SIMULATION_ID': self.simulation_id},
-                    data={'TOTAL_PASSENGER_COUNT': total_passenger_count}
-                )
-                print(f"  [DB:UPDATE] SUCCESSFULLY updated TOTAL_PASSENGER_COUNT in DB for SIMULATION_ID: {self.simulation_id}")
-            except Exception as e:
-                print(f"  [DB:UPDATE] ERROR updating TOTAL_PASSENGER_COUNT in DB for SIMULATION_ID: {self.simulation_id}: {e}")
-
             passenger_records_for_db = []
             for demand in self.passenger_demand:
                 passenger_records_for_db.append({
@@ -1955,6 +1941,10 @@ class Simulation:
                     'DEPARTURE_TIME_FROM_ORIGIN': demand.departure_from_origin_time,
                     'ORIGIN_STATION_ID': demand.origin_station_id,
                     'DESTINATION_STATION_ID': demand.destination_station_id,
+                    'ARRIVAL_TIME_AT_TRANSFER': demand.arrival_at_transfer_time,
+                    'DEPARTURE_TIME_FROM_TRANSFER': demand.departure_from_transfer_time,
+                    'WAIT_TIME': demand.wait_time,
+                    'TRAVEL_TIME': demand.travel_time,
                     'TRIP_TYPE': demand.trip_type,
                     'PASSENGER_COUNT': demand.passenger_count
                 })
@@ -1969,8 +1959,63 @@ class Simulation:
             else:
                 print("  [ERROR]: NO PASSENGER DEMAND ENTRIES TO INSERT INTO DB.")
 
-    def compute_demand_metrics(self):
-        pass
+    def compute_metrics(self):
+        """Calculates aggregate metrics for the completed simulation scheme using pandas."""
+        print(f"\n[COMPUTING METRICS FOR SCHEME: {self.scheme_type}]")
+
+        # Convert completed passenger demand list to DataFrame
+        demand_data = [{
+            'passenger_count': demand.passenger_count,
+            'travel_time': demand.travel_time,
+            'wait_time': demand.wait_time
+        } for demand in self.passenger_demand if demand.status == "completed"]
+
+        if not demand_data:
+            print("  No completed passenger demand data to compute metrics from.")
+            return 0, 0
+
+        demand_df = pd.DataFrame(demand_data)
+
+        # Calculate metrics using pandas aggregation on the already filtered DataFrame
+        total_travel_time_seconds = demand_df['travel_time'].sum()
+        total_wait_time_seconds = demand_df['wait_time'].sum()
+        completed_demand_count = len(demand_df)
+        completed_passenger_count = demand_df['passenger_count'].sum()
+
+        print(f"  COMPLETED DEMAND COUNT: {completed_demand_count}")
+        print(f"  COMPLETED PASSENGER COUNT: {completed_passenger_count}")
+        print(f"  IN_TRANSIT PASSENGER COUNT: {sum([demand.passenger_count for demand in self.passenger_demand if demand.status != 'completed'])}")
+        print(f"  TOTAL PASSENGER TRAVEL TIME (sec): {total_travel_time_seconds}")
+        print(f"  TOTAL PASSENGER WAIT TIME (sec): {total_wait_time_seconds}")
+
+        return total_travel_time_seconds, total_wait_time_seconds, completed_passenger_count
+
+    def save_metrics_to_db(self, travel_time, wait_time, completed_passenger_count):
+        """Saves the calculated metrics to the SIMULATION_METRICS table."""
+        print(f"\n[SAVING METRICS TO DB FOR SCHEME: {self.scheme_type}]")
+        if debug:
+            print("  DEBUG MODE: Skipping database save for metrics.")
+            return
+
+        if not db.is_connected():
+            print("  ERROR: DATABASE IS NOT CONNECTED. CANNOT SAVE METRICS.")
+            return
+        
+        
+        try:
+            db.simulation_metrics.create(
+                data={
+                    'SIMULATION_ID': self.simulation_id,
+                    'SCHEME_TYPE': self.scheme_type,
+                    'PASSENGER_COUNT': int(completed_passenger_count),
+                    'TOTAL_PASSENGER_TRAVEL_TIME_SECONDS': int(travel_time),
+                    'TOTAL_PASSENGER_WAITING_TIME_SECONDS': int(wait_time),
+                    'LOOP_TIME_MINUTES': self.loop_times[f"{self.scheme_type}_LOOP_TIME"]
+                }
+            )
+            print(f"  [DB:INSERT] SUCCESSFULLY created metrics entry for SIMULATION_ID: {self.simulation_id}, SCHEME: {self.scheme_type}")
+        except Exception as e:
+            print(f"  [DB:INSERT] FAILED to create metrics entry in DB: {e}")
 
     def get_station_by_id(self, station_id):
         """Fast O(1) station lookup by ID."""
@@ -1982,7 +2027,7 @@ class Simulation:
     
     def get_event_by_type(self, event_type, station=None, segment=None):
         return next((
-            e for _, e in self.event_queue.queue # Iterate through (priority, event) tuples
+            e for _, e in self.event_queue.queue
             if e.event_type == event_type and
             (station is None or e.station == station) and
             (segment is None or e.segment == segment)
@@ -2001,18 +2046,18 @@ class Simulation:
         train.current_speed = train.cruising_speed
         
         # Check for valid direction
-        if direction != "northbound" and direction != "southbound":
-            raise ValueError("Invalid train direction: must be 'northbound' or 'southbound'.")
+        if direction != "NORTHBOUND" and direction != "SOUTHBOUND":
+            raise ValueError("Invalid train direction: must be ""NORTHBOUND"" or ""SOUTHBOUND"".")
 
         # Helper function to get the next station
         def get_next_station(station, direction):
             index = stations.index(station)
-            if direction == "southbound":
+            if direction == "SOUTHBOUND":
                 if index < len(stations) - 1:
                     return stations[index + 1]
                 else:
                     return None  # Reached terminus
-            else:  # direction == "northbound"
+            else:  # direction == "NORTHBOUND"
                 if index > 0:
                     return stations[index - 1]
                 else:
@@ -2049,10 +2094,10 @@ class Simulation:
                 total_time += turnaround_time # add turnaround
 
                 # Change to reverse travel
-                if direction == "northbound":
-                    direction = "southbound"
+                if direction == "NORTHBOUND":
+                    direction = "SOUTHBOUND"
                 else:
-                    direction = "northbound"
+                    direction = "NORTHBOUND"
 
                 break  # Terminus has been hit
 

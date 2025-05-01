@@ -26,25 +26,11 @@ model SIMULATIONS {
   SERVICE_PERIODS     Json     @db.Json // Assumes appropriate JSON structure
   PASSENGER_DATA_FILE String   @db.VarChar(255)
 
-  // Total passenger count for the simulation
-  TOTAL_PASSENGER_COUNT Int @default(0)
-
-  // Aggregated results for Regular scheme run (in seconds)
-  REGULAR_TOTAL_PASSENGER_TRAVEL_TIME_SECONDS Int @default(0)
-  REGULAR_TOTAL_PASSENGER_WAITING_TIME_SECONDS Int @default(0)
-
-  // Aggregated results for Skip-stop scheme run (in seconds)
-  SKIP_STOP_TOTAL_PASSENGER_TRAVEL_TIME_SECONDS Int @default(0)
-  SKIP_STOP_TOTAL_PASSENGER_WAITING_TIME_SECONDS Int @default(0)
-
-  //LOOP TIME 
-  REGULAR_LOOP_TIME_MINUTES Int @default(0)
-  SKIP_STOP_LOOP_TIME_MINUTES Int @default(0)
-
-  // RUN TIME
+  // RUN TIME (overall execution)
   TOTAL_RUN_TIME_SECONDS Float @default(0)
 
   // Relations
+  metrics         SIMULATION_METRICS[] // Relation to the new metrics table
   train_specs     TRAIN_SPECS[]
   stations        STATIONS[]
   track_segments  TRACK_SEGMENTS[]
@@ -141,7 +127,7 @@ model TRAINS {
 model TRAIN_MOVEMENTS {
   MOVEMENT_ID                     Int       @id @default(autoincrement())
   SIMULATION_ID                   Int
-  SCHEME_TYPE                     String    @db.VarChar(10) // Regular, Skip-stop
+  SCHEME_TYPE                     String    @db.VarChar(10) // REGULAR, SKIP-STOP
   TRAIN_ID                        Int
   TRAIN_SERVICE_TYPE              String    @db.VarChar(10) // A or B
   STATION_ID                      Int
@@ -167,7 +153,7 @@ model TRAIN_MOVEMENTS {
 
 model PASSENGER_DEMAND {
   SIMULATION_ID          Int
-  SCHEME_TYPE            String    @db.VarChar(10) // Regular, Skip-stop
+  SCHEME_TYPE            String    @db.VarChar(10) // REGULAR, SKIP-STOP
   ORIGIN_STATION_ID      Int
   DESTINATION_STATION_ID Int
   ARRIVAL_TIME_AT_ORIGIN DateTime  @db.DateTime // Time the demand appears at the origin
@@ -190,4 +176,25 @@ model PASSENGER_DEMAND {
   @@id([SIMULATION_ID, SCHEME_TYPE, ARRIVAL_TIME_AT_ORIGIN, ORIGIN_STATION_ID, DESTINATION_STATION_ID])
   @@index([SIMULATION_ID, ORIGIN_STATION_ID], name: "IDX_PASSENGER_DEMAND_ORIGIN")
   @@index([SIMULATION_ID, DESTINATION_STATION_ID], name: "IDX_PASSENGER_DEMAND_DESTINATION")
+}
+
+// --- New Model for Simulation Metrics --- //
+model SIMULATION_METRICS {
+  METRIC_ID        Int      @id @default(autoincrement())
+  SIMULATION_ID    Int      // Foreign key linking back to SIMULATIONS
+  SCHEME_TYPE      String   @db.VarChar(10) // REGULAR, SKIP-STOP
+  PASSENGER_COUNT  Int @default(0) // Number of passengers for this specific scheme that completed their journey
+
+  // Aggregated results per scheme (in seconds)
+  TOTAL_PASSENGER_TRAVEL_TIME_SECONDS Int @default(0)
+  TOTAL_PASSENGER_WAITING_TIME_SECONDS Int @default(0)
+
+  // Loop time per scheme (in minutes)
+  LOOP_TIME_MINUTES                Int @default(0)
+
+  // Relation back to SIMULATIONS
+  simulation       SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
+
+  // Ensure one metric set per simulation per scheme
+  @@unique([SIMULATION_ID, SCHEME_TYPE])
 }
