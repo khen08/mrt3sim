@@ -41,6 +41,10 @@ model SIMULATIONS {
   REGULAR_LOOP_TIME_MINUTES Int @default(0)
   SKIP_STOP_LOOP_TIME_MINUTES Int @default(0)
 
+  // RUN TIME
+  REGULAR_RUN_TIME_SECONDS Float @default(0)
+  SKIP_STOP_RUN_TIME_SECONDS Float @default(0)
+
   // Relations
   train_specs     TRAIN_SPECS[]
   stations        STATIONS[]
