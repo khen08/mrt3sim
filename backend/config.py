@@ -34,39 +34,39 @@ DEFAULT_SETTINGS = {
 
 DEFAULT_SERVICE_PERIODS = [
     {
-        'name': 'Initial',
-        'train_count': 13,
-        'start_hour': 5,
+        'NAME': 'INITIAL',
+        'TRAIN_COUNT': 13,
+        'START_HOUR': 5,
     },
     {
-        'name': 'AM Peak',
-        'train_count': 18,
-        'start_hour': 7
+        'NAME': 'AM PEAK',
+        'TRAIN_COUNT': 18,
+        'START_HOUR': 7
     },
     {
-        'name': 'AM Transition',
-        'train_count': 16,
-        'start_hour': 9
+        'NAME': 'AM TRANSITION',
+        'TRAIN_COUNT': 16,
+        'START_HOUR': 9
     },
     {
-        'name': 'Base',
-        'train_count': 14,
-        'start_hour': 10
+        'NAME': 'BASE',
+        'TRAIN_COUNT': 14,
+        'START_HOUR': 10
     },
     {
-        'name': 'PM Transition',
-        'train_count': 16,
-        'start_hour': 16
+        'NAME': 'PM TRANSITION',
+        'TRAIN_COUNT': 16,
+        'START_HOUR': 16
     },
     {
-        'name': 'PM Peak',
-        'train_count': 18,
-        'start_hour': 17
+        'NAME': 'PM PEAK',
+        'TRAIN_COUNT': 18,
+        'START_HOUR': 17
     },
     {
-        'name': 'Service End Transition',
-        'train_count': 11,
-        'start_hour': 20
+        'NAME': 'SERVICE END TRANSITION',
+        'TRAIN_COUNT': 11,
+        'START_HOUR': 20
     }
 ]
 DEFAULT_ZONE_LENGTH = 130 # in meters

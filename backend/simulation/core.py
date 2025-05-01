@@ -557,23 +557,15 @@ class EventHandler:
             self._handle_service_period_change(event)
         elif event.event_type == "train_insertion":
             self._handle_insertion(event)
-            #print(
-            #    "\nSERVICE PERIOD CHANGE: ",
-            #    event.time.strftime('%H:%M:%S'),
-            #    "\nHEADWAY",
-            #    self.simulation.active_headway,
-            #    "\nACTIVE TRAINS:",
-            #    len([t.train_id for t in self.simulation.active_trains]),
-            #    )
     
     def _handle_service_period_change(self, event):
         """Adjust the number of active trains based on the service period."""
         # Immediately activate the new period's headway
-        self.simulation.active_headway = event.period['headway']
+        self.simulation.active_headway = event.period[f"{self.simulation.scheme_type}_HEADWAY"]#
         period = event.period
         trains = self.simulation.trains
         active_trains = self.simulation.active_trains
-        target_train_count = period['train_count']
+        target_train_count = period['TRAIN_COUNT']
         current_active_count = len(active_trains)
         
         # Deploy trains if needed
@@ -1400,9 +1392,10 @@ class Simulation:
         self.trains = []
         self.stations = []
         self.scheme_pattern = config["schemePattern"]
+        print(self.scheme_pattern)
         self.track_segments = []
         self.passenger_demand = []
-        self.service_periods = None
+        self.service_periods = DEFAULT_SERVICE_PERIODS
         self.active_trains = []
         self.active_headway = 0
         self.trains_to_withdraw_count = 0
@@ -1413,7 +1406,6 @@ class Simulation:
         self.timetables = []
     
     def initialize(self, scheme_type):
-        self.service_periods = None
         self.active_trains = []
         self.active_headway = 0
         self.trains_to_withdraw_count = 0
@@ -1501,9 +1493,9 @@ class Simulation:
                 try:
                     # Use create_many for efficiency
                     result = db.stations.create_many(data=stations_for_db, skip_duplicates=True)
-                    print(f"  [DB:CREATE] ATTEMPTED TO CREATE {len(stations_for_db)} STATIONS IN DB. SUCCESSFULLY INSERTED: {result} ROWS")
+                    print(f"  [DB:CREATE] ATTEMPTED TO CREATE {len(stations_for_db)} STATIONS IN DB. SUCCESSFULLY BULK INSERTED: {result} ROWS")
                 except Exception as e:
-                    print(f"  [DB:CREATE] ERROR during stations bulk insert: {e}")
+                    print(f"  [DB:CREATE] FAILED TO BULK INSERT STATIONS IN DB: {e}")
 
     def _initialize_track_segments(self):
         print("\n[INITIALIZING TRACK SEGMENTS]")
@@ -1562,9 +1554,9 @@ class Simulation:
                 try:
                     # Use create_many for efficiency
                     result = db.track_segments.create_many(data=segments_for_db, skip_duplicates=True)
-                    print(f"  [DB:CREATE] ATTEMPTED TO CREATE {len(segments_for_db)} TRACK SEGMENTS IN DB. SUCCESSFULLY INSERTED: {result} ROWS")
+                    print(f"  [DB:CREATE] ATTEMPTED TO CREATE {len(segments_for_db)} TRACK SEGMENTS IN DB. SUCCESSFULLY BULK INSERTED: {result} ROWS")
                 except Exception as e:
-                    print(f"  [DB:CREATE] ERROR during track_segments bulk insert: {e}")
+                    print(f"  [DB:CREATE] FAILED TO BULK INSERT TRACK SEGMENTS IN DB: {e}")
 
     def _initialize_trains(self, scheme_type):
         print("\n[INITIALIZING TRAINS & TRAIN_SPEC(s)]")
@@ -1572,7 +1564,7 @@ class Simulation:
         
         train_count = 0
         for period in DEFAULT_SERVICE_PERIODS:
-            train_count = max(train_count, period['train_count'])
+            train_count = max(train_count, period['TRAIN_COUNT'])
 
         train_specs_obj = TrainSpec(
             max_capacity=self.config["maxCapacity"],
@@ -1609,9 +1601,9 @@ class Simulation:
                 )
                 
                 train_specs_entry_id = train_specs_entry.SPEC_ID
-                print(f"  [DB:CREATE] SUCCESSFULLY CREATED TRAIN SPECS ENTRY IN DB WITH ID: {train_specs_entry_id}")
+                print(f"  [DB:CREATE] SUCCESSFULLY CREATED TRAIN SPECS ENTRY IN DB WITH SPEC_ID: {train_specs_entry_id}")
             except Exception as e:
-                print(f"  [DB:CREATE] ERROR during train_specs upsert/create: {e}")
+                print(f"  [DB:CREATE] FAILED TO CREATE TRAIN SPECS ENTRY IN DB: {e}")
                 # Handle error appropriately - maybe cannot proceed without spec_id?
                 return # Exit if spec creation failed
 
@@ -1630,23 +1622,22 @@ class Simulation:
                     try:
                         # Use create_many for efficiency
                         result = db.trains.create_many(data=trains_for_db, skip_duplicates=True)
-                        print(f"  [DB:CREATE] ATTEMPTED TO CREATE {len(trains_for_db)} TRAINS IN DB. SUCCESSFULLY INSERTED: {result} ROWS")
+                        print(f"  [DB:CREATE] ATTEMPTED TO CREATE {len(trains_for_db)} TRAINS IN DB. SUCCESSFULLY BULK INSERTED: {result} ROWS")
                     except Exception as e:
-                        print(f"  [DB:CREATE] ERROR during trains bulk insert: {e}")
+                        print(f"  [DB:CREATE] FAILED TO BULK INSERT TRAINS IN DB: {e}")
 
     def _initialize_service_periods(self, scheme_type):
         print("\n[INITIALIZING SERVICE PERIODS]")
-        self.service_periods = DEFAULT_SERVICE_PERIODS
-
         loop_time = int(self.calculate_loop_time(self.trains[0]) / 60)  # Loop Time in minutes
         
         for i, period in enumerate(self.service_periods):
-            period["headway"] = custom_round(loop_time / period["train_count"])
+            #period["HEADWAY"] = custom_round(loop_time / period["TRAIN_COUNT"])
+            period[f"{scheme_type}_HEADWAY"] = custom_round(loop_time / period["TRAIN_COUNT"])
 
             # Schedule service period start event
             start_datetime = datetime.combine(
                 self.current_time.date(),
-                time(hour=(period["start_hour"] - 1), minute=30, second=0),
+                time(hour=(period["START_HOUR"] - 1), minute=30, second=0),
             )  # Set the datetime by the period start hour in config
         
             # Schedule Start of Event
@@ -1662,9 +1653,9 @@ class Simulation:
         df_periods = pd.DataFrame(
             [
                 {
-                    "Name": period["name"],
-                    "Train Count": period["train_count"],
-                    "Headway": period["headway"],
+                    "NAME": period["NAME"],
+                    "TRAIN_COUNT": period["TRAIN_COUNT"],
+                    f"{scheme_type}_HEADWAY": period[f"{scheme_type}_HEADWAY"],
                 }
                 for period in self.service_periods
             ]
@@ -1682,16 +1673,17 @@ class Simulation:
             print(f"  LOOP TIME FOR B TRAINS: {timedelta(minutes=int(self.calculate_loop_time(self.trains[1]) / 60))}")
 
         # Update the SERVICE_PERIODS field in the database with calculated headways
-        if not debug:
-            loop_time_column = 'REGULAR_LOOP_TIME_MINUTES' if scheme_type == self.schemes[0] else 'SKIP_STOP_LOOP_TIME_MINUTES'
+        if not debug :
+            # Construct the correct database column name by replacing hyphen with underscore
+            db_column_name = f"{scheme_type.replace('-', '_').upper()}_LOOP_TIME_MINUTES"
             try:
                 updated_service_periods_json = json.dumps(self.service_periods)
                 db.simulations.update(
                     where={'SIMULATION_ID': self.simulation_id},
-                    data={'SERVICE_PERIODS': updated_service_periods_json, loop_time_column: loop_time}
+                    data={'SERVICE_PERIODS': updated_service_periods_json, db_column_name: loop_time}
                 )
                 print(f"  [DB:UPDATE] SUCCESSFULLY updated SERVICE_PERIODS in SIMULATION for SIMULATION_ID: {self.simulation_id}")
-                print(f"  [DB:UPDATE] SUCCESSFULLY updated {loop_time_column} in SIMULATION for SIMULATION_ID: {self.simulation_id}")
+                print(f"  [DB:UPDATE] SUCCESSFULLY updated {db_column_name} in SIMULATION for SIMULATION_ID: {self.simulation_id}")
             except Exception as e:
                 print(f"  [DB:UPDATE] ERROR updating SERVICE_PERIODS in SIMULATION for SIMULATION_ID: {self.simulation_id}: {e}")
 
@@ -1804,7 +1796,7 @@ class Simulation:
         start_run_time = py_time.perf_counter() # Record start time
         self.schemes = ["SKIP-STOP","REGULAR"]
         self._create_simulation_entry()
-        #'''
+        
         for scheme_type in self.schemes:
             try:
                 print(f"\n\t===[RUNNING SIMULATION FOR SCHEME TYPE: {scheme_type}]===")
@@ -1849,10 +1841,21 @@ class Simulation:
 
                 # Decide if you want to stop all simulations or continue with the next ID
                 break # Stop processing further simulation IDs on error
-        #'''
+        
         end_run_time = py_time.perf_counter()
         run_duration = end_run_time - start_run_time
         print(f"\n[SIMULATION.RUN() EXECUTION TIME: {run_duration:.3f} SECONDS]")
+
+        # Update the TOTAL_RUN_TIME_SECONDS field in the database
+        if not debug:
+            try:
+                db.simulations.update(
+                    where={'SIMULATION_ID': self.simulation_id},
+                    data={'TOTAL_RUN_TIME_SECONDS': round(run_duration, 3)}
+                )
+                print(f"  [DB:UPDATE] SUCCESSFULLY updated TOTAL_RUN_TIME_SECONDS in DB for SIMULATION_ID: {self.simulation_id}")
+            except Exception as e:
+                print(f"  [DB:UPDATE] ERROR updating TOTAL_RUN_TIME_SECONDS in DB for SIMULATION_ID: {self.simulation_id}: {e}")
 
         # Disconnect shared Prisma client after all simulations in the queue are attempted or completed
         if not debug and db.is_connected():
@@ -1865,11 +1868,11 @@ class Simulation:
         """Formats timetable entries and bulk inserts them into the TRAIN_MOVEMENTS table."""
         print(f"\n[SAVING TRAIN_MOVEMENTS TO DB]")
         if not self.timetables:
-            print("  [ERROR]: No timetable entries generated to save.")
+            print("  [ERROR]: NO TIMETABLE ENTRIES TO SAVE.")
             return
 
         if not db.is_connected():
-            print("\tERROR: Database is not connected. Cannot save timetable.")
+            print("\tERROR: DATABASE IS NOT CONNECTED. CANNOT SAVE TIMETABLE.")
             return
 
 
@@ -1913,21 +1916,19 @@ class Simulation:
             data_to_insert.append(data)
 
         if skipped_count > 0:
-            print(f"Skipped {skipped_count} entries due to missing time data.")
+            print(f"SKIPPED {skipped_count} ENTRIES DUE TO MISSING TIME DATA.")
 
         if not data_to_insert:
-            print("No valid entries remaining to insert after filtering.")
+            print("NO VALID ENTRIES REMAINING TO INSERT AFTER FILTERING.")
             return
 
         try:
-            print(f"  [DB:INSERT] Attempting to insert {len(data_to_insert)} entries into TRAIN_MOVEMENTS...")
-            # Ensure you have imported 'db' from your Prisma client setup
             result = db.train_movements.create_many(
                 data=data_to_insert,
             )
-            print(f"  [DB:INSERT] Successfully inserted {result} records into TRAIN_MOVEMENTS.")
+            print(f"  [DB:INSERT] ATTEMPTED TO CREATE {len(data_to_insert)} TRAIN_MOVEMENTS ENTRIES IN DB. SUCCESSFULLY BULK INSERTED: {result} ROWS")
         except Exception as e:
-            print(f"  [DB:INSERT] ERROR inserting timetable data for SIMULATION_ID: {self.simulation_id} into database: {e}")
+            print(f"  [DB:INSERT] FAILED TO BULK INSERT TRAIN_MOVEMENTS ENTRIES IN DB: {e}")
             # Consider logging the failed data or implementing retry logic if necessary
 
     def save_passenger_demand_to_db(self):
@@ -1962,11 +1963,14 @@ class Simulation:
             if passenger_records_for_db:
                 try:
                     result = db.passenger_demand.create_many(data=passenger_records_for_db)
-                    print(f"  [DB:INSERT] ATTEMPTED TO CREATE {len(passenger_records_for_db)} PASSENGER DEMAND ENTRIES IN DB. SUCCESSFULLY INSERTED: {result} ROWS")
+                    print(f"  [DB:INSERT] ATTEMPTED TO CREATE {len(passenger_records_for_db)} PASSENGER DEMAND ENTRIES IN DB. SUCCESSFULLY BULK INSERTED: {result} ROWS")
                 except Exception as e:
-                    print(f"  [DB:INSERT] ERROR during passenger_demand bulk insert for SIMULATION_ID: {self.simulation_id} into database: {e}")
+                    print(f"  [DB:INSERT] FAILED TO BULK INSERT PASSENGER DEMAND ENTRIES IN DB: {e}")
             else:
-                print("  [ERROR]: No passenger demand records to insert into the database.")
+                print("  [ERROR]: NO PASSENGER DEMAND ENTRIES TO INSERT INTO DB.")
+
+    def compute_demand_metrics(self):
+        pass
 
     def get_station_by_id(self, station_id):
         """Fast O(1) station lookup by ID."""
@@ -1979,14 +1983,6 @@ class Simulation:
     def get_event_by_type(self, event_type, station=None, segment=None):
         return next((
             e for _, e in self.event_queue.queue # Iterate through (priority, event) tuples
-            if e.event_type == event_type and
-            (station is None or e.station == station) and
-            (segment is None or e.segment == segment)
-        ), None)
-    
-    def get_event_from_history_by_type(self, event_type, station=None, segment=None):
-        return next((
-            e for e in self.event_history # Iterate through (priority, event) tuples
             if e.event_type == event_type and
             (station is None or e.station == station) and
             (segment is None or e.segment == segment)
