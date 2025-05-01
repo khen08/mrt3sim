@@ -1392,6 +1392,7 @@ class Simulation:
         self.trains = []
         self.stations = []
         self.scheme_pattern = config["schemePattern"]
+        print(self.scheme_pattern)
         self.track_segments = []
         self.passenger_demand = []
         self.service_periods = DEFAULT_SERVICE_PERIODS
