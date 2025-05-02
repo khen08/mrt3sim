@@ -48,40 +48,23 @@ def upload_csv():
                     print(f"[ROUTE:/UPLOAD_CSV] ERROR: COULD NOT CREATE UPLOAD FOLDER {UPLOAD_FOLDER} ON DEMAND: {e}")
                     return jsonify({"error": f"UPLOAD FOLDER MISSING AND COULD NOT BE CREATED: {UPLOAD_FOLDER}"}), 500
             
-            secure_name = secure_filename(file.filename)
-            save_path = os.path.join(UPLOAD_FOLDER, secure_name)
+            # --- Generate timestamped filename --- 
+            timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            _, extension = os.path.splitext(file.filename)
+            new_filename = f"{timestamp_str}_passenger_flow{extension if extension else '.csv'}" # Ensure .csv if no ext
+            save_path = os.path.join(UPLOAD_FOLDER, new_filename)
 
-            try:
-                db.connect()
-
-                print(f"[ROUTE:/UPLOAD_CSV] DATABASE CONNECTION ESTABLISHED")
-                try:
-                    existing_simulation = db.simulations.find_first(where={'PASSENGER_DATA_FILE': secure_name})
-                    if existing_simulation:
-                        print(f"[ROUTE:/UPLOAD_CSV] SIMULATION ALREADY EXISTS FOR FILE: {secure_name}")
-                        return jsonify({"error": f"Simulation already exists or file name is already in use: {secure_name}"}), 400
-                except Exception as e:
-                    print(f"[ROUTE:/UPLOAD_CSV] FAILED TO CHECK IF SIMULATION EXISTS: {e}")
-                    return jsonify({"error": f"Could not check if simulation exists: {e}"}), 500
-                finally:
-                    # Ensure disconnection happens after the DB check
-                    try:
-                        db.disconnect()
-                        print(f"[ROUTE:/UPLOAD_CSV] DATABASE DISCONNECTED AFTER CHECK")
-                    except Exception as disconnect_error:
-                        print(f"[ROUTE:/UPLOAD_CSV] WARNING: ERROR DISCONNECTING DATABASE AFTER CHECK: {disconnect_error}")
-
-            except Exception as e:
-                print(f"[ROUTE:/UPLOAD_CSV] FAILED TO CONNECT TO DATABASE FOR CHECK: {e}")
-                return jsonify({"error": f"Could not connect to database to check file existence: {e}"}), 500
-
+            print(f"[ROUTE:/UPLOAD_CSV] GENERATED FILENAME: {new_filename}")
             print(f"[ROUTE:/UPLOAD_CSV] SAVING FILE TO: {save_path}")
             file.save(save_path)
-            print(f"[ROUTE:/UPLOAD_CSV] FILE '{secure_name}' SAVED SUCCESSFULLY VIA /UPLOAD_CSV.")
-            return jsonify({"message": "File uploaded successfully", "filename": secure_name}), 200
+            print(f"[ROUTE:/UPLOAD_CSV] FILE '{new_filename}' SAVED SUCCESSFULLY VIA /UPLOAD_CSV.")
+            # Return the *new* generated filename
+            return jsonify({"message": "File uploaded successfully", "filename": new_filename}), 200
 
         except Exception as e:
             print(f"[ROUTE:/UPLOAD_CSV] ERROR: COULD NOT SAVE FILE VIA /UPLOAD_CSV: {e}")
+            import traceback # Import traceback here if needed for debugging save errors
+            print(traceback.format_exc()) 
             return jsonify({"error": f"COULD NOT SAVE FILE: {e}"}), 500
     else:
         print("[ROUTE:/UPLOAD_CSV] ERROR: FILE OBJECT IS INVALID DURING /UPLOAD_CSV")
