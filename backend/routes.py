@@ -155,15 +155,7 @@ def get_default_settings():
 
 @main_bp.route('/get_timetable/<int:simulation_id>', methods=['GET', 'OPTIONS'])
 def get_timetable(simulation_id):
-    try:
-        # Add CORS headers for OPTIONS request
-        if request.method == 'OPTIONS':
-            response = jsonify({'status': 'ok'})
-            response.headers.add('Access-Control-Allow-Origin', '*')
-            response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
-            response.headers.add('Access-Control-Allow-Methods', 'GET')
-            return response
-        
+    try:       
         # Connect to database - ensure we have a connection
         db.connect()
         print(f"Database connected for timetable query (simulation_id: {simulation_id})")
