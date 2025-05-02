@@ -17,51 +17,49 @@ import {
   IconRoute,
 } from "@tabler/icons-react";
 import { parseTime, formatTime, addSeconds } from "@/lib/timeUtils";
-import { MRT_COLORS } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
+import {
+  PEAK_HOURS,
+  FULL_DAY_HOURS,
+  type PeakPeriod,
+  SIMULATION_SPEED_PRESETS,
+} from "@/lib/constants"; // Import constants
 
 interface SimulationControllerProps {
-  startTime: string;
-  endTime: string;
+  startTime: string; // Now dynamically passed based on view mode
+  endTime: string; // Now dynamically passed based on view mode
   onTimeUpdate: (time: string) => void;
   onSimulationStateChange: (isRunning: boolean) => void;
   onSchemeChange?: (scheme: "REGULAR" | "SKIP-STOP") => void;
   isLoading: boolean;
   hasTimetableData: boolean;
+  // New props
+  isFullDayView: boolean;
+  selectedPeak: PeakPeriod; // Receive selected peak from parent
+  onPeakChange: (peak: PeakPeriod) => void; // Add prop for callback
 }
 
-// Define peak hour ranges
-const PEAK_HOURS = {
-  AM: { start: "04:31:00", end: "10:00:00" },
-  PM: { start: "17:00:00", end: "20:00:00" },
-};
-
-type PeakPeriod = keyof typeof PEAK_HOURS; // Type will be 'AM' | 'PM'
 type OperationalScheme = "Regular" | "Skip-Stop"; // Type for visual scheme
 
-// Define custom styles using the MRT color palette
-const progressStyles = {
-  bg: `bg-[${MRT_COLORS.blue}]`,
-  progressBg: `bg-[${MRT_COLORS.blue}/20]`,
-  text: `text-[${MRT_COLORS.blue}]`,
-};
-
 const SimulationController = ({
-  startTime: dataStartTime,
-  endTime: dataEndTime,
+  startTime, // Use passed prop
+  endTime, // Use passed prop
   onTimeUpdate,
   onSimulationStateChange,
   onSchemeChange,
   isLoading,
   hasTimetableData,
+  // New props
+  isFullDayView,
+  selectedPeak,
+  onPeakChange,
 }: SimulationControllerProps) => {
   const [isRunning, setIsRunning] = useState(false);
-  const [selectedPeak, setSelectedPeak] = useState<PeakPeriod>("AM");
   const [visualScheme, setVisualScheme] =
     useState<OperationalScheme>("Regular"); // State for visual scheme
-  const [currentTime, setCurrentTime] = useState(PEAK_HOURS.AM.start);
+  const [currentTime, setCurrentTime] = useState(startTime); // Initialize with passed startTime
   const [speed, setSpeed] = useState(1);
   // State for manual time input
   const [manualTimeInput, setManualTimeInput] = useState(currentTime);
@@ -73,8 +71,8 @@ const SimulationController = ({
   const { toast } = useToast();
 
   // Derive view window start/end times based on selected peak
-  const viewStartTime = PEAK_HOURS[selectedPeak].start;
-  const viewEndTime = PEAK_HOURS[selectedPeak].end;
+  const viewStartTime = startTime;
+  const viewEndTime = endTime;
 
   // Convert times to seconds for calculations within the selected view window
   const viewStartTimeSeconds = parseTime(viewStartTime);
@@ -203,21 +201,25 @@ const SimulationController = ({
   // Handle selection of a different peak period (AM/PM)
   const handlePeakChange = useCallback(
     (newPeak: PeakPeriod) => {
-      if (newPeak !== selectedPeak) {
-        console.log(`Switching view to: ${newPeak} Peak`);
-        setIsRunning(false); // Stop simulation
-        setSelectedPeak(newPeak);
-        setCurrentTime(PEAK_HOURS[newPeak].start); // Reset time to new peak start
+      if (newPeak !== selectedPeak && !isFullDayView) {
+        // Only allow change if not full day
+        // console.log(`Setting peak via controller: ${newPeak} Peak`);
+        // Call parent state setter
+        onPeakChange(newPeak);
+        // Set current time to the start of the newly selected peak
+        setCurrentTime(PEAK_HOURS[newPeak].start);
+        // Ensure simulation is paused when changing peak
+        setIsRunning(false);
       }
     },
-    [selectedPeak]
+    [selectedPeak, onPeakChange, isFullDayView] // Add dependencies
   );
 
   // Handle selection of a different visual operational scheme
   const handleSchemeChange = useCallback(
     (newScheme: OperationalScheme) => {
       if (newScheme !== visualScheme) {
-        console.log(`Switching visual scheme to: ${newScheme}`);
+        // console.log(`Switching visual scheme to: ${newScheme}`);
         setVisualScheme(newScheme);
 
         // Call the parent component's handler if provided
@@ -299,13 +301,10 @@ const SimulationController = ({
     }
   };
 
-  // Speed preset options
-  const speedPresets = [0.5, 1, 2, 5, 10, 20, 30];
-
   return (
     <div className="bg-card rounded-lg border shadow-sm p-4">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-md font-medium mr-4 text-gray-900 dark:text-gray-100">
+        <h3 className="text-md font-medium mr-4 text-card-foreground">
           Simulation Control
         </h3>
 
@@ -319,10 +318,13 @@ const SimulationController = ({
             value={selectedPeak}
             onValueChange={(value) => handlePeakChange(value as PeakPeriod)}
             className={cn(
-              "flex space-x-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-md",
-              !hasTimetableData && "opacity-50 pointer-events-none"
+              "flex space-x-2 bg-muted/70 dark:bg-gray-800 p-1 rounded-md",
+              // Disable if no data OR if full day view is active
+              (!hasTimetableData || isFullDayView) &&
+                "opacity-50 pointer-events-none"
             )}
-            disabled={!hasTimetableData}
+            // Explicitly disable based on props
+            disabled={!hasTimetableData || isFullDayView}
           >
             <div className="flex items-center space-x-2">
               <RadioGroupItem
@@ -333,10 +335,11 @@ const SimulationController = ({
               <Label
                 htmlFor="peak-am"
                 className={cn(
-                  "px-3 py-1 rounded text-sm font-medium cursor-pointer transition-colors",
-                  selectedPeak === "AM"
+                  "px-3 py-1 rounded text-xs font-medium cursor-pointer transition-colors",
+                  selectedPeak === "AM" && !isFullDayView // Highlight only if selected and not full day
                     ? "bg-mrt-blue text-white shadow-sm"
-                    : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                    : "text-muted-foreground dark:text-muted-foreground hover:bg-muted dark:hover:bg-gray-700",
+                  isFullDayView && "cursor-not-allowed" // Add not-allowed cursor when disabled
                 )}
               >
                 AM Peak (7-9)
@@ -351,10 +354,11 @@ const SimulationController = ({
               <Label
                 htmlFor="peak-pm"
                 className={cn(
-                  "px-3 py-1 rounded text-sm font-medium cursor-pointer transition-colors",
-                  selectedPeak === "PM"
+                  "px-3 py-1 rounded text-xs font-medium cursor-pointer transition-colors",
+                  selectedPeak === "PM" && !isFullDayView // Highlight only if selected and not full day
                     ? "bg-mrt-blue text-white shadow-sm"
-                    : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                    : "text-muted-foreground dark:text-muted-foreground hover:bg-muted dark:hover:bg-gray-700",
+                  isFullDayView && "cursor-not-allowed" // Add not-allowed cursor when disabled
                 )}
               >
                 PM Peak (5-8)
@@ -418,31 +422,6 @@ const SimulationController = ({
             </div>
           </RadioGroup>
         </div>
-
-        {/* Current Time Display & Manual Input */}
-        {/* Manual Time Input - Only show when simulation is NOT running */}
-        {!isRunning && (
-          <div className="flex items-center gap-2 ml-4 relative w-auto">
-            {timeInputError && (
-              <p className="text-xs text-red-600 dark:text-red-500">
-                {timeInputError}
-              </p>
-            )}
-            <Input
-              type="text"
-              value={manualTimeInput}
-              onChange={handleManualTimeInputChange}
-              onKeyDown={handleManualTimeKeyDown}
-              onBlur={handleManualTimeBlur}
-              placeholder="HH:MM:SS"
-              className={cn(
-                `h-8 text-sm font-mono w-24`,
-                timeInputError ? "border-red-500 dark:border-red-600" : ""
-              )}
-              title={`Set time within ${viewStartTime} - ${viewEndTime}`}
-            />
-          </div>
-        )}
       </div>
 
       {/* Wrap controls in a div for disabling effect */}
@@ -452,8 +431,8 @@ const SimulationController = ({
           !hasTimetableData && "opacity-50 pointer-events-none"
         )}
       >
+        {/* Time Slider */}
         <div className="flex items-center space-x-4">
-          {/* Time Slider */}
           <Slider
             min={viewStartTimeSeconds}
             max={viewEndTimeSeconds}
@@ -465,7 +444,9 @@ const SimulationController = ({
           />
         </div>
 
+        {/* Bottom Row: Play/Pause, Skip, Reset, Speed, Manual Time */}
         <div className="flex items-center justify-between">
+          {/* Left Side: Play/Pause, Skip, Reset */}
           <div className="flex space-x-2">
             <Button
               variant="outline"
@@ -520,37 +501,54 @@ const SimulationController = ({
             </Button>
           </div>
 
-          <div className="flex items-center space-x-2">
-            <IconClock size={18} style={{ color: MRT_COLORS.blue }} />
-            <span className="text-sm font-medium mr-2 text-gray-700 dark:text-gray-300">
-              Speed:
-            </span>
-
-            {/* Speed preset buttons */}
-            <div className="flex space-x-1">
-              {speedPresets.map((preset) => (
-                <Button
-                  key={preset}
-                  variant={speed === preset ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => handleSpeedChange(preset)}
-                  className="px-3 py-1 h-auto text-xs font-medium shadow-sm hover:shadow-md transition-all"
-                  disabled={!hasTimetableData}
-                >
-                  {preset}x
-                </Button>
-              ))}
+          {/* Right Side: Speed Controls and Manual Time Input */}
+          <div className="flex items-center space-x-4">
+            {/* Speed Controls Group */}
+            <div className="flex items-center space-x-2">
+              <IconClock size={18} className="text-mrt-blue" />
+              <span className="text-sm font-medium mr-2 text-muted-foreground dark:text-muted-foreground">
+                Speed:
+              </span>
+              <div className="flex space-x-1">
+                {SIMULATION_SPEED_PRESETS.map((preset) => (
+                  <Button
+                    key={preset}
+                    variant={speed === preset ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handleSpeedChange(preset)}
+                    className="px-3 py-1 h-auto text-xs font-medium shadow-sm hover:shadow-md transition-all"
+                    disabled={!hasTimetableData}
+                  >
+                    {preset}x
+                  </Button>
+                ))}
+              </div>
             </div>
 
-            <span
-              className="text-sm font-mono px-2 py-1 rounded font-bold"
-              style={{
-                backgroundColor: `${MRT_COLORS.blue}20`,
-                color: MRT_COLORS.blue,
-              }}
-            >
-              {speed}x
-            </span>
+            {/* Manual Time Input - Moved here */}
+            {!isRunning && (
+              <div className="flex items-center gap-1 relative">
+                {timeInputError && (
+                  <p className="text-xs text-red-600 dark:text-red-500 absolute -top-4 right-0">
+                    {timeInputError}
+                  </p>
+                )}
+                <Input
+                  type="text"
+                  value={manualTimeInput}
+                  onChange={handleManualTimeInputChange}
+                  onKeyDown={handleManualTimeKeyDown}
+                  onBlur={handleManualTimeBlur}
+                  placeholder="HH:MM:SS"
+                  className={cn(
+                    `h-8 text-sm font-mono w-24`, // Keep size consistent
+                    timeInputError ? "border-red-500 dark:border-red-600" : ""
+                  )}
+                  title={`Set time within ${viewStartTime} - ${viewEndTime}`}
+                  disabled={!hasTimetableData}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>

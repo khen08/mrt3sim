@@ -9,6 +9,11 @@ import {
   IconLoader2,
 } from "@tabler/icons-react";
 import { toast } from "@/components/ui/use-toast";
+import {
+  UPLOAD_CSV_ENDPOINT,
+  SAMPLE_CSV_PATH,
+  SAMPLE_CSV_FILENAME,
+} from "@/lib/constants";
 
 interface CsvUploadProps {
   onFileSelect: (file: File | null) => void;
@@ -35,14 +40,14 @@ const CsvUpload = ({
       const formData = new FormData();
       formData.append("passenger_data_file", selectedFile);
 
-      console.log("Uploading file to /upload_csv:", selectedFile.name);
+      // console.log("Uploading file to /upload_csv:", selectedFile.name);
       toast({
         title: "Uploading File...",
         description: `Uploading '${selectedFile.name}'. Please wait.`,
       });
 
       try {
-        const response = await fetch("http://localhost:5001/upload_csv", {
+        const response = await fetch(UPLOAD_CSV_ENDPOINT, {
           method: "POST",
           body: formData,
         });
@@ -55,7 +60,7 @@ const CsvUpload = ({
           );
         }
 
-        console.log("File uploaded successfully:", result);
+        // console.log("File uploaded successfully:", result);
         setFileName(result.filename);
         setIsFileSelected(true);
         onFileSelect(selectedFile);
@@ -90,17 +95,17 @@ const CsvUpload = ({
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const selectedFile = event.target.files?.[0];
       if (selectedFile) {
-        console.log("File selected locally:", selectedFile.name);
+        // console.log("File selected locally:", selectedFile.name);
         uploadFile(selectedFile);
       } else {
-        console.log("File selection cancelled or failed.");
+        // console.log("File selection cancelled or failed.");
       }
     },
     [uploadFile]
   );
 
   const handleRemoveFile = useCallback(() => {
-    console.log("Removing file selection in CsvUpload");
+    // console.log("Removing file selection in CsvUpload");
     setFileName(null);
     setIsFileSelected(false);
     onFileSelect(null);
@@ -111,11 +116,10 @@ const CsvUpload = ({
 
   const handleDownloadSample = () => {
     const link = document.createElement("a");
-    link.href = "/sample_passenger_flow.csv";
-    link.download = "sample_passenger_flow.csv";
+    link.href = SAMPLE_CSV_PATH;
+    link.download = SAMPLE_CSV_FILENAME;
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
 
     toast({
       title: "Sample Downloaded",

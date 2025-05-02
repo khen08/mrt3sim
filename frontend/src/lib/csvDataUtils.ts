@@ -19,7 +19,7 @@ export function findClosestTimeRow(
 
   // Get time as HH:MM for comparison
   const simTimeHourMin = simulationTime.substring(0, 5);
-  console.log(`Looking for time ${simTimeHourMin} in CSV data`);
+  // console.log(`Looking for time ${simTimeHourMin} in CSV data`);
 
   // Find the dateTime column index
   const dateTimeIndex = csvData.header.findIndex(
@@ -35,7 +35,7 @@ export function findClosestTimeRow(
     return null;
   }
 
-  console.log(
+  // console.log(
     "Using DateTime column:",
     csvData.header[dateTimeIndex],
     "at index",
@@ -58,7 +58,7 @@ export function findClosestTimeRow(
       }
 
       if (rowTimeStr === simTimeHourMin) {
-        console.log(
+        // console.log(
           `Found exact time match: ${rowTimeStr} = ${simTimeHourMin}`
         );
         return row;
@@ -102,7 +102,9 @@ export function findClosestTimeRow(
   }
 
   if (closestRow) {
-    console.log(`Found closest time match with diff of ${closestDiff} minutes`);
+    // console.log(
+      `Found closest time match with diff of ${closestDiff} minutes`
+    );
   } else {
     console.warn("No suitable time row found in CSV data");
   }
@@ -159,7 +161,7 @@ export function findMinuteRangeRows(
     .toString()
     .padStart(2, "0")}`;
 
-  console.log(
+  // console.log(
     `Looking for current time ${simTimeHourMin} and next time ${nextTimeHourMin}`
   );
 
@@ -206,20 +208,20 @@ export function findMinuteRangeRows(
 
   // Log results of row search
   if (currentRow) {
-    console.log(`Found current minute row for ${simTimeHourMin}`);
+    // console.log(`Found current minute row for ${simTimeHourMin}`);
   } else {
     console.warn(`No row found for current minute ${simTimeHourMin}`);
   }
 
   if (nextRow) {
-    console.log(`Found next minute row for ${nextTimeHourMin}`);
+    // console.log(`Found next minute row for ${nextTimeHourMin}`);
   } else {
     console.warn(`No row found for next minute ${nextTimeHourMin}`);
   }
 
   // Fallback: If current or next row is missing, use the closest row for both
   if (!currentRow || !nextRow) {
-    console.log("Falling back to closest time row approach");
+    // console.log("Falling back to closest time row approach");
     const fallbackRow = findClosestTimeRow(csvData, simulationTime);
     return {
       currentRow: fallbackRow,
@@ -247,7 +249,7 @@ export function getStationPassengerData(
   stationId: number,
   simulationTime: string
 ) {
-  console.log(
+  // console.log(
     `Getting passenger data for station ${stationId} at ${simulationTime}`
   );
 
@@ -331,7 +333,7 @@ export function getStationPassengerData(
     // Boarding Logic
     if (fromStation === stationId) {
       // Passenger is boarding at this station
-      // console.log(`[Debug] Station ${stationId} Boarding: From ${fromStation} To ${toStation}, Count: ${currentCount}`);
+      // // console.log(`[Debug] Station ${stationId} Boarding: From ${fromStation} To ${toStation}, Count: ${currentCount}`);
       if (toStation > fromStation) {
         // Northbound
         currentBoarding_nb += currentCount;
@@ -346,7 +348,7 @@ export function getStationPassengerData(
     // Alighting Logic
     if (toStation === stationId) {
       // Passenger is alighting at this station
-      // console.log(`[Debug] Station ${stationId} Alighting: From ${fromStation} To ${toStation}, Count: ${currentCount}`);
+      // // console.log(`[Debug] Station ${stationId} Alighting: From ${fromStation} To ${toStation}, Count: ${currentCount}`);
       if (fromStation > toStation) {
         // Northbound (coming from higher station ID)
         currentAlighting_nb += currentCount;
@@ -359,14 +361,14 @@ export function getStationPassengerData(
     }
   });
 
-  console.log(
+  // console.log(
     `Found ${columnsMatched} flow columns processed for station ${stationId}.`
   );
   // Log raw counts before interpolation
-  console.log(
+  // console.log(
     `Raw NB counts - Board: ${currentBoarding_nb}/${nextBoarding_nb}, Alight: ${currentAlighting_nb}/${nextAlighting_nb}`
   );
-  console.log(
+  // console.log(
     `Raw SB counts - Board: ${currentBoarding_sb}/${nextBoarding_sb}, Alight: ${currentAlighting_sb}/${nextAlighting_sb}`
   );
 
@@ -425,7 +427,7 @@ export function getStationPassengerData(
   };
 
   // Log final result for the station
-  console.log(
+  // console.log(
     `Interpolated directional data for station ${stationId}:`,
     result
   );
@@ -535,7 +537,7 @@ export function getPassengerDistribution(
     }
   });
 
-  console.log(
+  // console.log(
     `Processed ${rowsInTimeRange} rows within the time range ${startTime} - ${endTime}.`
   );
 
@@ -558,7 +560,7 @@ export function getPassengerDistribution(
     // Sort by hour numerically
     .sort((a, b) => parseInt(a.hour) - parseInt(b.hour));
 
-  console.log(
+  // console.log(
     `Generated distribution with ${distribution.length} hour entries for station ${stationId} between ${startTime} and ${endTime}`
   );
 

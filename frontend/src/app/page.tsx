@@ -17,6 +17,9 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconReplace,
+  IconTrain,
+  IconHistory,
+  IconClock,
 } from "@tabler/icons-react";
 import CsvUpload from "@/components/CsvUpload";
 import { Input } from "@/components/ui/input";
@@ -40,6 +43,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import SimulationHistoryModal from "@/components/SimulationHistoryModal";
+import SimulationSettingsCard from "@/components/SimulationSettingsCard";
+import {
+  PEAK_HOURS,
+  FULL_DAY_HOURS,
+  type PeakPeriod,
+  GET_DEFAULT_SETTINGS_ENDPOINT,
+  RUN_SIMULATION_ENDPOINT,
+  GET_TIMETABLE_ENDPOINT,
+} from "@/lib/constants"; // Import constants
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // Define interface for the passenger distribution
 interface PassengerDistribution {
@@ -65,7 +84,7 @@ interface SimulationSettings {
   turnaroundTime: number;
   acceleration: number;
   deceleration: number;
-  maxSpeed: number;
+  cruisingSpeed: number;
   maxCapacity: number;
   schemeType: "REGULAR" | "SKIP-STOP";
   schemePattern: string[]; // Array of station schemes: ["AB", "A", "AB", "B", ...]
@@ -85,19 +104,13 @@ interface SimulationInput {
 // Define the new interface for data passed to TrainInfo
 interface TrainInfoData {
   id: number;
-  direction: "northbound" | "southbound";
+  direction: "NORTHBOUND" | "SOUTHBOUND";
   status: string; // e.g., "At Station", "In Transit", "Turning Around", "Inactive"
   load: number; // Hardcoded 0 for now
   capacity: number;
   relevantStationName: string | null; // Current or next station
   scheduledTime: string | null; // Arrival or Departure time
 }
-
-// Define peak hour ranges (also needed here for setting initial time)
-const PEAK_HOURS = {
-  AM: { start: "06:20:00", end: "10:00:00" },
-  PM: { start: "17:00:00", end: "20:00:00" },
-};
 
 export default function Home() {
   // State for uploaded file object - Store the File object if needed, or just filename
@@ -144,6 +157,17 @@ export default function Home() {
   // --- State for Sidebar Collapse --- //
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
+  // --- State for History Modal --- //
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [historySimulations, setHistorySimulations] = useState([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+
+  // --- State for Full Day View Toggle --- //
+  const [isFullDayView, setIsFullDayView] = useState(false);
+
+  // --- State for Selected Peak (needed by parent now) --- //
+  const [selectedPeak, setSelectedPeak] = useState<PeakPeriod>("AM");
+
   // State to prevent duplicate logging
   const [hasLoggedSchemeType, setHasLoggedSchemeType] = useState(false);
 
@@ -155,10 +179,10 @@ export default function Home() {
     const fetchDefaults = async () => {
       setIsLoading(true); // Use general loading for initial setup
       setApiError(null);
-      console.log("Fetching default settings...");
+      // console.log("Fetching default settings...");
       try {
         const response = await fetch(
-          "http://localhost:5001/get_default_settings"
+          GET_DEFAULT_SETTINGS_ENDPOINT // Use constant
         );
         if (!response.ok) {
           const errorData = await response
@@ -171,7 +195,7 @@ export default function Home() {
           );
         }
         const defaults = await response.json();
-        console.log("Received default settings:", defaults);
+        // console.log("Received default settings:", defaults);
 
         // Get the scheme pattern from defaults
         const defaultSchemePattern = defaults.schemePattern;
@@ -289,14 +313,14 @@ export default function Home() {
             try {
               const arrivalSeconds = parseTime(entry[arrivalTimeKey]);
               if (arrivalSeconds > currentTimeSeconds) {
-                const dir = String(entry[directionKey]).toLowerCase();
+                const dir = String(entry[directionKey]);
                 if (
-                  dir === "northbound" &&
+                  dir === "NORTHBOUND" &&
                   (!nextArrivalNB || arrivalSeconds < nextArrivalNB)
                 ) {
                   nextArrivalNB = arrivalSeconds;
                 } else if (
-                  dir === "southbound" &&
+                  dir === "SOUTHBOUND" &&
                   (!nextArrivalSB || arrivalSeconds < nextArrivalSB)
                 ) {
                   nextArrivalSB = arrivalSeconds;
@@ -328,7 +352,7 @@ export default function Home() {
 
       // Reset simulation results and related state when file changes/is removed
       if (file) {
-        console.log(`File upload confirmed: ${file.name}`);
+        // console.log(`File upload confirmed: ${file.name}`);
         // Update filename in simulationInput state
         setSimulationInput((prev) => ({ ...prev, filename: file.name }));
         // Reset things related to the previous simulation run
@@ -341,7 +365,7 @@ export default function Home() {
         setApiError(null); // Clear any previous errors
         // Toast notification handled by CsvUpload
       } else {
-        console.log("File removed or upload failed.");
+        // console.log("File removed or upload failed.");
         // Clear filename in simulationInput state
         setSimulationInput((prev) => ({ ...prev, filename: null }));
         // Optionally clear more state if needed when file is removed
@@ -381,7 +405,7 @@ export default function Home() {
       }
 
       if (name) {
-        console.log(`Setting change: ${name} = ${value}`); // Debug log
+        // console.log(`Setting change: ${name} = ${value}`); // Debug log
         setSimulationSettings((prev) => {
           if (!prev) return null; // Should not happen if defaults loaded
           const updatedSettings = { ...prev, [name as string]: value };
@@ -412,9 +436,9 @@ export default function Home() {
           return station;
         });
 
-        console.log(
-          `Station distance change: Index ${index}, New Distance ${newDistance}`
-        ); // Debug log
+        // console.log(
+        //   `Station distance change: Index ${index}, New Distance ${newDistance}`
+        // ); // Debug log
 
         const updatedSettings = { ...prev, stations: updatedStations };
         // Also update the config part of the global state
@@ -447,9 +471,9 @@ export default function Home() {
           (station) => station.scheme || "AB"
         );
 
-        console.log(
-          `Station scheme change: Index ${index}, New Scheme ${value}`
-        ); // Debug log
+        //console.log(
+        //  `Station scheme change: Index ${index}, New Scheme ${value}`
+        //); // Debug log
 
         const updatedSettings = {
           ...prev,
@@ -513,7 +537,7 @@ export default function Home() {
   // Update simulation play/pause state
   const handleSimulationStateChange = useCallback(
     (isRunning: boolean) => {
-      console.log("Simulation state change requested:", isRunning);
+      // console.log("Simulation state change requested:", isRunning);
       // Ensure simulation result exists before starting
       if (isRunning && (!simulationResult || simulationResult.length === 0)) {
         console.warn("Start clicked, but simulationResult is null or empty.");
@@ -545,7 +569,7 @@ export default function Home() {
   // Update selected station state when a station is clicked on the map (Unchanged)
   const handleStationClick = useCallback(
     (stationId: number) => {
-      console.log("Station clicked:", stationId);
+      // console.log("Station clicked:", stationId);
       // Toggle selection: If same station clicked, deselect (set to null)
       setSelectedStation((prevSelected) =>
         prevSelected === stationId ? null : stationId
@@ -560,7 +584,7 @@ export default function Home() {
   // --- NEW: Handle Train Click from Map --- //
   const handleTrainClick = useCallback(
     (trainId: number, details: TrainInfoData) => {
-      console.log("Train clicked:", trainId, "Details:", details);
+      // console.log("Train clicked:", trainId, "Details:", details);
       // Toggle selection: If same train clicked, deselect
       setSelectedTrainId((prevSelected) =>
         prevSelected === trainId ? null : trainId
@@ -657,8 +681,8 @@ export default function Home() {
       },
     };
 
-    console.log("Sending request to /run_simulation API...");
-    console.log("Payload (JSON):", payload);
+    // console.log("Sending request to /run_simulation API...");
+    // console.log("Payload (JSON):", payload);
     toast({
       title: "Running Simulation",
       description: "Generating timetable...",
@@ -666,17 +690,14 @@ export default function Home() {
     });
 
     try {
-      // --- NEW API ENDPOINT and METHOD --- //
-      const response = await fetch(
-        "http://localhost:5001/run_simulation", // Updated endpoint
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json", // Set content type to JSON
-          },
-          body: JSON.stringify(payload), // Send JSON string
-        }
-      );
+      // Use constant
+      const response = await fetch(RUN_SIMULATION_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json", // Set content type to JSON
+        },
+        body: JSON.stringify(payload), // Send JSON string
+      });
 
       if (!response.ok) {
         const errorData = await response
@@ -691,7 +712,7 @@ export default function Home() {
 
       // The response could come back in various formats, handle accordingly
       const resultData = await response.json();
-      console.log("Simulation API Response:", resultData);
+      // console.log("Simulation API Response:", resultData);
 
       // --- Extract run duration if available --- //
       const runDuration = resultData?.run_duration; // Will be undefined if not present
@@ -701,12 +722,12 @@ export default function Home() {
       // Check for known response formats based on simulation_id success message or actual timetable array
       if (resultData.simulation_id) {
         // Success message with simulation_id, need to fetch timetable data
-        console.log("Simulation completed with ID:", resultData.simulation_id);
+        // console.log("Simulation completed with ID:", resultData.simulation_id);
 
         // Additional call to fetch the timetable data for this simulation
         try {
           const timetableResponse = await fetch(
-            `http://localhost:5001/get_timetable/${resultData.simulation_id}`,
+            GET_TIMETABLE_ENDPOINT(resultData.simulation_id), // Use constant
             {
               method: "GET",
               headers: {
@@ -722,7 +743,7 @@ export default function Home() {
           }
 
           timetableData = await timetableResponse.json();
-          console.log("Timetable data fetched:", timetableData);
+          // console.log("Timetable data fetched:", timetableData);
         } catch (timetableError: any) {
           console.error("Error fetching timetable:", timetableError);
           toast({
@@ -741,7 +762,7 @@ export default function Home() {
         resultData.simulation_id
       ) {
         // Success message with simulation ID
-        console.log("Simulation completed with ID:", resultData.simulation_id);
+        // console.log("Simulation completed with ID:", resultData.simulation_id);
         // Use empty array as placeholder since we don't have actual data yet
         timetableData = [];
       } else {
@@ -752,16 +773,16 @@ export default function Home() {
 
       if (Array.isArray(timetableData)) {
         // We have a valid array of timetable entries
-        console.log(
-          `Updating simulationResult state with ${timetableData.length} entries.`
-        );
+        // console.log(
+        //   `Updating simulationResult state with ${timetableData.length} entries.`
+        // );
         setSimulationResult(timetableData);
 
         // Reset time to the start of the AM Peak after successful run
         const defaultPeakStart = PEAK_HOURS.AM.start;
-        console.log(
-          `Resetting simulation time to default peak start: ${defaultPeakStart}`
-        );
+        // console.log(
+        //   `Resetting simulation time to default peak start: ${defaultPeakStart}`
+        // );
         setSimulationTime(defaultPeakStart);
         setIsSimulationRunning(false); // Start paused
         setMapRefreshKey((prev) => prev + 1); // Refresh map
@@ -806,7 +827,7 @@ export default function Home() {
 
   // --- Function to handle loading new data --- //
   const handleLoadNewData = useCallback(() => {
-    console.log("Resetting for new data upload...");
+    // console.log("Resetting for new data upload...");
     // Use handleFileSelect(null) to trigger resets in this component
     handleFileSelect(null);
     // CsvUpload component handles resetting its own input/state via its handleRemoveFile logic
@@ -819,7 +840,7 @@ export default function Home() {
   // Handle scheme change from SimulationController
   const handleSchemeChange = useCallback(
     (scheme: "REGULAR" | "SKIP-STOP") => {
-      console.log(`Switching to ${scheme} scheme visualization`);
+      // console.log(`Switching to ${scheme} scheme visualization`);
 
       // Log the timetable structure to help debug
       if (scheme === "SKIP-STOP" && simulationResult) {
@@ -830,9 +851,9 @@ export default function Home() {
             entry.SERVICE_TYPE === "SKIP-STOP"
         ).length;
 
-        console.log(
-          `Found ${skipStopEntries} SKIP-STOP entries in simulationResult`
-        );
+        // console.log(
+        //   `Found ${skipStopEntries} SKIP-STOP entries in simulationResult`
+        // );
 
         // Look for service types in the data
         const trainServiceTypes: Record<number, string> = {};
@@ -845,7 +866,7 @@ export default function Home() {
           }
         });
 
-        console.log("Train service types found:", trainServiceTypes);
+        // console.log("Train service types found:", trainServiceTypes);
       }
 
       setSelectedScheme(scheme);
@@ -870,7 +891,8 @@ export default function Home() {
         {!isSidebarCollapsed && (
           <>
             <div className="p-4 border-b flex justify-between items-center">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 flex items-center">
+                <IconTrain className="mr-2 text-mrt-blue" size={24} />
                 MRT-3 Simulation
               </h2>
               <DarkModeToggle />
@@ -884,266 +906,44 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Load New Data Button - Show only if a file object exists */}
-              {uploadedFileObject && (
-                <div className="mb-4">
+              {/* Load New Data / History Buttons */}
+              <div className="mb-4 space-y-2">
+                {/* NEW Simulation History Button */}
+                <Button
+                  variant="outline"
+                  className="w-full justify-start text-left"
+                  onClick={() => setIsHistoryModalOpen(true)}
+                  title="View past simulation runs"
+                >
+                  <IconHistory className="mr-2 h-4 w-4" />
+                  Simulation History
+                </Button>
+
+                {/* Existing Clear Button */}
+                {uploadedFileObject && (
                   <Button
                     variant="outline"
                     className="w-full justify-start text-left"
                     onClick={handleLoadNewData}
-                    // Disable if currently simulating
                     disabled={isSimulating}
                   >
                     <IconReplace className="mr-2 h-4 w-4" />
                     Clear Current Data & Settings
                   </Button>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* Settings Card - Render forms only when default settings are loaded */}
-              {simulationSettings && (
-                <Card className="mb-4">
-                  <CardHeader>
-                    <CardTitle>
-                      <IconSettings className="mr-2 inline-block h-5 w-5" />
-                      Simulation Settings
-                    </CardTitle>
-                    <CardDescription>
-                      Configure simulation parameters. Applied when "Run
-                      Simulation" is clicked.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Tabs defaultValue="train" className="w-full">
-                      <TabsList className="grid w-full grid-cols-2 mb-4">
-                        <TabsTrigger value="train" disabled={isSimulating}>
-                          Train Settings
-                        </TabsTrigger>
-                        <TabsTrigger value="station" disabled={isSimulating}>
-                          Station Settings
-                        </TabsTrigger>
-                      </TabsList>
-
-                      {/* Train Settings Tab */}
-                      <TabsContent value="train" className="space-y-6">
-                        {/* Basic Settings Fields */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div>
-                            <Label htmlFor="dwellTime">Dwell Time (s)</Label>
-                            <Input
-                              id="dwellTime"
-                              name="dwellTime"
-                              type="number"
-                              step="1"
-                              min="0"
-                              value={simulationSettings.dwellTime}
-                              onChange={handleSettingChange}
-                              className="mt-1"
-                              disabled={isSimulating}
-                            />
-                            <p className="text-sm text-muted-foreground mt-1">
-                              Train stop duration at stations.
-                            </p>
-                          </div>
-                          <div>
-                            <Label htmlFor="turnaroundTime">
-                              Turnaround Time (s)
-                            </Label>
-                            <Input
-                              id="turnaroundTime"
-                              name="turnaroundTime"
-                              type="number"
-                              step="1"
-                              min="0"
-                              value={simulationSettings.turnaroundTime}
-                              onChange={handleSettingChange}
-                              className="mt-1"
-                              disabled={isSimulating}
-                            />
-                            <p className="text-sm text-muted-foreground mt-1">
-                              Time to reverse at terminals.
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Advanced Settings Fields - Train Specs */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                          <div>
-                            <Label htmlFor="acceleration">
-                              Acceleration (m/s²)
-                            </Label>
-                            <Input
-                              id="acceleration"
-                              name="acceleration"
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              value={simulationSettings.acceleration}
-                              onChange={handleSettingChange}
-                              className="mt-1"
-                              disabled={isSimulating}
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor="deceleration">
-                              Deceleration (m/s²)
-                            </Label>
-                            <Input
-                              id="deceleration"
-                              name="deceleration"
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              value={simulationSettings.deceleration}
-                              onChange={handleSettingChange}
-                              className="mt-1"
-                              disabled={isSimulating}
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor="maxSpeed">Max Speed (km/h)</Label>
-                            <Input
-                              id="maxSpeed"
-                              name="maxSpeed"
-                              type="number"
-                              step="1"
-                              min="0"
-                              value={simulationSettings.maxSpeed}
-                              onChange={handleSettingChange}
-                              className="mt-1"
-                              disabled={isSimulating}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Advanced Settings Fields - Capacity & Scheme */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div>
-                            <Label htmlFor="maxCapacity">Max Capacity</Label>
-                            <Input
-                              id="maxCapacity"
-                              name="maxCapacity"
-                              type="number"
-                              step="1"
-                              min="0"
-                              value={simulationSettings.maxCapacity}
-                              onChange={handleSettingChange}
-                              className="mt-1"
-                              disabled={isSimulating}
-                            />
-                            <p className="text-sm text-muted-foreground mt-1">
-                              Max passengers per train.
-                            </p>
-                          </div>
-                        </div>
-                      </TabsContent>
-
-                      {/* Station Settings Tab */}
-                      <TabsContent value="station" className="space-y-4">
-                        <div>
-                          <Label className="text-base font-semibold">
-                            Station Management
-                          </Label>
-
-                          {/* Skip-Stop Toggle */}
-                          <div className="flex items-center space-x-2 mt-2 mb-4">
-                            <Checkbox
-                              id="useSkipStop"
-                              checked={
-                                simulationSettings.schemeType === "SKIP-STOP"
-                              }
-                              onCheckedChange={(checked: boolean) =>
-                                handleSkipStopToggle(checked)
-                              }
-                              disabled={isSimulating}
-                            />
-                            <label
-                              htmlFor="useSkipStop"
-                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                            >
-                              Change Skip-Stop Pattern
-                            </label>
-                          </div>
-
-                          <div className="border rounded-md mt-2 flex-grow">
-                            <div className="grid grid-cols-16 gap-4 mb-2 font-medium text-xs sticky top-0 z-10 bg-card px-4 py-2 border-b">
-                              <div className="col-span-1">#</div>
-                              <div className="col-span-5">Name</div>
-                              {/* New column for scheme type */}
-                              <div className="col-span-6">Scheme Pattern</div>
-                              <div className="col-span-4">
-                                Dist. from Prev (km)
-                              </div>
-                            </div>
-                            <div className="px-4 pt-2 pb-4 max-h-full flex-grow">
-                              {simulationSettings.stations.map(
-                                (station, index) => (
-                                  <div
-                                    key={`station-${index}`}
-                                    className="grid grid-cols-16 gap-4 items-center mb-2 text-xs"
-                                  >
-                                    <div className="col-span-1 text-gray-500">
-                                      {index + 1}
-                                    </div>
-                                    <div className="col-span-5">
-                                      {station.name}
-                                    </div>
-                                    {/* New scheme selector */}
-                                    <div className="col-span-6">
-                                      <Select
-                                        disabled={
-                                          simulationSettings.schemeType !==
-                                            "SKIP-STOP" || isSimulating
-                                        }
-                                        value={station.scheme || "AB"}
-                                        onValueChange={(value) =>
-                                          handleStationSchemeChange(
-                                            index,
-                                            value as "AB" | "A" | "B"
-                                          )
-                                        }
-                                      >
-                                        <SelectTrigger className="h-7 text-xs">
-                                          <SelectValue placeholder="Select Scheme" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="AB">
-                                            AB (Both Stop)
-                                          </SelectItem>
-                                          <SelectItem value="A">
-                                            A (A Trains Only)
-                                          </SelectItem>
-                                          <SelectItem value="B">
-                                            B (B Trains Only)
-                                          </SelectItem>
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                    <div className="col-span-4">
-                                      <Input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        value={station.distance}
-                                        onChange={(e) =>
-                                          handleStationDistanceChange(index, e)
-                                        }
-                                        // Disable first station and if simulating
-                                        disabled={index === 0 || isSimulating}
-                                        className="h-7 text-xs"
-                                      />
-                                    </div>
-                                  </div>
-                                )
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </TabsContent>
-                    </Tabs>
-                  </CardContent>
-                </Card>
-              )}
+              <SimulationSettingsCard
+                simulationSettings={simulationSettings}
+                isSimulating={isSimulating}
+                isFullDayView={isFullDayView}
+                onSettingChange={handleSettingChange}
+                onStationDistanceChange={handleStationDistanceChange}
+                onStationSchemeChange={handleStationSchemeChange}
+                onSkipStopToggle={handleSkipStopToggle}
+                onToggleFullDayView={() => setIsFullDayView(!isFullDayView)}
+              />
 
               {/* Show error if default settings failed to load */}
               {apiError && !simulationSettings && (
@@ -1171,7 +971,7 @@ export default function Home() {
                 disabled={
                   !uploadedFileObject || isSimulating || !simulationSettings
                 }
-                className="w-full bg-mrt-blue hover:bg-blue-700 text-white h-12 text-lg font-semibold"
+                className="w-full bg-mrt-blue hover:bg-blue-700 text-white h-12 text-lg font-semibold border-2 border-gray-300 dark:border-transparent shadow-md hover:shadow-lg"
               >
                 {isSimulating ? (
                   <>
@@ -1193,7 +993,7 @@ export default function Home() {
       <button
         onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         className={cn(
-          "absolute top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-mrt-blue hover:bg-blue-700 text-white shadow-md transition-all duration-300 ease-in-out",
+          "absolute top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full bg-gray-800 dark:bg-mrt-blue text-white shadow-lg border-2 border-white dark:border-white transition-all duration-300 ease-in-out hover:bg-black dark:hover:bg-blue-700",
           isSidebarCollapsed ? "left-2" : "left-[490px]"
         )}
         title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
@@ -1251,11 +1051,11 @@ export default function Home() {
                       simulationResult.length > 0 &&
                       !hasLoggedSchemeType
                     ) {
-                      console.log("Current selectedScheme:", selectedScheme);
-                      console.log(
-                        "Sample entries from timetable:",
-                        JSON.stringify(simulationResult.slice(0, 3), null, 2)
-                      );
+                      // console.log("Current selectedScheme:", selectedScheme);
+                      // console.log(
+                      //   "Sample entries from timetable:",
+                      //   JSON.stringify(simulationResult.slice(0, 3), null, 2)
+                      // );
                       setHasLoggedSchemeType(true);
                     }
 
@@ -1266,17 +1066,8 @@ export default function Home() {
                       entry.SERVICE_TYPE === selectedScheme
                     );
                   })}
-                  // Pass station list and turnaround time from settings
-                  stations={simulationSettings?.stations.map(
-                    (station, index) => ({
-                      ...station, // Keep name and distance
-                      id: index + 1, // Assign ID based on index
-                      x: 50 + index * 70, // Simple placeholder x coordinate
-                      y: 150, // Simple placeholder y coordinate
-                      severity: 1, // Default severity
-                      scheme: station.scheme, // Pass the scheme information from settings
-                    })
-                  )}
+                  // Pass settings stations to the new prop
+                  stationConfigData={simulationSettings?.stations}
                   turnaroundTime={simulationSettings?.turnaroundTime}
                   maxCapacity={simulationSettings?.maxCapacity ?? 0}
                   selectedScheme={selectedScheme}
@@ -1324,22 +1115,40 @@ export default function Home() {
             {/* Simulation time controls */}
             <div className="flex-shrink-0">
               <SimulationController
-                // Pass actual data range if available, otherwise keep defaults or disable
-                startTime={PEAK_HOURS.AM.start}
-                endTime={PEAK_HOURS.PM.end}
+                // Pass appropriate start/end time based on view
+                startTime={
+                  isFullDayView ? FULL_DAY_HOURS.start : PEAK_HOURS.AM.start
+                }
+                endTime={isFullDayView ? FULL_DAY_HOURS.end : PEAK_HOURS.PM.end}
                 onTimeUpdate={handleTimeUpdate}
                 onSimulationStateChange={handleSimulationStateChange}
-                isLoading={isSimulating} // Controller loading state tied to simulation run
-                // Enable controls only when simulation results are available
+                isLoading={isSimulating}
                 hasTimetableData={
                   !!simulationResult && simulationResult.length > 0
                 }
                 onSchemeChange={handleSchemeChange}
+                // Pass full day view state to controller
+                isFullDayView={isFullDayView}
+                selectedPeak={selectedPeak} // Pass state
+                onPeakChange={setSelectedPeak} // Pass setter function
               />
             </div>
           </div>
         )}
       </div>
+
+      {/* Render the Simulation History Modal */}
+      <SimulationHistoryModal
+        isOpen={isHistoryModalOpen}
+        onClose={() => setIsHistoryModalOpen(false)}
+        simulations={historySimulations} // Pass state (currently empty)
+        onLoadSimulation={(id) => {
+          // console.log("TODO: Implement load simulation logic for ID:", id);
+          // Placeholder: Close modal after clicking load
+          setIsHistoryModalOpen(false);
+        }}
+        isLoading={isHistoryLoading} // Pass loading state
+      />
     </main>
   );
 }

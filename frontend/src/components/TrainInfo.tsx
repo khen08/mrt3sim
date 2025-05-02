@@ -26,7 +26,7 @@ import { useEffect, useState } from "react";
 // Match the interface defined in page.tsx
 interface TrainInfoData {
   id: number;
-  direction: "northbound" | "southbound";
+  direction: "NORTHBOUND" | "SOUTHBOUND";
   status: string;
   load: number;
   capacity: number;
@@ -49,7 +49,7 @@ interface TrainState {
   id: number;
   x: number;
   y: number;
-  direction: "northbound" | "southbound";
+  direction: "NORTHBOUND" | "SOUTHBOUND";
   isStopped: boolean;
   isActive: boolean;
   isTurningAround: boolean;
@@ -269,16 +269,16 @@ const TrainInfo = ({
   ]);
 
   const directionColor =
-    direction === "northbound" ? "text-[#00844e]" : "text-[#ffcf26]";
+    direction === "NORTHBOUND" ? "text-[#00844e]" : "text-[#ffcf26]";
   const directionBg =
-    direction === "northbound" ? "bg-[#00844e]/10" : "bg-[#ffcf26]/10";
+    direction === "NORTHBOUND" ? "bg-[#00844e]/10" : "bg-[#ffcf26]/10";
   const directionDarkBg =
-    direction === "northbound"
+    direction === "NORTHBOUND"
       ? "dark:bg-[#00844e]/20"
       : "dark:bg-[#ffcf26]/20";
 
   // Make southbound train IDs text black for better readability
-  const textColor = direction === "southbound" ? "text-black" : "";
+  const textColor = direction === "SOUTHBOUND" ? "text-black" : "";
 
   // Get service type styling
   const serviceTypeColor =
@@ -317,7 +317,7 @@ const TrainInfo = ({
               className={`border-none text-xs px-1.5 py-0.5 ${directionColor} ${directionBg} ${directionDarkBg} ${textColor}`}
             >
               {/* Render icon conditionally inline */}
-              {direction === "northbound" ? (
+              {direction === "NORTHBOUND" ? (
                 <IconArrowUp size={12} className="mr-1" /> // Use correct icon
               ) : (
                 <IconArrowDown size={12} className="mr-1" /> // Use correct icon
@@ -333,21 +333,21 @@ const TrainInfo = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-3">
             <div className="flex items-center text-sm">
-              <IconRoute className="mr-2 text-gray-500" size={16} />
-              <span className="text-gray-600 dark:text-gray-400 mr-2">
+              <IconRoute className="mr-2 text-mrt-blue" size={16} />
+              <span className="text-gray-700 dark:text-gray-400 mr-2">
                 Status:
               </span>
-              <span className="font-medium text-gray-800 dark:text-gray-100">
+              <span className="font-medium text-gray-900 dark:text-gray-100">
                 {currentStatus}
               </span>
             </div>
 
             <div className="flex items-center text-sm">
-              <IconMapPin className="mr-2 text-gray-500" size={16} />
-              <span className="text-gray-600 dark:text-gray-400 mr-2">
+              <IconMapPin className="mr-2 text-mrt-blue" size={16} />
+              <span className="text-gray-700 dark:text-gray-400 mr-2">
                 {currentStatus.includes("Transit") ? "Next Stop:" : "Location:"}
               </span>
-              <span className="font-medium text-gray-800 dark:text-gray-100">
+              <span className="font-medium text-gray-900 dark:text-gray-100">
                 {currentRelevantStationName ?? "N/A"}
               </span>
             </div>
@@ -356,23 +356,23 @@ const TrainInfo = ({
           {/* Column 2: Load & Time */}
           <div className="space-y-3">
             <div className="flex items-center text-sm">
-              <IconUsers className="mr-2 text-gray-500" size={16} />
-              <span className="text-gray-600 dark:text-gray-400 mr-2">
+              <IconUsers className="mr-2 text-mrt-blue" size={16} />
+              <span className="text-gray-700 dark:text-gray-400 mr-2">
                 Load:
               </span>
-              <span className="font-medium text-gray-800 dark:text-gray-100">
+              <span className="font-medium text-gray-900 dark:text-gray-100">
                 {currentLoad} / {capacity}
               </span>
             </div>
 
             <div className="flex items-center text-sm">
-              <IconClock className="mr-2 text-gray-500" size={16} />
-              <span className="text-gray-600 dark:text-gray-400 mr-2">
+              <IconClock className="mr-2 text-mrt-blue" size={16} />
+              <span className="text-gray-700 dark:text-gray-400 mr-2">
                 {currentStatus.includes("Transit")
                   ? "ETA:"
                   : "Departure Schedule:"}
               </span>
-              <span className="font-medium text-gray-800 dark:text-gray-100">
+              <span className="font-medium text-gray-900 dark:text-gray-100">
                 {currentScheduledTime ?? "N/A"}
               </span>
             </div>
