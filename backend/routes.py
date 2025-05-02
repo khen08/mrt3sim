@@ -156,37 +156,38 @@ def get_default_settings():
 @main_bp.route('/get_timetable/<int:simulation_id>', methods=['GET', 'OPTIONS'])
 def get_timetable(simulation_id):
     try:       
-        # Connect to database - ensure we have a connection
         db.connect()
-        print(f"Database connected for timetable query (simulation_id: {simulation_id})")
+        print(f"[ROUTE:GET_TIMETABLE] DATABASE CONNECTION ESTABLISHED")
             
-        # Fetch timetable entries from the database
-        timetable_entries = db.train_movements.find_many(
-            where={'SIMULATION_ID': simulation_id},
-            order=[{'ARRIVAL_TIME': 'asc'}]
-        )
-        
-        # Convert to serializable format
-        serializable_entries = []
-        for entry in timetable_entries:
-            # Convert datetime objects to strings
-            entry_dict = entry.dict()
-            entry_dict['ARRIVAL_TIME'] = entry_dict['ARRIVAL_TIME'].strftime('%H:%M:%S')
-            if entry_dict['DEPARTURE_TIME']:
-                entry_dict['DEPARTURE_TIME'] = entry_dict['DEPARTURE_TIME'].strftime('%H:%M:%S')
-            serializable_entries.append(entry_dict)
-        
-        print(f"Retrieved {len(serializable_entries)} timetable entries for simulation ID {simulation_id}")
-        return jsonify(serializable_entries)
+        try:
+            timetable_entries = db.train_movements.find_many(
+                where={'SIMULATION_ID': simulation_id},
+                order=[{'ARRIVAL_TIME': 'asc'}]
+            )
+            
+            # Convert to serializable format
+            serializable_entries = []
+            for entry in timetable_entries:
+                # Convert datetime objects to strings
+                entry_dict = entry.dict()
+                entry_dict['ARRIVAL_TIME'] = entry_dict['ARRIVAL_TIME'].strftime('%H:%M:%S')
+                if entry_dict['DEPARTURE_TIME']:
+                    entry_dict['DEPARTURE_TIME'] = entry_dict['DEPARTURE_TIME'].strftime('%H:%M:%S')
+                serializable_entries.append(entry_dict)
+            
+            print(f"[ROUTE:GET_TIMETABLE] SUCCESSFULLY RETRIEVED {len(serializable_entries)} TIMETABLE ENTRIES FOR SIMULATION ID {simulation_id}")
+            return jsonify(serializable_entries)
+        except Exception as e:
+            print(f"[ROUTE:GET_TIMETABLE] FAILED TO FETCH TIMETABLE ENTRIES: {e}")
+            return jsonify({"error": str(e)}), 500
     except Exception as e:
-        print(f"Error fetching timetable for simulation ID {simulation_id}: {e}")
+        print(f"[ROUTE:GET_TIMETABLE] FAILED TO CONNECT TO DATABASE: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
-        # Always ensure we disconnect (to prevent connection leaks)
         try:
             db.disconnect()
-            print("Database disconnected after timetable query")
+            print(f"[ROUTE:GET_TIMETABLE] DATABASE DISCONNECTED")
         except Exception as disconnect_error:
-            print(f"Warning: Error disconnecting from database: {disconnect_error}")
+            print(f"[ROUTE:GET_TIMETABLE] WARNING: ERROR DISCONNECTING FROM DATABASE: {disconnect_error}")
 
 # Note: The app is run from backend/app.py, not here.
