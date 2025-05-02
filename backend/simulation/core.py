@@ -16,7 +16,6 @@ else:
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import DEFAULT_SETTINGS, DEFAULT_SERVICE_PERIODS, DEFAULT_ZONE_LENGTH, UPLOAD_FOLDER
-import traceback
 
 # --- Helper Function for Headway Calculation ---
 def custom_round(x):
@@ -1909,6 +1908,7 @@ class Simulation:
 
             except Exception as e:
                 print(f"Error during simulation run for ID {self.simulation_id}, Scheme: {scheme_type}: {e}")
+                import traceback
                 print(traceback.format_exc())
 
                 # Attempt to delete the failed simulation entry from the database
