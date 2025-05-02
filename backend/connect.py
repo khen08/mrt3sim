@@ -11,12 +11,12 @@ db = Prisma()
 # Mark this module as initialized if not done already
 if not hasattr(sys.modules[__name__], '_prisma_initialized'):
     if log_level != 'QUIET':
-        print("\n[Prisma] Initializing Prisma Client in connect.py") # First time import
+        print("\n[PRISMA] INITIALIZING PRISMA CLIENT IN connect.py") # First time import
     
     # Mark as initialized
     sys.modules[__name__]._prisma_initialized = True
     
     if log_level != 'QUIET':
-        print("[Prisma] Prisma Client initialized and ready for connections")
+        print("[PRISMA] PRISMA CLIENT INITIALIZED AND READY FOR CONNECTIONS")
 elif log_level == 'DEBUG':
-    print("\n[Prisma] Reusing existing Prisma Client from connect.py") # Subsequent imports
+    print("\n[PRISMA] REUSING EXISTING PRISMA CLIENT FROM connect.py") # Subsequent imports

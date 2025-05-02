@@ -20,181 +20,223 @@ main_bp = Blueprint('main', __name__)
 
 @main_bp.route('/upload_csv', methods=['POST'])
 def upload_csv():
-    print("Received request for /upload_csv")
-
-    # --- 1. Check for file part ---
     if 'passenger_data_file' not in request.files:
-        print("Error: No file part in request")
+        print("[ROUTE:/UPLOAD_CSV] ERROR: NO FILE PART IN REQUEST")
         return jsonify({"error": "No passenger_data_file part in the request"}), 400
 
     file = request.files['passenger_data_file']
 
-    # --- 2. Check if a file was selected ---
     if file.filename == '':
-        print("Error: No selected file")
+        print("[ROUTE:/UPLOAD_CSV] ERROR: NO SELECTED FILE")
         return jsonify({"error": "No selected file"}), 400
 
-    # --- 3. Process and save the file ---
+    allowed_extension = '.csv'
+    if not file.filename.lower().endswith(allowed_extension):
+        print(f"[ROUTE:/UPLOAD_CSV] ERROR: INVALID FILE TYPE. ALLOWED: {allowed_extension}")
+        return jsonify({"error": f"Invalid file type. Only {allowed_extension} files are allowed."}), 400
+
     if file:
         try:
             # Ensure upload folder exists (config.py handles initial creation, but check again)
             if not os.path.exists(UPLOAD_FOLDER):
-                print(f"Warning: Upload folder {UPLOAD_FOLDER} does not exist. Attempting to create.")
+                print(f"[ROUTE:/UPLOAD_CSV] WARNING: UPLOAD FOLDER {UPLOAD_FOLDER} DOES NOT EXIST. ATTEMPTING TO CREATE.")
                 try:
                     os.makedirs(UPLOAD_FOLDER)
-                    print(f"Re-created upload folder: {UPLOAD_FOLDER}")
+                    print(f"[ROUTE:/UPLOAD_CSV] RE-CREATED UPLOAD FOLDER: {UPLOAD_FOLDER}")
                 except OSError as e:
-                    print(f"Error: Could not create upload folder {UPLOAD_FOLDER} on demand: {e}")
-                    return jsonify({"error": f"Upload folder missing and could not be created: {UPLOAD_FOLDER}"}), 500
+                    print(f"[ROUTE:/UPLOAD_CSV] ERROR: COULD NOT CREATE UPLOAD FOLDER {UPLOAD_FOLDER} ON DEMAND: {e}")
+                    return jsonify({"error": f"UPLOAD FOLDER MISSING AND COULD NOT BE CREATED: {UPLOAD_FOLDER}"}), 500
+            
+            secure_name = secure_filename(file.filename)
+            save_path = os.path.join(UPLOAD_FOLDER, secure_name)
 
-            filename = secure_filename(file.filename)
-            save_path = os.path.join(UPLOAD_FOLDER, filename)
+            try:
+                db.connect()
 
-            print(f"Saving file to: {save_path}")
+                print(f"[ROUTE:/UPLOAD_CSV] DATABASE CONNECTION ESTABLISHED")
+                try:
+                    existing_simulation = db.simulations.find_first(where={'PASSENGER_DATA_FILE': secure_name})
+                    if existing_simulation:
+                        print(f"[ROUTE:/UPLOAD_CSV] SIMULATION ALREADY EXISTS FOR FILE: {secure_name}")
+                        return jsonify({"error": f"Simulation already exists or file name is already in use: {secure_name}"}), 400
+                except Exception as e:
+                    print(f"[ROUTE:/UPLOAD_CSV] FAILED TO CHECK IF SIMULATION EXISTS: {e}")
+                    return jsonify({"error": f"Could not check if simulation exists: {e}"}), 500
+                finally:
+                    # Ensure disconnection happens after the DB check
+                    try:
+                        db.disconnect()
+                        print(f"[ROUTE:/UPLOAD_CSV] DATABASE DISCONNECTED AFTER CHECK")
+                    except Exception as disconnect_error:
+                        print(f"[ROUTE:/UPLOAD_CSV] WARNING: ERROR DISCONNECTING DATABASE AFTER CHECK: {disconnect_error}")
+
+            except Exception as e:
+                print(f"[ROUTE:/UPLOAD_CSV] FAILED TO CONNECT TO DATABASE FOR CHECK: {e}")
+                return jsonify({"error": f"Could not connect to database to check file existence: {e}"}), 500
+
+            print(f"[ROUTE:/UPLOAD_CSV] SAVING FILE TO: {save_path}")
             file.save(save_path)
-            print(f"File '{filename}' saved successfully via /upload_csv.")
-            return jsonify({"message": "File uploaded successfully", "filename": filename}), 200
+            print(f"[ROUTE:/UPLOAD_CSV] FILE '{secure_name}' SAVED SUCCESSFULLY VIA /UPLOAD_CSV.")
+            return jsonify({"message": "File uploaded successfully", "filename": secure_name}), 200
 
         except Exception as e:
-            print(f"Error saving file via /upload_csv: {e}")
-            return jsonify({"error": f"Could not save file: {e}"}), 500
+            print(f"[ROUTE:/UPLOAD_CSV] ERROR: COULD NOT SAVE FILE VIA /UPLOAD_CSV: {e}")
+            return jsonify({"error": f"COULD NOT SAVE FILE: {e}"}), 500
     else:
-        print("Error: File object is invalid during /upload_csv")
+        print("[ROUTE:/UPLOAD_CSV] ERROR: FILE OBJECT IS INVALID DURING /UPLOAD_CSV")
         return jsonify({"error": "Invalid file object received"}), 400
 
 @main_bp.route('/run_simulation', methods=['POST'])
 def run_simulation():
-    print("Received request for /run_simulation")
-
-    if not request.is_json:
-        print("Error: Request is not JSON")
-        return jsonify({"error": "Request must be JSON"}), 400
-
     try:
         simulation_input_data = request.get_json()
-        print(f"---Received JSON payload:{json.dumps(simulation_input_data, indent=2)}---")
+        print(f"[ROUTE:/RUN_SIMULATION] RECEIVED JSON PAYLOAD:\n{json.dumps(simulation_input_data, indent=2)}")
     except Exception as e:
-        print(f"Error getting JSON data: {e}")
+        print(f"[ROUTE:/RUN_SIMULATION] FAILED TO GET JSON DATA: {e}")
         return jsonify({"error": f"Could not parse request JSON: {e}"}), 400
 
-    if not simulation_input_data:
-        print("Error: Empty JSON received")
-        return jsonify({"error": "Received empty JSON data"}), 400
-
+    # Get the filename and config from the JSON payload
     filename = simulation_input_data.get('filename')
     config = simulation_input_data.get('config')
 
     if not filename:
-        print("Error: 'filename' missing in JSON")
+        print("[ROUTE:/RUN_SIMULATION] ERROR: 'filename' MISSING IN JSON PAYLOAD")
         return jsonify({"error": "'filename' is missing in the request JSON"}), 400
-
-    if not config:
-        print("Error: 'config' missing in JSON")
+    if config is None: # Check for None specifically, as config could be an empty dict {}
+        print("[ROUTE:/RUN_SIMULATION] ERROR: 'config' MISSING IN JSON PAYLOAD")
         return jsonify({"error": "'config' is missing in the request JSON"}), 400
 
     secure_name = secure_filename(filename)
+
+    # Check if the file exists in the upload folder
     file_path = os.path.join(UPLOAD_FOLDER, secure_name)
 
     if not os.path.exists(file_path):
-        print(f"Error: File '{secure_name}' not found in upload folder '{UPLOAD_FOLDER}'")
+        print(f"[ROUTE:/RUN_SIMULATION] FILE '{secure_name}' NOT FOUND IN UPLOAD FOLDER '{UPLOAD_FOLDER}'")
         if not os.path.exists(UPLOAD_FOLDER):
-            print(f"Underlying issue: Upload folder '{UPLOAD_FOLDER}' does not exist.")
+            print(f"[ROUTE:/RUN_SIMULATION] UNDERLYING ISSUE: UPLOAD FOLDER '{UPLOAD_FOLDER}' DOES NOT EXIST.")
             return jsonify({"error": f"Upload folder '{UPLOAD_FOLDER}' is missing. Cannot find file '{secure_name}'."}), 500
         else:
             return jsonify({"error": f"File '{secure_name}' not found. Please upload the file first."}), 404
 
     try:
-        print("--- Simulation Configuration ---")
-        print(json.dumps(config, indent=2))
-        print(f"--- Using data file: {secure_name} ---")
-
         # Instantiate the Simulation class
         sim = Simulation(csv_filename=secure_name, config=config)
 
-        # Run the simulation with the specified scheme type
         run_duration = sim.run()
 
-        # Check if simulation ran successfully (indicated by simulation_id being set)
         if sim.simulation_id:
-            print(f"Simulation run completed successfully for ID: {sim.simulation_id}")
-            # You might want to fetch some results from the DB here if needed
-            # For now, just return the ID and a success message.
+            print(f"[ROUTE:/RUN_SIMULATION] SIMULATION RUN COMPLETED SUCCESSFULLY FOR ID: {sim.simulation_id}")
+            
             return jsonify({
                 "message": "Simulation completed successfully.",
                 "simulation_id": sim.simulation_id,
                 "run_duration": run_duration
                 }), 200
         else:
-            # sim.run() likely encountered an error and handled it internally
-            # (e.g., failed to create DB entry, deleted failed entry)
-            print("Error: Simulation run failed to produce a simulation ID.")
+            print(f"[ROUTE:/RUN_SIMULATION] ERROR: SIMULATION RUN FAILED TO PRODUCE A SIMULATION ID.")
             return jsonify({"error": "Simulation run failed. Check server logs for details."}), 500
 
     except Exception as e:
-        # Catch any unexpected errors during instantiation or the run call itself
-        print(f"Error during simulation processing in /run_simulation route: {e}")
+        print(f"[ROUTE:/RUN_SIMULATION] ERROR DURING SIMULATION PROCESSING: {e}")
         import traceback
         print(traceback.format_exc())
-        # Attempt to delete the simulation entry if one was created before the error
-        # This is a safety net, sim.run() should handle its own cleanup on failure.
-        # We might not have sim.simulation_id here if the error was early.
-        # Consider more robust error handling/cleanup if necessary.
         return jsonify({"error": f"An unexpected error occurred during simulation: {e}"}), 500
 
 @main_bp.route('/get_default_settings', methods=['GET'])
 def get_default_settings():
-    print("--- Inside get_default_settings function ---")
-    print("Request received for /get_default_settings")
     try:
         # DEFAULT_SETTINGS is imported from config
-        print("Returning default settings:", DEFAULT_SETTINGS)
+        print(f"[ROUTE:GET_DEFAULT_SETTINGS] Returning default settings: {DEFAULT_SETTINGS}")
         return jsonify(DEFAULT_SETTINGS)
     except Exception as e:
-        print(f"Error fetching default settings: {e}")
+        print(f"[ROUTE:GET_DEFAULT_SETTINGS] FAILED TO FETCH DEFAULT SETTINGS: {e}")
         return jsonify({"error": f"Could not retrieve default settings: {e}"}), 500
 
 @main_bp.route('/get_timetable/<int:simulation_id>', methods=['GET', 'OPTIONS'])
 def get_timetable(simulation_id):
-    try:
-        # Add CORS headers for OPTIONS request
-        if request.method == 'OPTIONS':
-            response = jsonify({'status': 'ok'})
-            response.headers.add('Access-Control-Allow-Origin', '*')
-            response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
-            response.headers.add('Access-Control-Allow-Methods', 'GET')
-            return response
-        
-        # Connect to database - ensure we have a connection
+    try:       
         db.connect()
-        print(f"Database connected for timetable query (simulation_id: {simulation_id})")
+        print(f"[ROUTE:/GET_TIMETABLE] DATABASE CONNECTION ESTABLISHED")
             
-        # Fetch timetable entries from the database
-        timetable_entries = db.train_movements.find_many(
-            where={'SIMULATION_ID': simulation_id},
-            order=[{'ARRIVAL_TIME': 'asc'}]
-        )
-        
-        # Convert to serializable format
-        serializable_entries = []
-        for entry in timetable_entries:
-            # Convert datetime objects to strings
-            entry_dict = entry.dict()
-            entry_dict['ARRIVAL_TIME'] = entry_dict['ARRIVAL_TIME'].strftime('%H:%M:%S')
-            if entry_dict['DEPARTURE_TIME']:
-                entry_dict['DEPARTURE_TIME'] = entry_dict['DEPARTURE_TIME'].strftime('%H:%M:%S')
-            serializable_entries.append(entry_dict)
-        
-        print(f"Retrieved {len(serializable_entries)} timetable entries for simulation ID {simulation_id}")
-        return jsonify(serializable_entries)
+        try:
+            timetable_entries = db.train_movements.find_many(
+                where={'SIMULATION_ID': simulation_id},
+                order=[{'ARRIVAL_TIME': 'asc'}],
+                include={'simulation': True}
+            )
+            
+            service_periods_data = None
+            if timetable_entries:
+                simulation_record = timetable_entries[0].simulation 
+                if simulation_record and simulation_record.SERVICE_PERIODS:
+                    try:
+                        service_periods_data = json.loads(simulation_record.SERVICE_PERIODS)
+                    except json.JSONDecodeError as json_err:
+                        print(f"[ROUTE:/GET_TIMETABLE] WARNING: FAILED TO PARSE SERVICE_PERIODS JSON: {json_err}")
+                        service_periods_data = {"error": "Failed to parse service periods data"}
+                else:
+                    print(f"[ROUTE:/GET_TIMETABLE] WARNING: No simulation record or SERVICE_PERIODS found for included data.")
+            else:
+                 print(f"[ROUTE:/GET_TIMETABLE] No timetable entries found for simulation ID {simulation_id}")
+
+            serializable_entries = []
+            for entry in timetable_entries:
+                entry_dict = entry.dict()
+                entry_dict['ARRIVAL_TIME'] = entry_dict['ARRIVAL_TIME'].strftime('%H:%M:%S')
+                if entry_dict['DEPARTURE_TIME']:
+                    entry_dict['DEPARTURE_TIME'] = entry_dict['DEPARTURE_TIME'].strftime('%H:%M:%S')
+                serializable_entries.append(entry_dict)
+            
+            print(f"[ROUTE:/GET_TIMETABLE] SUCCESSFULLY RETRIEVED {len(serializable_entries)} TIMETABLE ENTRIES FOR SIMULATION ID {simulation_id}")
+            return jsonify({
+                'timetable': serializable_entries,
+                'service_periods': service_periods_data 
+            })
+        except Exception as e:
+            print(f"[ROUTE:/GET_TIMETABLE] FAILED TO FETCH TIMETABLE ENTRIES: {e}")
+            return jsonify({"error": str(e)}), 500
     except Exception as e:
-        print(f"Error fetching timetable for simulation ID {simulation_id}: {e}")
+        print(f"[ROUTE:/GET_TIMETABLE] FAILED TO CONNECT TO DATABASE: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
-        # Always ensure we disconnect (to prevent connection leaks)
         try:
             db.disconnect()
-            print("Database disconnected after timetable query")
+            print(f"[ROUTE:/GET_TIMETABLE] DATABASE DISCONNECTED")
         except Exception as disconnect_error:
-            print(f"Warning: Error disconnecting from database: {disconnect_error}")
+            print(f"[ROUTE:/GET_TIMETABLE] WARNING: ERROR DISCONNECTING FROM DATABASE: {disconnect_error}")
+
+@main_bp.route('/get_history', methods=['GET'])
+def get_history():
+    try:
+        db.connect()
+        print(f"[ROUTE:/GET_HISTORY] DATABASE CONNECTION ESTABLISHED")
+        
+        try:
+            history_entries = db.simulations.find_many(
+                order=[{'START_TIME': 'desc'}]
+            )
+            
+            # Convert to serializable format
+            serializable_entries = []
+            for entry in history_entries:
+                entry_dict = entry.dict()
+                entry_dict['START_TIME'] = entry_dict['START_TIME'].strftime('%Y-%m-%d %H:%M:%S')
+                serializable_entries.append(entry_dict)
+            
+            print(f"[ROUTE:/GET_HISTORY] SUCCESSFULLY RETRIEVED {len(serializable_entries)} HISTORY ENTRIES")
+            return jsonify(serializable_entries)
+        except Exception as e:
+            print(f"[ROUTE:/GET_HISTORY] FAILED TO FETCH HISTORY ENTRIES: {e}")
+            return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        print(f"[ROUTE:/GET_HISTORY] FAILED TO CONNECT TO DATABASE: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try:
+            db.disconnect()
+            print(f"[ROUTE:/GET_HISTORY] DATABASE DISCONNECTED")
+        except Exception as disconnect_error:
+            print(f"[ROUTE:/GET_HISTORY] WARNING: ERROR DISCONNECTING FROM DATABASE: {disconnect_error}")
 
 # Note: The app is run from backend/app.py, not here.
