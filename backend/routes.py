@@ -64,81 +64,59 @@ def upload_csv():
 
 @main_bp.route('/run_simulation', methods=['POST'])
 def run_simulation():
-    print("Received request for /run_simulation")
-
-    if not request.is_json:
-        print("Error: Request is not JSON")
-        return jsonify({"error": "Request must be JSON"}), 400
-
     try:
         simulation_input_data = request.get_json()
-        print(f"---Received JSON payload:{json.dumps(simulation_input_data, indent=2)}---")
+        print(f"[ROUTE:/RUN_SIMULATION] RECEIVED JSON PAYLOAD:\n{json.dumps(simulation_input_data, indent=2)}")
     except Exception as e:
-        print(f"Error getting JSON data: {e}")
+        print(f"[ROUTE:/RUN_SIMULATION] FAILED TO GET JSON DATA: {e}")
         return jsonify({"error": f"Could not parse request JSON: {e}"}), 400
 
-    if not simulation_input_data:
-        print("Error: Empty JSON received")
-        return jsonify({"error": "Received empty JSON data"}), 400
-
+    # Get the filename and config from the JSON payload
     filename = simulation_input_data.get('filename')
     config = simulation_input_data.get('config')
 
     if not filename:
-        print("Error: 'filename' missing in JSON")
+        print("[ROUTE:/RUN_SIMULATION] ERROR: 'filename' MISSING IN JSON PAYLOAD")
         return jsonify({"error": "'filename' is missing in the request JSON"}), 400
-
-    if not config:
-        print("Error: 'config' missing in JSON")
+    if config is None: # Check for None specifically, as config could be an empty dict {}
+        print("[ROUTE:/RUN_SIMULATION] ERROR: 'config' MISSING IN JSON PAYLOAD")
         return jsonify({"error": "'config' is missing in the request JSON"}), 400
 
     secure_name = secure_filename(filename)
+
+    # Check if the file exists in the upload folder
     file_path = os.path.join(UPLOAD_FOLDER, secure_name)
 
     if not os.path.exists(file_path):
-        print(f"Error: File '{secure_name}' not found in upload folder '{UPLOAD_FOLDER}'")
+        print(f"[ROUTE:/RUN_SIMULATION] FILE '{secure_name}' NOT FOUND IN UPLOAD FOLDER '{UPLOAD_FOLDER}'")
         if not os.path.exists(UPLOAD_FOLDER):
-            print(f"Underlying issue: Upload folder '{UPLOAD_FOLDER}' does not exist.")
+            print(f"[ROUTE:/RUN_SIMULATION] UNDERLYING ISSUE: UPLOAD FOLDER '{UPLOAD_FOLDER}' DOES NOT EXIST.")
             return jsonify({"error": f"Upload folder '{UPLOAD_FOLDER}' is missing. Cannot find file '{secure_name}'."}), 500
         else:
             return jsonify({"error": f"File '{secure_name}' not found. Please upload the file first."}), 404
 
     try:
-        print("--- Simulation Configuration ---")
-        print(json.dumps(config, indent=2))
-        print(f"--- Using data file: {secure_name} ---")
-
         # Instantiate the Simulation class
         sim = Simulation(csv_filename=secure_name, config=config)
 
-        # Run the simulation with the specified scheme type
         run_duration = sim.run()
 
-        # Check if simulation ran successfully (indicated by simulation_id being set)
         if sim.simulation_id:
-            print(f"Simulation run completed successfully for ID: {sim.simulation_id}")
-            # You might want to fetch some results from the DB here if needed
-            # For now, just return the ID and a success message.
+            print(f"[ROUTE:/RUN_SIMULATION] SIMULATION RUN COMPLETED SUCCESSFULLY FOR ID: {sim.simulation_id}")
+            
             return jsonify({
                 "message": "Simulation completed successfully.",
                 "simulation_id": sim.simulation_id,
                 "run_duration": run_duration
                 }), 200
         else:
-            # sim.run() likely encountered an error and handled it internally
-            # (e.g., failed to create DB entry, deleted failed entry)
-            print("Error: Simulation run failed to produce a simulation ID.")
+            print(f"[ROUTE:/RUN_SIMULATION] ERROR: SIMULATION RUN FAILED TO PRODUCE A SIMULATION ID.")
             return jsonify({"error": "Simulation run failed. Check server logs for details."}), 500
 
     except Exception as e:
-        # Catch any unexpected errors during instantiation or the run call itself
-        print(f"Error during simulation processing in /run_simulation route: {e}")
+        print(f"[ROUTE:/RUN_SIMULATION] ERROR DURING SIMULATION PROCESSING: {e}")
         import traceback
         print(traceback.format_exc())
-        # Attempt to delete the simulation entry if one was created before the error
-        # This is a safety net, sim.run() should handle its own cleanup on failure.
-        # We might not have sim.simulation_id here if the error was early.
-        # Consider more robust error handling/cleanup if necessary.
         return jsonify({"error": f"An unexpected error occurred during simulation: {e}"}), 500
 
 @main_bp.route('/get_default_settings', methods=['GET'])
