@@ -1734,9 +1734,9 @@ class Simulation:
         )
 
         # Convert to string, split lines, and add tab prefix
-        indented_df_string = '\n'.join([line for line in df_periods.to_string(index=False).splitlines()], '\n')
+        indented_df_string = '\n'.join([line for line in df_periods.to_string(index=False).splitlines()])
 
-        print(f"  [MEM:INIT SERVICE PERIODS] SERVICE PERIODS:")
+        print(f"\n  [MEM:INIT SERVICE PERIODS] SERVICE PERIODS:")
         print(indented_df_string)
 
         if scheme_type == "REGULAR":
