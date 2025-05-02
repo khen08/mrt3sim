@@ -133,7 +133,7 @@ def get_default_settings():
 def get_timetable(simulation_id):
     try:       
         db.connect()
-        print(f"[ROUTE:GET_TIMETABLE] DATABASE CONNECTION ESTABLISHED")
+        print(f"[ROUTE:/GET_TIMETABLE] DATABASE CONNECTION ESTABLISHED")
             
         try:
             timetable_entries = db.train_movements.find_many(
@@ -151,26 +151,26 @@ def get_timetable(simulation_id):
                     entry_dict['DEPARTURE_TIME'] = entry_dict['DEPARTURE_TIME'].strftime('%H:%M:%S')
                 serializable_entries.append(entry_dict)
             
-            print(f"[ROUTE:GET_TIMETABLE] SUCCESSFULLY RETRIEVED {len(serializable_entries)} TIMETABLE ENTRIES FOR SIMULATION ID {simulation_id}")
+            print(f"[ROUTE:/GET_TIMETABLE] SUCCESSFULLY RETRIEVED {len(serializable_entries)} TIMETABLE ENTRIES FOR SIMULATION ID {simulation_id}")
             return jsonify(serializable_entries)
         except Exception as e:
-            print(f"[ROUTE:GET_TIMETABLE] FAILED TO FETCH TIMETABLE ENTRIES: {e}")
+            print(f"[ROUTE:/GET_TIMETABLE] FAILED TO FETCH TIMETABLE ENTRIES: {e}")
             return jsonify({"error": str(e)}), 500
     except Exception as e:
-        print(f"[ROUTE:GET_TIMETABLE] FAILED TO CONNECT TO DATABASE: {e}")
+        print(f"[ROUTE:/GET_TIMETABLE] FAILED TO CONNECT TO DATABASE: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         try:
             db.disconnect()
-            print(f"[ROUTE:GET_TIMETABLE] DATABASE DISCONNECTED")
+            print(f"[ROUTE:/GET_TIMETABLE] DATABASE DISCONNECTED")
         except Exception as disconnect_error:
-            print(f"[ROUTE:GET_TIMETABLE] WARNING: ERROR DISCONNECTING FROM DATABASE: {disconnect_error}")
+            print(f"[ROUTE:/GET_TIMETABLE] WARNING: ERROR DISCONNECTING FROM DATABASE: {disconnect_error}")
 
 @main_bp.route('/get_history', methods=['GET'])
 def get_history():
     try:
         db.connect()
-        print(f"[ROUTE:GET_HISTORY] DATABASE CONNECTION ESTABLISHED")
+        print(f"[ROUTE:/GET_HISTORY] DATABASE CONNECTION ESTABLISHED")
         
         try:
             history_entries = db.simulations.find_many(
@@ -184,18 +184,19 @@ def get_history():
                 entry_dict['START_TIME'] = entry_dict['START_TIME'].strftime('%Y-%m-%d %H:%M:%S')
                 serializable_entries.append(entry_dict)
             
-            print(f"[ROUTE:GET_HISTORY] SUCCESSFULLY RETRIEVED {len(serializable_entries)} HISTORY ENTRIES")
+            print(f"[ROUTE:/GET_HISTORY] SUCCESSFULLY RETRIEVED {len(serializable_entries)} HISTORY ENTRIES")
             return jsonify(serializable_entries)
         except Exception as e:
-            print(f"[ROUTE:GET_HISTORY] FAILED TO FETCH HISTORY ENTRIES: {e}")
+            print(f"[ROUTE:/GET_HISTORY] FAILED TO FETCH HISTORY ENTRIES: {e}")
             return jsonify({"error": str(e)}), 500
     except Exception as e:
-        print(f"[ROUTE:GET_HISTORY] FAILED TO CONNECT TO DATABASE: {e}")
+        print(f"[ROUTE:/GET_HISTORY] FAILED TO CONNECT TO DATABASE: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         try:
             db.disconnect()
-            print(f"[ROUTE:GET_HISTORY] DATABASE DISCONNECTED")
+            print(f"[ROUTE:/GET_HISTORY] DATABASE DISCONNECTED")
         except Exception as disconnect_error:
-            print(f"[ROUTE:GET_HISTORY] WARNING: ERROR DISCONNECTING FROM DATABASE: {disconnect_error}")
+            print(f"[ROUTE:/GET_HISTORY] WARNING: ERROR DISCONNECTING FROM DATABASE: {disconnect_error}")
+
 # Note: The app is run from backend/app.py, not here.
