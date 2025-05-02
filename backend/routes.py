@@ -20,46 +20,70 @@ main_bp = Blueprint('main', __name__)
 
 @main_bp.route('/upload_csv', methods=['POST'])
 def upload_csv():
-    print("Received request for /upload_csv")
-
-    # --- 1. Check for file part ---
     if 'passenger_data_file' not in request.files:
-        print("Error: No file part in request")
+        print("[ROUTE:/UPLOAD_CSV] ERROR: NO FILE PART IN REQUEST")
         return jsonify({"error": "No passenger_data_file part in the request"}), 400
 
     file = request.files['passenger_data_file']
 
-    # --- 2. Check if a file was selected ---
     if file.filename == '':
-        print("Error: No selected file")
+        print("[ROUTE:/UPLOAD_CSV] ERROR: NO SELECTED FILE")
         return jsonify({"error": "No selected file"}), 400
 
-    # --- 3. Process and save the file ---
+    allowed_extension = '.csv'
+    if not file.filename.lower().endswith(allowed_extension):
+        print(f"[ROUTE:/UPLOAD_CSV] ERROR: INVALID FILE TYPE. ALLOWED: {allowed_extension}")
+        return jsonify({"error": f"Invalid file type. Only {allowed_extension} files are allowed."}), 400
+
     if file:
         try:
             # Ensure upload folder exists (config.py handles initial creation, but check again)
             if not os.path.exists(UPLOAD_FOLDER):
-                print(f"Warning: Upload folder {UPLOAD_FOLDER} does not exist. Attempting to create.")
+                print(f"[ROUTE:/UPLOAD_CSV] WARNING: UPLOAD FOLDER {UPLOAD_FOLDER} DOES NOT EXIST. ATTEMPTING TO CREATE.")
                 try:
                     os.makedirs(UPLOAD_FOLDER)
-                    print(f"Re-created upload folder: {UPLOAD_FOLDER}")
+                    print(f"[ROUTE:/UPLOAD_CSV] RE-CREATED UPLOAD FOLDER: {UPLOAD_FOLDER}")
                 except OSError as e:
-                    print(f"Error: Could not create upload folder {UPLOAD_FOLDER} on demand: {e}")
-                    return jsonify({"error": f"Upload folder missing and could not be created: {UPLOAD_FOLDER}"}), 500
+                    print(f"[ROUTE:/UPLOAD_CSV] ERROR: COULD NOT CREATE UPLOAD FOLDER {UPLOAD_FOLDER} ON DEMAND: {e}")
+                    return jsonify({"error": f"UPLOAD FOLDER MISSING AND COULD NOT BE CREATED: {UPLOAD_FOLDER}"}), 500
+            
+            secure_name = secure_filename(file.filename)
+            save_path = os.path.join(UPLOAD_FOLDER, secure_name)
 
-            filename = secure_filename(file.filename)
-            save_path = os.path.join(UPLOAD_FOLDER, filename)
+            try:
+                db.connect()
 
-            print(f"Saving file to: {save_path}")
+                print(f"[ROUTE:/UPLOAD_CSV] DATABASE CONNECTION ESTABLISHED")
+                try:
+                    existing_simulation = db.simulations.find_first(where={'PASSENGER_DATA_FILE': secure_name})
+                    if existing_simulation:
+                        print(f"[ROUTE:/UPLOAD_CSV] SIMULATION ALREADY EXISTS FOR FILE: {secure_name}")
+                        return jsonify({"error": f"Simulation already exists or file name is already in use: {secure_name}"}), 400
+                except Exception as e:
+                    print(f"[ROUTE:/UPLOAD_CSV] FAILED TO CHECK IF SIMULATION EXISTS: {e}")
+                    return jsonify({"error": f"Could not check if simulation exists: {e}"}), 500
+                finally:
+                    # Ensure disconnection happens after the DB check
+                    try:
+                        db.disconnect()
+                        print(f"[ROUTE:/UPLOAD_CSV] DATABASE DISCONNECTED AFTER CHECK")
+                    except Exception as disconnect_error:
+                        print(f"[ROUTE:/UPLOAD_CSV] WARNING: ERROR DISCONNECTING DATABASE AFTER CHECK: {disconnect_error}")
+
+            except Exception as e:
+                print(f"[ROUTE:/UPLOAD_CSV] FAILED TO CONNECT TO DATABASE FOR CHECK: {e}")
+                return jsonify({"error": f"Could not connect to database to check file existence: {e}"}), 500
+
+            print(f"[ROUTE:/UPLOAD_CSV] SAVING FILE TO: {save_path}")
             file.save(save_path)
-            print(f"File '{filename}' saved successfully via /upload_csv.")
-            return jsonify({"message": "File uploaded successfully", "filename": filename}), 200
+            print(f"[ROUTE:/UPLOAD_CSV] FILE '{secure_name}' SAVED SUCCESSFULLY VIA /UPLOAD_CSV.")
+            return jsonify({"message": "File uploaded successfully", "filename": secure_name}), 200
 
         except Exception as e:
-            print(f"Error saving file via /upload_csv: {e}")
-            return jsonify({"error": f"Could not save file: {e}"}), 500
+            print(f"[ROUTE:/UPLOAD_CSV] ERROR: COULD NOT SAVE FILE VIA /UPLOAD_CSV: {e}")
+            return jsonify({"error": f"COULD NOT SAVE FILE: {e}"}), 500
     else:
-        print("Error: File object is invalid during /upload_csv")
+        print("[ROUTE:/UPLOAD_CSV] ERROR: FILE OBJECT IS INVALID DURING /UPLOAD_CSV")
         return jsonify({"error": "Invalid file object received"}), 400
 
 @main_bp.route('/run_simulation', methods=['POST'])
