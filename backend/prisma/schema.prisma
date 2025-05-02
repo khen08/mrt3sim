@@ -25,9 +25,8 @@ model SIMULATIONS {
   TURNAROUND_TIME     Int
   SERVICE_PERIODS     Json     @db.Json // Assumes appropriate JSON structure
   PASSENGER_DATA_FILE String   @db.VarChar(255)
-
-  // RUN TIME (overall execution)
-  TOTAL_RUN_TIME_SECONDS Float @default(0)
+  TOTAL_RUN_TIME_SECONDS Float @default(0) // RUN TIME (overall execution time of simulation.run())
+  CREATED_AT          DateTime @default(now())
 
   // Relations
   metrics         SIMULATION_METRICS[] // Relation to the new metrics table
@@ -134,7 +133,7 @@ model TRAIN_MOVEMENTS {
   DIRECTION                       String    @db.VarChar(10)
   TRAIN_STATUS                    String    @db.VarChar(10) // IN_TRANSIT, TURNAROUND, WITHDRAWN
   ARRIVAL_TIME                    DateTime  @db.DateTime
-  DEPARTURE_TIME                  DateTime? @db.DateTime // Nullable remove null when status is fixed
+  DEPARTURE_TIME                  DateTime  @db.DateTime 
   TRAVEL_TIME_SECONDS             Int       @default(0)
   PASSENGERS_BOARDED              Int       @default(0)
   PASSENGERS_ALIGHTED             Int       @default(0)
@@ -152,18 +151,20 @@ model TRAIN_MOVEMENTS {
 }
 
 model PASSENGER_DEMAND {
-  SIMULATION_ID          Int
-  SCHEME_TYPE            String    @db.VarChar(10) // REGULAR, SKIP-STOP
-  ORIGIN_STATION_ID      Int
-  DESTINATION_STATION_ID Int
-  ARRIVAL_TIME_AT_ORIGIN DateTime  @db.DateTime // Time the demand appears at the origin
-  DEPARTURE_TIME_FROM_ORIGIN DateTime? @db.DateTime // Time the demand departs from the origin
-  ARRIVAL_TIME_AT_TRANSFER DateTime? @db.DateTime // Time the demand arrives at the transfer station
-  DEPARTURE_TIME_FROM_TRANSFER DateTime? @db.DateTime // Time the demand departs from the transfer station
-  WAIT_TIME                Int       @default(0)
-  TRAVEL_TIME              Int       @default(0)
-  TRIP_TYPE                String    @db.VarChar(10) // direct, transfer - Represents the nature of the journey needed
-  PASSENGER_COUNT          Int // Number of passengers for this specific time and OD pair
+  SIMULATION_ID                 Int
+  SCHEME_TYPE                   String      @db.VarChar(10) // REGULAR, SKIP-STOP
+  ORIGIN_STATION_ID             Int
+  DESTINATION_STATION_ID        Int
+  ARRIVAL_TIME_AT_ORIGIN        DateTime    @db.DateTime // Time the demand group arrives at the origin
+  DEPARTURE_TIME_FROM_ORIGIN    DateTime?   @db.DateTime // Time the demand group departs from the origin
+
+  ARRIVAL_TIME_AT_TRANSFER      DateTime?   @db.DateTime // Time the demand group arrives at the transfer station
+  DEPARTURE_TIME_FROM_TRANSFER  DateTime?   @db.DateTime // Time the demand group departs from the transfer station
+  ARRIVAL_TIME_AT_DESTINATION   DateTime?   @db.DateTime // Time the demand group arrives at the destination
+  WAIT_TIME                     Int         @default(0)
+  TRAVEL_TIME                   Int         @default(0)
+  TRIP_TYPE                     String      @db.VarChar(10) // DIRECT, TRANSFER - Represents the nature of the journey needed
+  PASSENGER_COUNT               Int         @default(0)   // Number of passengers for this specific time and OD pair
 
   // Relation back to SIMULATIONS
   simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
