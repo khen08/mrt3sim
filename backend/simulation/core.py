@@ -1857,9 +1857,11 @@ class Simulation:
         # Disconnect shared Prisma client after all simulations in the queue are attempted or completed
         if not debug and db.is_connected():
             print("Disconnecting shared DB client after simulation run.")
-            db.disconnect()
+            #db.disconnect()
 
         print(f"\n================[SIMULATION.RUN() COMPLETED]================\n")
+        
+        return round(run_duration, 3)
 
     def save_timetable_to_db(self):
         """Formats timetable entries and bulk inserts them into the TRAIN_MOVEMENTS table."""

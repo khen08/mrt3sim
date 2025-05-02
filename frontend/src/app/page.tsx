@@ -693,6 +693,9 @@ export default function Home() {
       const resultData = await response.json();
       console.log("Simulation API Response:", resultData);
 
+      // --- Extract run duration if available --- //
+      const runDuration = resultData?.run_duration; // Will be undefined if not present
+
       let timetableData;
 
       // Check for known response formats based on simulation_id success message or actual timetable array
@@ -764,8 +767,10 @@ export default function Home() {
         setMapRefreshKey((prev) => prev + 1); // Refresh map
 
         toast({
-          title: "Simulation Complete",
-          description: `Timetable generated successfully (${timetableData.length} entries).`,
+          title: `Simulation Completed${
+            runDuration !== undefined ? ` in ${runDuration}s` : ""
+          }.`,
+          description: `Timetable generated successfully (${timetableData.length} entries)`,
           variant: "default",
         });
       } else {

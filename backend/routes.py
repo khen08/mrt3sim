@@ -112,7 +112,7 @@ def run_simulation():
         sim = Simulation(csv_filename=secure_name, config=config)
 
         # Run the simulation with the specified scheme type
-        sim.run()
+        run_duration = sim.run()
 
         # Check if simulation ran successfully (indicated by simulation_id being set)
         if sim.simulation_id:
@@ -121,7 +121,8 @@ def run_simulation():
             # For now, just return the ID and a success message.
             return jsonify({
                 "message": "Simulation completed successfully.",
-                "simulation_id": sim.simulation_id
+                "simulation_id": sim.simulation_id,
+                "run_duration": run_duration
                 }), 200
         else:
             # sim.run() likely encountered an error and handled it internally
