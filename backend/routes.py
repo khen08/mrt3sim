@@ -143,14 +143,12 @@ def run_simulation():
 
 @main_bp.route('/get_default_settings', methods=['GET'])
 def get_default_settings():
-    print("--- Inside get_default_settings function ---")
-    print("Request received for /get_default_settings")
     try:
         # DEFAULT_SETTINGS is imported from config
-        print("Returning default settings:", DEFAULT_SETTINGS)
+        print(f"[ROUTE:GET_DEFAULT_SETTINGS] Returning default settings: {DEFAULT_SETTINGS}")
         return jsonify(DEFAULT_SETTINGS)
     except Exception as e:
-        print(f"Error fetching default settings: {e}")
+        print(f"[ROUTE:GET_DEFAULT_SETTINGS] FAILED TO FETCH DEFAULT SETTINGS: {e}")
         return jsonify({"error": f"Could not retrieve default settings: {e}"}), 500
 
 @main_bp.route('/get_timetable/<int:simulation_id>', methods=['GET', 'OPTIONS'])
