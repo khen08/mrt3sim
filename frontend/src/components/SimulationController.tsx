@@ -303,7 +303,7 @@ const SimulationController = ({
   const speedPresets = [0.5, 1, 2, 5, 10, 20, 30];
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-700 p-4 shadow-sm">
+    <div className="bg-card rounded-lg border shadow-sm p-4">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-md font-medium mr-4 text-gray-900 dark:text-gray-100">
           Simulation Control

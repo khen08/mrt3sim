@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -21,7 +21,7 @@ import {
 import CsvUpload from "@/components/CsvUpload";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import MrtMap from "@/components/MrtMap";
+import MrtMap, { MrtMapHandle } from "@/components/MrtMap";
 import SimulationController from "@/components/SimulationController";
 import StationInfo from "@/components/StationInfo";
 import TrainInfo from "@/components/TrainInfo";
@@ -146,6 +146,9 @@ export default function Home() {
 
   // State to prevent duplicate logging
   const [hasLoggedSchemeType, setHasLoggedSchemeType] = useState(false);
+
+  // Reference to MrtMap component to access its internal data
+  const mrtMapRef = useRef<MrtMapHandle>(null);
 
   // --- Fetch Default Settings on Mount --- //
   useEffect(() => {
@@ -658,7 +661,7 @@ export default function Home() {
     console.log("Payload (JSON):", payload);
     toast({
       title: "Running Simulation",
-      description: "Requesting timetable from backend...",
+      description: "Generating timetable...",
       variant: "default",
     });
 
@@ -850,11 +853,11 @@ export default function Home() {
   );
 
   return (
-    <main className="flex h-screen bg-gray-100 dark:bg-gray-900 relative overflow-hidden">
+    <main className="flex h-screen bg-background relative overflow-hidden">
       {/* Sidebar for Settings */}
       <aside
         className={cn(
-          "h-full flex flex-col bg-white dark:bg-gray-800 shadow-lg transition-all duration-300 ease-in-out",
+          "h-full flex flex-col bg-card shadow-lg transition-all duration-300 ease-in-out",
           isSidebarCollapsed ? "w-0 p-0 overflow-hidden" : "w-[500px]"
         )}
       >
@@ -1058,7 +1061,7 @@ export default function Home() {
                           </div>
 
                           <div className="border rounded-md mt-2 flex-grow">
-                            <div className="grid grid-cols-16 gap-4 mb-2 font-medium text-xs sticky top-0 z-10 bg-white dark:bg-gray-800 px-4 py-2 border-b">
+                            <div className="grid grid-cols-16 gap-4 mb-2 font-medium text-xs sticky top-0 z-10 bg-card px-4 py-2 border-b">
                               <div className="col-span-1">#</div>
                               <div className="col-span-5">Name</div>
                               {/* New column for scheme type */}
@@ -1228,6 +1231,7 @@ export default function Home() {
               {/* Map display */}
               <div className="flex-1 min-h-0">
                 <MrtMap
+                  ref={mrtMapRef}
                   key={mapRefreshKey}
                   selectedStation={selectedStation}
                   onStationClick={handleStationClick}
@@ -1265,6 +1269,7 @@ export default function Home() {
                       x: 50 + index * 70, // Simple placeholder x coordinate
                       y: 150, // Simple placeholder y coordinate
                       severity: 1, // Default severity
+                      scheme: station.scheme, // Pass the scheme information from settings
                     })
                   )}
                   turnaroundTime={simulationSettings?.turnaroundTime}
@@ -1298,7 +1303,15 @@ export default function Home() {
                 )}
               >
                 {selectedTrainId !== null && selectedTrainDetails !== null && (
-                  <TrainInfo {...selectedTrainDetails} /> // Display TrainInfo component
+                  <TrainInfo
+                    {...selectedTrainDetails}
+                    simulationTime={simulationTime}
+                    simulationTimetable={simulationResult}
+                    // Pass MrtMap's accurate train state and event data
+                    trainEventPairs={mrtMapRef.current?.getTrainEventPairs()}
+                    trainStates={mrtMapRef.current?.getTrainStates()}
+                    stationsById={mrtMapRef.current?.getStationsById()}
+                  /> // Display TrainInfo component with real-time update capabilities
                 )}
               </div>
             </div>
