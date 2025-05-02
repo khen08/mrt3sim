@@ -3,6 +3,7 @@ import json
 from flask import request, jsonify, Blueprint
 from werkzeug.utils import secure_filename
 from prisma import Prisma
+import datetime
 
 # Import configuration and database logic
 from config import DEFAULT_SETTINGS, UPLOAD_FOLDER
@@ -168,13 +169,21 @@ def get_timetable(simulation_id):
             
             service_periods_data = None
             if timetable_entries:
-                simulation_record = timetable_entries[0].simulation 
+                simulation_record = timetable_entries[0].simulation
                 if simulation_record and simulation_record.SERVICE_PERIODS:
-                    try:
-                        service_periods_data = json.loads(simulation_record.SERVICE_PERIODS)
-                    except json.JSONDecodeError as json_err:
-                        print(f"[ROUTE:/GET_TIMETABLE] WARNING: FAILED TO PARSE SERVICE_PERIODS JSON: {json_err}")
-                        service_periods_data = {"error": "Failed to parse service periods data"}
+                    if isinstance(simulation_record.SERVICE_PERIODS, (str, bytes, bytearray)):
+                        try:
+                            service_periods_data = json.loads(simulation_record.SERVICE_PERIODS)
+                        except json.JSONDecodeError as json_err:
+                            print(f"[ROUTE:/GET_TIMETABLE] WARNING: FAILED TO PARSE SERVICE_PERIODS JSON: {json_err}")
+                            service_periods_data = {"error": "Failed to parse service periods data"}
+                    elif isinstance(simulation_record.SERVICE_PERIODS, (list, dict)):
+                        # If it's already a list or dict, use it directly
+                        service_periods_data = simulation_record.SERVICE_PERIODS
+                    else:
+                        # Handle unexpected type
+                        print(f"[ROUTE:/GET_TIMETABLE] WARNING: Unexpected type for SERVICE_PERIODS: {type(simulation_record.SERVICE_PERIODS)}")
+                        service_periods_data = {"error": f"Unexpected data type for service periods: {type(simulation_record.SERVICE_PERIODS)}"}
                 else:
                     print(f"[ROUTE:/GET_TIMETABLE] WARNING: No simulation record or SERVICE_PERIODS found for included data.")
             else:
@@ -238,5 +247,60 @@ def get_history():
             print(f"[ROUTE:/GET_HISTORY] DATABASE DISCONNECTED")
         except Exception as disconnect_error:
             print(f"[ROUTE:/GET_HISTORY] WARNING: ERROR DISCONNECTING FROM DATABASE: {disconnect_error}")
+
+def format_time(time_obj):
+    """Safely formats a datetime object to HH:MM:S string, handling None or non-datetime types."""
+    if isinstance(time_obj, (datetime.datetime, datetime.time)):
+        try:
+            return time_obj.strftime('%H:%M:%S')
+        except ValueError:
+            # Fallback if strftime fails for some reason
+            return str(time_obj)
+    # Return None or the original value if it's not a suitable time object
+    return time_obj
+
+@main_bp.route('/get_passenger_demand/<int:simulation_id>', methods=['GET'])
+def get_passenger_demand(simulation_id):
+    try:
+        db.connect()
+        print(f"[ROUTE:/GET_PASSENGER_DEMAND] DATABASE CONNECTION ESTABLISHED")
+
+        try:
+            passenger_demand_entries = db.passenger_demand.find_many(
+                where={'SIMULATION_ID': simulation_id}
+            )
+
+            formatted_entries = []
+            for entry in passenger_demand_entries:
+                entry_dict = entry.dict()
+
+                # Create the new formatted dictionary
+                formatted_entry = {
+                    'Route': f"{entry_dict.get('ORIGIN_STATION_ID', 'N/A')}-{entry_dict.get('DESTINATION_STATION_ID', 'N/A')}",
+                    'Passengers': entry_dict.get('PASSENGER_COUNT'),
+                    'Demand Time': format_time(entry_dict.get('ARRIVAL_TIME_AT_ORIGIN')),
+                    'Boarding Time': format_time(entry_dict.get('DEPARTURE_TIME_FROM_ORIGIN')),
+                    'Arrival Destination': format_time(entry_dict.get('ARRIVAL_TIME_AT_DESTINATION')),
+                    'Wait Time (s)': entry_dict.get('WAIT_TIME'),
+                    'Travel Time (s)': entry_dict.get('TRAVEL_TIME'),
+                    'Trip Type': entry_dict.get('TRIP_TYPE')
+                }
+                formatted_entries.append(formatted_entry)
+
+            print(f"[ROUTE:/GET_PASSENGER_DEMAND] SUCCESSFULLY RETRIEVED AND FORMATTED {len(formatted_entries)} PASSENGER DEMAND ENTRIES FOR SIMULATION ID {simulation_id}")
+            return jsonify(formatted_entries)
+        except Exception as e:
+            import traceback
+            print(f"[ROUTE:/GET_PASSENGER_DEMAND] FAILED TO FETCH OR FORMAT PASSENGER DEMAND ENTRIES: {e}\n{traceback.format_exc()}")
+            return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        print(f"[ROUTE:/GET_PASSENGER_DEMAND] FAILED TO CONNECT TO DATABASE: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try:
+            db.disconnect()
+            print(f"[ROUTE:/GET_PASSENGER_DEMAND] DATABASE DISCONNECTED")
+        except Exception as disconnect_error:
+            print(f"[ROUTE:/GET_PASSENGER_DEMAND] WARNING: ERROR DISCONNECTING FROM DATABASE: {disconnect_error}")
 
 # Note: The app is run from backend/app.py, not here.
