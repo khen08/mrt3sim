@@ -1029,11 +1029,14 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
         }
       } // End of for loop
 
-      // --- Recalculate Depot Positions ---
+      // --- Recalculate Depot Positions & Stagger Turning Trains ---
       const finalInactiveCount = newTrainStates.filter(
         (ts) => ts.isInDepot
       ).length;
       let currentInactiveIndex = 0;
+
+      // --- START: Re-insert Staggering Logic ---
+      // Identify turning around trains by location (north/south terminus)
       const northTurningTrains = newTrainStates.filter(
         (ts) =>
           ts.isTurningAround &&
@@ -1044,13 +1047,47 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
           ts.isTurningAround &&
           ts.x === stationsById[SOUTH_TERMINUS_ID]?.x + TRACK_Y_OFFSET
       );
-      // ... (staggering logic for turning trains - unchanged) ...
+
+      // Apply offset to trains turning around at north terminus
       if (northTurningTrains.length > 1) {
-        /* ... */
+        const Y_OFFSET = 15; // Offset distance for staggered display
+        const sortedTrains = [...northTurningTrains].sort((a, b) => {
+          const eventsA = trainEventPairs[a.id]?.eventA;
+          const eventsB = trainEventPairs[b.id]?.eventA;
+          if (!eventsA || !eventsB) return 0;
+          const timeA = eventsA.ARRIVAL_TIME
+            ? timeToSeconds(eventsA.ARRIVAL_TIME)
+            : 0;
+          const timeB = eventsB.ARRIVAL_TIME
+            ? timeToSeconds(eventsB.ARRIVAL_TIME)
+            : 0;
+          return timeA - timeB; // Earlier time first
+        });
+        sortedTrains.forEach((train, index) => {
+          train.y = MAP_MID_Y + (index === 0 ? Y_OFFSET : -Y_OFFSET); // First lower, second higher
+        });
       }
+
+      // Apply offset to trains turning around at south terminus
       if (southTurningTrains.length > 1) {
-        /* ... */
+        const Y_OFFSET = 15; // Offset distance for staggered display
+        const sortedTrains = [...southTurningTrains].sort((a, b) => {
+          const eventsA = trainEventPairs[a.id]?.eventA;
+          const eventsB = trainEventPairs[b.id]?.eventA;
+          if (!eventsA || !eventsB) return 0;
+          const timeA = eventsA.ARRIVAL_TIME
+            ? timeToSeconds(eventsA.ARRIVAL_TIME)
+            : 0;
+          const timeB = eventsB.ARRIVAL_TIME
+            ? timeToSeconds(eventsB.ARRIVAL_TIME)
+            : 0;
+          return timeA - timeB; // Earlier time first
+        });
+        sortedTrains.forEach((train, index) => {
+          train.y = MAP_MID_Y + (index === 0 ? -Y_OFFSET : Y_OFFSET); // First higher, second lower
+        });
       }
+      // --- END: Re-insert Staggering Logic ---
 
       newTrainStates.forEach((ts) => {
         if (ts.isInDepot) {

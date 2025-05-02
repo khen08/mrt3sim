@@ -19,7 +19,7 @@ export const RUN_SIMULATION_ENDPOINT = `${API_BASE_URL}/run_simulation`;
 export const UPLOAD_CSV_ENDPOINT = `${API_BASE_URL}/upload_csv`;
 export const GET_TIMETABLE_ENDPOINT = (simId: number | string) =>
   `${API_BASE_URL}/get_timetable/${simId}`;
-// Add endpoint for history later: export const GET_SIMULATION_HISTORY_ENDPOINT = ...
+export const GET_SIMULATION_HISTORY_ENDPOINT = `${API_BASE_URL}/get_history`;
 
 // MRT Map Layout Constants
 export const HORIZONTAL_STATION_SPACING = 70;

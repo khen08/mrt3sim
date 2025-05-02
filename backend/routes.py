@@ -187,7 +187,7 @@ def get_timetable(simulation_id):
                 else:
                     print(f"[ROUTE:/GET_TIMETABLE] WARNING: No simulation record or SERVICE_PERIODS found for included data.")
             else:
-                 print(f"[ROUTE:/GET_TIMETABLE] No timetable entries found for simulation ID {simulation_id}")
+                print(f"[ROUTE:/GET_TIMETABLE] No timetable entries found for simulation ID {simulation_id}")
 
             serializable_entries = []
             for entry in timetable_entries:

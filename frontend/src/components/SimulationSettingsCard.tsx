@@ -59,9 +59,11 @@ interface SimulationSettingsCardProps {
   onStationSchemeChange: (index: number, value: "AB" | "A" | "B") => void;
   onSkipStopToggle: (checked: boolean) => void;
   onToggleFullDayView: () => void;
+  loadedSimulationId?: number | null;
+  hasSimulationData: boolean;
 }
 
-const SimulationSettingsCard = ({
+const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
   simulationSettings,
   isSimulating,
   isFullDayView,
@@ -70,6 +72,8 @@ const SimulationSettingsCard = ({
   onStationSchemeChange,
   onSkipStopToggle,
   onToggleFullDayView,
+  loadedSimulationId = null,
+  hasSimulationData,
 }: SimulationSettingsCardProps) => {
   if (!simulationSettings) {
     // Render nothing or a loading indicator if settings are not yet loaded
@@ -108,7 +112,14 @@ const SimulationSettingsCard = ({
           clicked.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        {/* --- Display Loaded Simulation ID --- */}
+        {loadedSimulationId !== null && (
+          <div className="mb-3 rounded-md border border-blue-200 bg-blue-50 p-2 text-center text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300">
+            Loaded Simulation ID: <strong>{loadedSimulationId}</strong>
+          </div>
+        )}
+
         <Tabs defaultValue="train" className="w-full">
           <TabsList className="grid w-full grid-cols-2 mb-4">
             <TabsTrigger value="train" disabled={isSimulating}>

@@ -40,45 +40,16 @@ interface SimulationHistoryModalProps {
   isLoading?: boolean; // Optional loading state
 }
 
-// --- Sample Data (Remove once backend integration is ready) ---
-const sampleSimulations: SimulationHistoryEntry[] = [
-  {
-    SIMULATION_ID: 123,
-    CREATED_AT: "2024-07-28 10:30:15",
-    PASSENGER_DATA_FILE: "sample_passenger_flow_v1.csv",
-    START_TIME: "2024-07-28 05:00:00",
-    END_TIME: "2024-07-28 22:00:00",
-    TOTAL_RUN_TIME_SECONDS: 123.456,
-  },
-  {
-    SIMULATION_ID: 124,
-    CREATED_AT: "2024-07-29 11:05:45",
-    PASSENGER_DATA_FILE: "peak_hour_test.csv",
-    START_TIME: "2024-07-29 06:00:00",
-    END_TIME: "2024-07-29 10:00:00",
-    TOTAL_RUN_TIME_SECONDS: 45.123,
-  },
-  {
-    SIMULATION_ID: 125,
-    CREATED_AT: "2024-07-30 14:20:00",
-    PASSENGER_DATA_FILE: "full_day_scenario.csv",
-    START_TIME: "2024-07-30 04:30:00",
-    END_TIME: "2024-07-30 23:00:00",
-    TOTAL_RUN_TIME_SECONDS: 180.987,
-  },
-];
-// --- End Sample Data ---
-
 export function SimulationHistoryModal({
   isOpen,
   onClose,
-  simulations = sampleSimulations, // Use sample data for now
+  simulations, // Use data passed from parent
   onLoadSimulation,
   isLoading = false,
 }: SimulationHistoryModalProps) {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="!max-w-fit">
         {" "}
         {/* Increased width */}
         <DialogHeader>

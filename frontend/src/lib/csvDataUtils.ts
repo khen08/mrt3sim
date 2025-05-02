@@ -36,11 +36,11 @@ export function findClosestTimeRow(
   }
 
   // console.log(
-    "Using DateTime column:",
-    csvData.header[dateTimeIndex],
-    "at index",
-    dateTimeIndex
-  );
+  //   "Using DateTime column:",
+  //   csvData.header[dateTimeIndex],
+  //   "at index",
+  //   dateTimeIndex
+  // );
 
   // Look for exact match first (comparing just hour and minute)
   for (const row of csvData.rows) {
@@ -59,8 +59,8 @@ export function findClosestTimeRow(
 
       if (rowTimeStr === simTimeHourMin) {
         // console.log(
-          `Found exact time match: ${rowTimeStr} = ${simTimeHourMin}`
-        );
+        //   `Found exact time match: ${rowTimeStr} = ${simTimeHourMin}`
+        // );
         return row;
       }
     }
@@ -103,8 +103,8 @@ export function findClosestTimeRow(
 
   if (closestRow) {
     // console.log(
-      `Found closest time match with diff of ${closestDiff} minutes`
-    );
+    //   `Found closest time match with diff of ${closestDiff} minutes`
+    // );
   } else {
     console.warn("No suitable time row found in CSV data");
   }
@@ -162,8 +162,8 @@ export function findMinuteRangeRows(
     .padStart(2, "0")}`;
 
   // console.log(
-    `Looking for current time ${simTimeHourMin} and next time ${nextTimeHourMin}`
-  );
+  //   `Looking for current time ${simTimeHourMin} and next time ${nextTimeHourMin}`
+  // );
 
   let currentRow = null;
   let nextRow = null;
@@ -250,8 +250,12 @@ export function getStationPassengerData(
   simulationTime: string
 ) {
   // console.log(
-    `Getting passenger data for station ${stationId} at ${simulationTime}`
-  );
+ /* The above code is attempting to log a message using a template literal in TypeScript. It is trying
+ to display a message that includes the station ID and simulation time variables within the string.
+ However, there seems to be a syntax error with the closing parenthesis and semicolon missing at the
+ end of the statement. */
+  //   `Getting passenger data for station ${stationId} at ${simulationTime}`
+  // );
 
   const { currentRow, nextRow, progress } = findMinuteRangeRows(
     csvData,
@@ -362,15 +366,15 @@ export function getStationPassengerData(
   });
 
   // console.log(
-    `Found ${columnsMatched} flow columns processed for station ${stationId}.`
-  );
+  //   `Found ${columnsMatched} flow columns processed for station ${stationId}.`
+  // );
   // Log raw counts before interpolation
   // console.log(
-    `Raw NB counts - Board: ${currentBoarding_nb}/${nextBoarding_nb}, Alight: ${currentAlighting_nb}/${nextAlighting_nb}`
-  );
+  //   `Raw NB counts - Board: ${currentBoarding_nb}/${nextBoarding_nb}, Alight: ${currentAlighting_nb}/${nextAlighting_nb}`
+  // );
   // console.log(
-    `Raw SB counts - Board: ${currentBoarding_sb}/${nextBoarding_sb}, Alight: ${currentAlighting_sb}/${nextAlighting_sb}`
-  );
+  //   `Raw SB counts - Board: ${currentBoarding_sb}/${nextBoarding_sb}, Alight: ${currentAlighting_sb}/${nextAlighting_sb}`
+  // );
 
   // Interpolate between two values based on progress
   const interpolate = (current: number, next: number, prog: number) =>
@@ -428,9 +432,9 @@ export function getStationPassengerData(
 
   // Log final result for the station
   // console.log(
-    `Interpolated directional data for station ${stationId}:`,
-    result
-  );
+  //   `Interpolated directional data for station ${stationId}:`,
+  //   result
+  // );
   return result;
 }
 
@@ -538,8 +542,8 @@ export function getPassengerDistribution(
   });
 
   // console.log(
-    `Processed ${rowsInTimeRange} rows within the time range ${startTime} - ${endTime}.`
-  );
+  //   `Processed ${rowsInTimeRange} rows within the time range ${startTime} - ${endTime}.`
+  // );
 
   // If no relevant data found, return empty
   if (flowColumnsFound === 0 || rowsInTimeRange === 0) {
@@ -561,8 +565,8 @@ export function getPassengerDistribution(
     .sort((a, b) => parseInt(a.hour) - parseInt(b.hour));
 
   // console.log(
-    `Generated distribution with ${distribution.length} hour entries for station ${stationId} between ${startTime} and ${endTime}`
-  );
+  //   `Generated distribution with ${distribution.length} hour entries for station ${stationId} between ${startTime} and ${endTime}`
+  // );
 
   return distribution;
 }

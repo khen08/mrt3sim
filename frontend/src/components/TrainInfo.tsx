@@ -322,7 +322,8 @@ const TrainInfo = ({
               ) : (
                 <IconArrowDown size={12} className="mr-1" /> // Use correct icon
               )}
-              {direction.charAt(0).toUpperCase() + direction.slice(1)}
+              {direction.charAt(0).toUpperCase() +
+                direction.slice(1).toLowerCase()}
             </Badge>
           </div>
         </div>
