@@ -1431,26 +1431,44 @@ class Simulation:
             self.start_time = datetime.combine(base_date, time(hour=5, minute=0))
             self.end_time = datetime.combine(base_date, time(hour=22, minute=0))
         else:
-            print("Error: Could not determine base date from CSV. Aborting initialization.")
-            return
+            print("  [CSV:GET DATETIME] COULD NOT DETERMINE BASE DATE. ABORTING INITIALIZATION.")
+            return None
         
         if debug:
-            self.simulation_id = 1
-            return
+            return 1
         
-        simulation_entry = db.simulations.create(
-            data={
-                "START_TIME": self.start_time,
-                "END_TIME": self.end_time,
-                "DWELL_TIME": DEFAULT_SETTINGS["dwellTime"],
-                "TURNAROUND_TIME": DEFAULT_SETTINGS["turnaroundTime"],
-                "SERVICE_PERIODS": json.dumps(DEFAULT_SERVICE_PERIODS),
-                "PASSENGER_DATA_FILE": self.passenger_data_file
-            }
-        )
+        try:
+            db.connect()
+            
+            try:
+                simulation_entry = db.simulations.create(
+                    data={
+                        "START_TIME": self.start_time,
+                        "END_TIME": self.end_time,
+                        "DWELL_TIME": self.dwell_time,
+                        "TURNAROUND_TIME": self.turnaround_time,
+                        "SERVICE_PERIODS": json.dumps(self.service_periods),
+                        "PASSENGER_DATA_FILE": self.passenger_data_file
+                    }
+                )
+            except Exception as create_error:
+                # Handle creation errors specifically
+                print(f"  [DB:CREATE SIMULATIONS ENTRY] FAILED TO CREATE ENTRY: {create_error}")
+                return None
+                
+        except Exception as connect_error:
+            # Handle connection errors specifically
+            print(f"  [DB:CREATE SIMULATIONS ENTRY] FAILED TO CONNECT TO DB: {connect_error}")
+            return None
+            
+        finally:
+            try:
+                db.disconnect()
+            except Exception as disconnect_error:
+                print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT: {disconnect_error}")
 
-        self.simulation_id = simulation_entry.SIMULATION_ID
-        print(f"\tCREATED SIMULATION ENTRY IN DB WITH SIMULATION_ID: {self.simulation_id}")
+        print(f"  [DB:CREATE SIMULATIONS ENTRY] CREATED SIMULATION ENTRY IN DB WITH SIMULATION_ID: {simulation_entry.SIMULATION_ID}")
+        return simulation_entry.SIMULATION_ID
 
     def _initialize_stations(self, scheme_type):
         print("\n[INITIALIZING STATIONS]")
@@ -1470,7 +1488,7 @@ class Simulation:
                 )
             )
 
-        print(f"  INITIALIZED {len(self.stations)} STATIONS IN MEMORY")
+        print(f"  [MEM:INIT STATIONS] INITIALIZED {len(self.stations)} STATIONS IN MEMORY")
 
         if not debug and self.scheme_type == self.schemes[0]:
             stations_for_db = []
@@ -1486,11 +1504,26 @@ class Simulation:
             
             if stations_for_db:
                 try:
-                    # Use create_many for efficiency
-                    result = db.stations.create_many(data=stations_for_db, skip_duplicates=True)
-                    print(f"  [DB:CREATE] ATTEMPTED TO CREATE {len(stations_for_db)} STATIONS IN DB. SUCCESSFULLY BULK INSERTED: {result} ROWS")
-                except Exception as e:
-                    print(f"  [DB:CREATE] FAILED TO BULK INSERT STATIONS IN DB: {e}")
+                    db.connect()
+                    
+                    try:
+                        # Attempt to create multiple station entries
+                        result_count = db.stations.create_many(data=stations_for_db, skip_duplicates=True)
+                        # Print success message using the count from the result
+                        print(f"  [DB:CREATE STATIONS ENTRIES] SUCCESSFULLY BULK INSERTED STATIONS: {result_count} ROWS CREATED")
+                    except Exception as create_error:
+                        # Handle creation errors specifically
+                        print(f"  [DB:CREATE STATIONS ENTRIES] FAILED TO BULK INSERT STATIONS: {create_error}")
+                        
+                except Exception as connect_error:
+                    # Handle connection errors specifically
+                    print(f"  [DB:CREATE STATIONS ENTRIES] FAILED TO CONNECT TO DB: {connect_error}")
+                    
+                finally:
+                    try:
+                        db.disconnect()
+                    except Exception as disconnect_error:
+                        print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT: {disconnect_error}")
 
     def _initialize_track_segments(self):
         print("\n[INITIALIZING TRACK SEGMENTS]")
@@ -1532,7 +1565,7 @@ class Simulation:
                 if station.station_id == ts.start_station_id:
                     station.tracks[ts.direction] = ts
 
-        print(f"  INITIALIZED {len(self.track_segments)} TRACK SEGMENTS IN MEMORY")
+        print(f"  [MEM:INIT TRACK SEGMENTS] INITIALIZED {len(self.track_segments)} TRACK SEGMENTS IN MEMORY")
 
         if not debug and self.scheme_type == self.schemes[0]:
             segments_for_db = []
@@ -1544,17 +1577,32 @@ class Simulation:
                     'DISTANCE': segment.distance,
                     'DIRECTION': segment.direction
                 })
-
+            
             if segments_for_db:
-                try:
-                    # Use create_many for efficiency
-                    result = db.track_segments.create_many(data=segments_for_db, skip_duplicates=True)
-                    print(f"  [DB:CREATE] ATTEMPTED TO CREATE {len(segments_for_db)} TRACK SEGMENTS IN DB. SUCCESSFULLY BULK INSERTED: {result} ROWS")
-                except Exception as e:
-                    print(f"  [DB:CREATE] FAILED TO BULK INSERT TRACK SEGMENTS IN DB: {e}")
+                    try:
+                        db.connect()
+                        
+                        try:
+                            # Attempt to create multiple station entries
+                            result_count = db.track_segments.create_many(data=segments_for_db, skip_duplicates=True)
+                            # Print success message using the count from the result
+                            print(f"  [DB:CREATE TRACK SEGMENTS ENTRIES] SUCCESSFULLY BULK INSERTED TRACK SEGMENTS: {result_count} ROWS CREATED")
+                        except Exception as create_error:
+                            # Handle creation errors specifically
+                            print(f"  [DB:CREATE TRACK SEGMENTS ENTRIES] FAILED TO BULK INSERT TRACK SEGMENTS: {create_error}")
+                            
+                    except Exception as connect_error:
+                        # Handle connection errors specifically
+                        print(f"  [DB:CREATE TRACK SEGMENTS ENTRIES] FAILED TO CONNECT TO DB: {connect_error}")
+                        
+                    finally:
+                        try:
+                            db.disconnect()
+                        except Exception as disconnect_error:
+                            print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT: {disconnect_error}")
 
     def _initialize_trains(self, scheme_type):
-        print("\n[INITIALIZING TRAINS & TRAIN_SPEC(s)]")
+        print("\n[INITIALIZING TRAINS & TRAIN_SPECS]")
         self.trains.clear()
         
         train_count = 0
@@ -1563,11 +1611,13 @@ class Simulation:
 
         train_specs_obj = TrainSpec(
             max_capacity=self.config["maxCapacity"],
-            cruising_speed=self.config["maxSpeed"],
-            passthrough_speed=20, # Assuming fixed passthrough speed
+            cruising_speed=self.config["cruisingSpeed"],
+            passthrough_speed=self.config["passthroughSpeed"],
             accel_rate=self.config["acceleration"],
             decel_rate=self.config["deceleration"],
         )
+
+        print(f"  [MEM:INIT TRAIN_SPECS] INITIALIZING TRAIN SPECS")
 
         for train_id in range(1, train_count + 1):           
             self.trains.append(
@@ -1575,34 +1625,44 @@ class Simulation:
                     train_id=train_id,
                     train_specs=train_specs_obj, 
                     service_type="AB" if scheme_type == "REGULAR" else "B" if train_id % 2 == 0 else "A",
-                    current_station=self.stations[0] # All trains start at North Avenue (Station 1)
+                    current_station=self.stations[0] # All trains start at Station 1
                 )
             )
-        print(f"  INITIALIZED {len(self.trains)} TRAINS IN MEMORY")
+        print(f"  [MEM:INIT TRAINS] INITIALIZED {len(self.trains)} TRAINS IN MEMORY")
 
         if not debug and self.scheme_type == self.schemes[0]:
             train_specs_entry_id = None
             try:
-                train_specs_entry = db.train_specs.create(
-                    data={
-                        'SIMULATION_ID': self.simulation_id,
-                        'SPEC_NAME': 'REGULAR TRAIN',
-                        'MAX_CAPACITY': train_specs_obj.max_capacity,
-                        'CRUISING_SPEED': self.config['maxSpeed'], # Use original config value
-                        'PASSTHROUGH_SPEED': 20,
-                        'ACCEL_RATE': train_specs_obj.accel_rate,
-                        'DECEL_RATE': train_specs_obj.decel_rate,
-                    }
-                )
+                db.connect()
                 
-                train_specs_entry_id = train_specs_entry.SPEC_ID
-                print(f"  [DB:CREATE] SUCCESSFULLY CREATED TRAIN SPECS ENTRY IN DB WITH SPEC_ID: {train_specs_entry_id}")
-            except Exception as e:
-                print(f"  [DB:CREATE] FAILED TO CREATE TRAIN SPECS ENTRY IN DB: {e}")
-                # Handle error appropriately - maybe cannot proceed without spec_id?
-                return # Exit if spec creation failed
+                try:
+                    train_specs_entry = db.train_specs.create(
+                        data={
+                            'SIMULATION_ID': self.simulation_id,
+                            'SPEC_NAME': 'REGULAR TRAIN',
+                            'MAX_CAPACITY': train_specs_obj.max_capacity,
+                            'CRUISING_SPEED': self.config['cruisingSpeed'],
+                            'PASSTHROUGH_SPEED': self.config['passthroughSpeed'],
+                            'ACCEL_RATE': train_specs_obj.accel_rate,
+                            'DECEL_RATE': train_specs_obj.decel_rate,
+                        }
+                    )
+                    train_specs_entry_id = train_specs_entry.SPEC_ID
+                    print(f"  [DB:CREATE TRAIN_SPECS ENTRY] SUCCESSFULLY CREATED TRAIN SPECS ENTRY IN DB WITH SPEC_ID: {train_specs_entry.SPEC_ID}")
+                except Exception as create_error:
+                    # Handle creation errors specifically
+                    print(f"  [DB:CREATE TRAIN_SPECS ENTRY] FAILED TO CREATE ENTRY: {create_error}")
+                
+            except Exception as connect_error:
+                # Handle connection errors specifically
+                print(f"  [DB:CREATE TRAIN_SPECS ENTRY] FAILED TO CONNECT TO DB: {connect_error}")
+                
+            finally:
+                try:
+                    db.disconnect()
+                except Exception as disconnect_error:
+                    print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT: {disconnect_error}")
 
-            # 4b. Prepare and Bulk Insert Train Data
             if train_specs_entry_id: # Proceed only if spec ID was obtained
                 trains_for_db = []
                 for train in self.trains:
@@ -1615,11 +1675,26 @@ class Simulation:
 
                 if trains_for_db:
                     try:
-                        # Use create_many for efficiency
-                        result = db.trains.create_many(data=trains_for_db, skip_duplicates=True)
-                        print(f"  [DB:CREATE] ATTEMPTED TO CREATE {len(trains_for_db)} TRAINS IN DB. SUCCESSFULLY BULK INSERTED: {result} ROWS")
-                    except Exception as e:
-                        print(f"  [DB:CREATE] FAILED TO BULK INSERT TRAINS IN DB: {e}")
+                        db.connect()
+                        
+                        try:
+                            # Attempt to create multiple station entries
+                            result_count = db.trains.create_many(data=trains_for_db, skip_duplicates=True)
+                            # Print success message using the count from the result
+                            print(f"  [DB:CREATE TRAINS ENTRIES] SUCCESSFULLY BULK INSERTED TRAINS: {result_count} ROWS CREATED")
+                        except Exception as create_error:
+                            # Handle creation errors specifically
+                            print(f"  [DB:CREATE TRAINS ENTRIES] FAILED TO BULK INSERT TRAINS: {create_error}")
+                            
+                    except Exception as connect_error:
+                        # Handle connection errors specifically
+                        print(f"  [DB:CREATE TRAINS ENTRIES] FAILED TO CONNECT TO DB: {connect_error}")
+                        
+                    finally:
+                        try:
+                            db.disconnect()
+                        except Exception as disconnect_error:
+                            print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT: {disconnect_error}")
 
     def _initialize_service_periods(self, scheme_type):
         print("\n[INITIALIZING SERVICE PERIODS]")
@@ -1645,6 +1720,7 @@ class Simulation:
             )
 
         self.loop_times[f"{scheme_type}_LOOP_TIME"] = loop_time
+
         # Create the DataFrame first
         df_periods = pd.DataFrame(
             [
@@ -1658,28 +1734,40 @@ class Simulation:
         )
 
         # Convert to string, split lines, and add tab prefix
-        indented_df_string = '\n'.join(['  ' + line for line in df_periods.to_string().splitlines()])
+        indented_df_string = '\n'.join([line for line in df_periods.to_string(index=False).splitlines()], '\n')
 
-        # Print the result
+        print(f"  [MEM:INIT SERVICE PERIODS] SERVICE PERIODS:")
         print(indented_df_string)
-        if scheme_type == "REGULAR":
-            print(f"  LOOP TIME: {timedelta(minutes=loop_time)}")
-        else:
-            print(f"  LOOP TIME FOR A TRAINS: {timedelta(minutes=loop_time)}")
-            print(f"  LOOP TIME FOR B TRAINS: {timedelta(minutes=int(self.calculate_loop_time(self.trains[1]) / 60))}")
 
-        # Update the SERVICE_PERIODS field in the database with calculated headways
+        if scheme_type == "REGULAR":
+            print(f"  [MEM:INIT SERVICE PERIODS] LOOP TIME: {timedelta(minutes=loop_time)}")
+        else:
+            print(f"  [MEM:INIT SERVICE PERIODS] LOOP TIME FOR A TRAINS: {timedelta(minutes=loop_time)}")
+            print(f"  [MEM:INIT SERVICE PERIODS] LOOP TIME FOR B TRAINS: {timedelta(minutes=int(self.calculate_loop_time(self.trains[1]) / 60))}")
+
+
         if not debug :
-            # Construct the correct database column name by replacing hyphen with underscore
             try:
-                updated_service_periods_json = json.dumps(self.service_periods)
-                db.simulations.update(
-                    where={'SIMULATION_ID': self.simulation_id},
-                    data={'SERVICE_PERIODS': updated_service_periods_json}
-                )
-                print(f"  [DB:UPDATE] SUCCESSFULLY updated SERVICE_PERIODS in SIMULATION for SIMULATION_ID: {self.simulation_id}")
-            except Exception as e:
-                print(f"  [DB:UPDATE] ERROR updating SERVICE_PERIODS in SIMULATION for SIMULATION_ID: {self.simulation_id}: {e}")
+                db.connect()
+                
+                try:
+                    updated_service_periods_json = json.dumps(self.service_periods)
+                    db.simulations.update(
+                        where={'SIMULATION_ID': self.simulation_id},
+                        data={'SERVICE_PERIODS': updated_service_periods_json}
+                    )
+                    print(f"  [DB:UPDATE SERVICE_PERIODS] SUCCESSFULLY UPDATED SERVICE_PERIODS IN SIMULATION for SIMULATION_ID: {self.simulation_id}")
+                except Exception as update_error:
+                    print(f"  [DB:UPDATE SERVICE_PERIODS] FAILED TO UPDATE SERVICE_PERIODS IN SIMULATION for SIMULATION_ID: {self.simulation_id}: {update_error}")
+            
+            except Exception as connect_error:
+                print(f"  [DB:UPDATE SERVICE_PERIODS] FAILED TO CONNECT TO DB: {connect_error}")
+                
+            finally:
+                try:
+                    db.disconnect()
+                except Exception as disconnect_error:
+                    print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT : {disconnect_error}")
 
     def _initialize_passengers_demand(self):
         print("\n[INITIALIZING PASSENGER DEMAND OBJECTS]")
@@ -1691,13 +1779,13 @@ class Simulation:
         try:
             df = pd.read_csv(file_path)
         except FileNotFoundError:
-            print(f"  [ERROR] Passenger data file not found at '{file_path}'. Aborting passenger initialization.")
+            print(f"  [CSV:READ] PASSENGER DATA FILE NOT FOUND AT '{file_path}'. ABORTING PASSENGER DEMAND INITIALIZATION.")
             return
         except pd.errors.EmptyDataError:
-            print(f"  [ERROR] Passenger data file '{file_path}' is empty. Aborting passenger initialization.")
+            print(f"  [CSV:READ] PASSENGER DATA FILE '{file_path}' IS EMPTY. ABORTING PASSENGER DEMAND INITIALIZATION.")
             return
         except Exception as e:
-            print(f"  [ERROR] Error reading passenger data CSV '{file_path}': {e}. Aborting passenger initialization.")
+            print(f"  [CSV:READ] ERROR READING PASSENGER DATA CSV '{file_path}': {e}. ABORTING PASSENGER DEMAND INITIALIZATION.")
             return
 
         # --- Data Processing --- #
@@ -1707,10 +1795,10 @@ class Simulation:
         od_columns = [col for col in df.columns if ',' in col]
 
         if not id_vars:
-            print("  [ERROR] 'DateTime' column not found in CSV. Cannot process passengers.")
+            print("  [CSV:READ] 'DateTime' COLUMN NOT FOUND IN CSV. CANNOT PROCESS PASSENGERS.")
             return
         if not od_columns:
-            print("  [ERROR] No OD pair columns (e.g., '1,2') found in CSV. Cannot process passengers.")
+            print("  [CSV:READ] NO OD PAIR COLUMNS (e.g., '1,2') FOUND IN CSV. CANNOT PROCESS PASSENGERS.")
             return
 
         melted_df = df.melt(
@@ -1725,7 +1813,7 @@ class Simulation:
         melted_df['PASSENGER_COUNT'] = melted_df['PASSENGER_COUNT'].astype(int)
 
         if melted_df.empty:
-            print("  [WARNING] No valid passenger demand found after melting and filtering.")
+            print("  [CSV:READ] NO VALID PASSENGER DEMAND FOUND AFTER MELTING AND FILTERING.")
             return
 
         melted_df[['ORIGIN_STATION_ID', 'DESTINATION_STATION_ID']] = melted_df['OD_PAIR'].str.strip('"').str.split(',', expand=True).astype(int)
@@ -1734,11 +1822,11 @@ class Simulation:
         invalid_rows = invalid_origin | invalid_destination
 
         if invalid_rows.any():
-            print(f"  [WARNING] Found {invalid_rows.sum()} rows with invalid station IDs. These rows will be skipped.")
+            print(f"  [CSV:READ] FOUND {invalid_rows.sum()} ROWS WITH INVALID STATION IDs. THESE ROWS WILL BE SKIPPED.")
             melted_df = melted_df[~invalid_rows]
 
         if melted_df.empty:
-            print("  [WARNING] No valid passenger demand remaining after station ID validation.")
+            print("  [CSV:READ] NO VALID PASSENGER DEMAND REMAINING AFTER STATION ID VALIDATION.")
             return
 
         melted_df['ORIGIN_STATION_TYPE'] = melted_df['ORIGIN_STATION_ID'].map(station_type_map)
@@ -1763,11 +1851,11 @@ class Simulation:
             demand.direction = "SOUTHBOUND" if demand.destination_station_id > demand.origin_station_id else "NORTHBOUND"
             self.passenger_demand.append(demand)
 
-        print(f"  INITIALIZED {len(self.passenger_demand)} PASSENGER DEMAND OBJECTS IN MEMORY")
+        print(f"  [MEM:INIT PASSENGER DEMAND] INITIALIZED {len(self.passenger_demand)} PASSENGER DEMAND OBJECTS IN MEMORY")
 
         # --- Calculate and Store Total Passenger Count --- #
         total_passenger_count = sum(demand.passenger_count for demand in self.passenger_demand)
-        print(f"  TOTAL PASSENGER COUNT FROM DEMAND DATA: {total_passenger_count}")
+        print(f"  [MEM:INIT PASSENGER DEMAND] TOTAL PASSENGER COUNT FROM DEMAND DATA: {total_passenger_count}")
 
         for demand in self.passenger_demand:
             for station in self.stations:
@@ -1789,8 +1877,8 @@ class Simulation:
         print(f"\n================[SIMULATION.RUN() STARTED]================\n")
         start_run_time = py_time.perf_counter() # Record start time
         self.schemes = ["SKIP-STOP","REGULAR"]
-        self._create_simulation_entry()
-        
+        self.simulation_id = self._create_simulation_entry()
+
         for scheme_type in self.schemes:
             try:
                 print(f"\n\t===[RUNNING SIMULATION FOR SCHEME TYPE: {scheme_type}]===")
@@ -1811,17 +1899,13 @@ class Simulation:
                     self.event_handler.process_event(event)
 
                 # Indicate success for this simulation ID run
-                print(f"  SIMULATION_ID: {self.simulation_id} COMPLETED UP TO {self.current_time.strftime('%H:%M:%S')}")
-                print(f"  GENERATED {len(self.timetables)} TRAIN_MOVEMENTS ENTRIES")
-                print(f"\n\t===[SIMULATION COMPLETED]===")
+                print(f"\n[SIMULATION.RUN()] SCHEME_TYPE: {scheme_type} COMPLETED UP TO {self.current_time.strftime('%H:%M:%S')}")
+                print(f"[SIMULATION.RUN()] GENERATED {len(self.timetables)} TRAIN_MOVEMENTS ENTRIES")
 
-                # Save results before potentially moving to the next simulation_id or disconnecting
                 if not debug:
-                    # Compute and save metrics first
-                    travel_time, wait_time, completed_passenger_count = self.compute_metrics()
-                    self.save_metrics_to_db(travel_time, wait_time, completed_passenger_count)
-                    self.save_timetable_to_db()
-                    self.save_passenger_demand_to_db()
+                    self.post_simulation_save()
+
+                print(f"\n\t===[SIMULATION COMPLETED]===")
 
             except Exception as e:
                 print(f"Error during simulation run for ID {self.simulation_id}, Scheme: {scheme_type}: {e}")
@@ -1830,11 +1914,11 @@ class Simulation:
                 # Attempt to delete the failed simulation entry from the database
                 if not debug and self.simulation_id is not None:
                     try:
-                        print(f"Attempting to delete failed simulation entry with ID: {self.simulation_id}")
+                        print(f"[SIMULATION.RUN()] ATTEMPTING TO DELETE FAILED SIMULATION ENTRY WITH ID: {self.simulation_id}")
                         db.simulations.delete(where={'SIMULATION_ID': self.simulation_id})
-                        print(f"Successfully deleted simulation entry with ID: {self.simulation_id}")
+                        print(f"[SIMULATION.RUN()] SUCCESSFULLY DELETED SIMULATION ENTRY WITH ID: {self.simulation_id}")
                     except Exception as db_error:
-                        print(f"Error deleting simulation entry with ID {self.simulation_id} from database: {db_error}")
+                        print(f"[SIMULATION.RUN()] ERROR DELETING SIMULATION ENTRY WITH ID {self.simulation_id} FROM DATABASE: {db_error}")
 
                 # Decide if you want to stop all simulations or continue with the next ID
                 break # Stop processing further simulation IDs on error
@@ -1845,23 +1929,38 @@ class Simulation:
 
         # Update the TOTAL_RUN_TIME_SECONDS field in the database
         if not debug:
+            print(f"[SIMULATION.RUN()] UPDATING TOTAL_RUN_TIME_SECONDS FOR SIMULATION_ID: {self.simulation_id}")
             try:
-                db.simulations.update(
-                    where={'SIMULATION_ID': self.simulation_id},
-                    data={'TOTAL_RUN_TIME_SECONDS': round(run_duration, 3)}
-                )
-                print(f"  [DB:UPDATE] SUCCESSFULLY updated TOTAL_RUN_TIME_SECONDS in DB for SIMULATION_ID: {self.simulation_id}")
-            except Exception as e:
-                print(f"  [DB:UPDATE] ERROR updating TOTAL_RUN_TIME_SECONDS in DB for SIMULATION_ID: {self.simulation_id}: {e}")
-
-        # Disconnect shared Prisma client after all simulations in the queue are attempted or completed
-        if not debug and db.is_connected():
-            print("Disconnecting shared DB client after simulation run.")
-            #db.disconnect()
+                db.connect()
+                
+                try:
+                    db.simulations.update(
+                        where={'SIMULATION_ID': self.simulation_id},
+                        data={'TOTAL_RUN_TIME_SECONDS': round(run_duration, 3)}
+                    )
+                    print(f"  [DB:UPDATE SIMULATION] SUCCESSFULLY UPDATED TOTAL_RUN_TIME_SECONDS")
+                except Exception as update_error:
+                    print(f"  [DB:UPDATE SIMULATION] FAILED TO UPDATE TOTAL_RUN_TIME_SECONDS: {update_error}")
+            
+            except Exception as connect_error:
+                 print(f"  [DB:UPDATE SIMULATION] FAILED TO CONNECT TO DB: {connect_error}")
+                 
+            finally:
+                try:
+                    db.disconnect()
+                except Exception as disconnect_error:
+                    print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT after updating run time: {disconnect_error}")
 
         print(f"\n================[SIMULATION.RUN() COMPLETED]================\n")
         
         return round(run_duration, 3)
+
+    def post_simulation_save(self):
+        """Saves the timetable, passenger demand, and metrics to the database."""
+        travel_time, wait_time, completed_passenger_count = self.compute_metrics()
+        self.save_metrics_to_db(travel_time, wait_time, completed_passenger_count)
+        self.save_timetable_to_db()
+        self.save_passenger_demand_to_db()
 
     def save_timetable_to_db(self):
         """Formats timetable entries and bulk inserts them into the TRAIN_MOVEMENTS table."""
@@ -1870,32 +1969,22 @@ class Simulation:
             print("  [ERROR]: NO TIMETABLE ENTRIES TO SAVE.")
             return
 
-        if not db.is_connected():
-            print("\tERROR: DATABASE IS NOT CONNECTED. CANNOT SAVE TIMETABLE.")
-            return
-
-
-        print(f"  PREPARING {len(self.timetables)} TIMETABLE ENTRIES FOR DATABASE INSERTION...")
+        print(f"  [SAVE:TIMETABLES] PREPARING {len(self.timetables)} TIMETABLE ENTRIES FOR DATABASE INSERTION...")
         data_to_insert = []
         skipped_count = 0
         for entry in self.timetables:
-            # Handle potential non-datetime departure times (like "WITHDRAWN")
             departure_time_db = None
             if isinstance(entry.departure_time, datetime):
                 departure_time_db = entry.departure_time
-            # else: leave as None if it's "WITHDRAWN" or other non-datetime
 
-            # Skip entries with None arrival time if required by DB schema
-            if entry.arrival_time is None and entry.departure_time is None: # Example condition
-                #print(f"Skipping entry for Train {entry.train_id} at Station {entry.station_id} due to missing times.")
+            if entry.arrival_time is None and entry.departure_time is None: 
                 skipped_count += 1
                 continue
             
-            travel_time_db = 0 # Default to 0
+            travel_time_db = 0
             if isinstance(entry.travel_time, (int, float)):
                 travel_time_db = int(entry.travel_time)
 
-            # Adjust these keys based on your actual Prisma schema for TRAIN_MOVEMENTS
             data = {
                 "SIMULATION_ID": self.simulation_id,
                 "SCHEME_TYPE": self.scheme_type,
@@ -1915,52 +2004,75 @@ class Simulation:
             data_to_insert.append(data)
 
         if skipped_count > 0:
-            print(f"SKIPPED {skipped_count} ENTRIES DUE TO MISSING TIME DATA.")
+            print(f"  [SAVE:TIMETABLES] SKIPPED {skipped_count} ENTRIES DUE TO MISSING TIME DATA.")
 
         if not data_to_insert:
-            print("NO VALID ENTRIES REMAINING TO INSERT AFTER FILTERING.")
+            print("  [DB:INSERT TRAIN_MOVEMENTS] NO VALID ENTRIES REMAINING TO INSERT AFTER FILTERING.")
             return
 
         try:
-            result = db.train_movements.create_many(
-                data=data_to_insert,
-            )
-            print(f"  [DB:INSERT] ATTEMPTED TO CREATE {len(data_to_insert)} TRAIN_MOVEMENTS ENTRIES IN DB. SUCCESSFULLY BULK INSERTED: {result} ROWS")
-        except Exception as e:
-            print(f"  [DB:INSERT] FAILED TO BULK INSERT TRAIN_MOVEMENTS ENTRIES IN DB: {e}")
-            # Consider logging the failed data or implementing retry logic if necessary
+            db.connect()
+            
+            try:
+                result = db.train_movements.create_many(
+                    data=data_to_insert,
+                )
+                print(f"  [DB:INSERT TRAIN_MOVEMENTS] ATTEMPTED TO CREATE {len(data_to_insert)} ENTRIES. SUCCESSFULLY BULK INSERTED: {result} ROWS")
+            except Exception as create_error:
+                print(f"  [DB:INSERT TRAIN_MOVEMENTS] FAILED TO BULK INSERT ENTRIES: {create_error}")
+
+        except Exception as connect_error:
+            print(f"  [DB:INSERT TRAIN_MOVEMENTS] FAILED TO CONNECT TO DB: {connect_error}")
+            
+        finally:
+            try:
+                db.disconnect()
+            except Exception as disconnect_error:
+                print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT after saving train movements: {disconnect_error}")
 
     def save_passenger_demand_to_db(self):
         print(f"\n[SAVING PASSENGER DEMAND TO DB]")
         # --- Prepare Data for Database Insertion --- #
-        if not debug:
-            passenger_records_for_db = []
-            for demand in self.passenger_demand:
-                passenger_records_for_db.append({
-                    'SIMULATION_ID': self.simulation_id,
-                    'SCHEME_TYPE': self.scheme_type,
-                    'ORIGIN_STATION_ID': demand.origin_station_id,
-                    'DESTINATION_STATION_ID': demand.destination_station_id,
-                    'ARRIVAL_TIME_AT_ORIGIN': demand.arrival_time,
-                    'DEPARTURE_TIME_FROM_ORIGIN': demand.departure_from_origin_time,
-                    'ARRIVAL_TIME_AT_TRANSFER': demand.arrival_at_transfer_time,
-                    'DEPARTURE_TIME_FROM_TRANSFER': demand.departure_from_transfer_time,
-                    'ARRIVAL_TIME_AT_DESTINATION': demand.completion_time,
-                    'WAIT_TIME': demand.wait_time,
-                    'TRAVEL_TIME': demand.travel_time,
-                    'TRIP_TYPE': demand.trip_type,
-                    'PASSENGER_COUNT': demand.passenger_count
-                })
+        passenger_records_for_db = []
+        for demand in self.passenger_demand:
+            passenger_records_for_db.append({
+                'SIMULATION_ID': self.simulation_id,
+                'SCHEME_TYPE': self.scheme_type,
+                'ORIGIN_STATION_ID': demand.origin_station_id,
+                'DESTINATION_STATION_ID': demand.destination_station_id,
+                'ARRIVAL_TIME_AT_ORIGIN': demand.arrival_time,
+                'DEPARTURE_TIME_FROM_ORIGIN': demand.departure_from_origin_time,
+                'ARRIVAL_TIME_AT_TRANSFER': demand.arrival_at_transfer_time,
+                'DEPARTURE_TIME_FROM_TRANSFER': demand.departure_from_transfer_time,
+                'ARRIVAL_TIME_AT_DESTINATION': demand.completion_time,
+                'WAIT_TIME': demand.wait_time,
+                'TRAVEL_TIME': demand.travel_time,
+                'TRIP_TYPE': demand.trip_type,
+                'PASSENGER_COUNT': demand.passenger_count
+            })
 
-            # --- Bulk Insert into Database --- #
-            if passenger_records_for_db:
-                try:
-                    result = db.passenger_demand.create_many(data=passenger_records_for_db)
-                    print(f"  [DB:INSERT] ATTEMPTED TO CREATE {len(passenger_records_for_db)} PASSENGER DEMAND ENTRIES IN DB. SUCCESSFULLY BULK INSERTED: {result} ROWS")
-                except Exception as e:
-                    print(f"  [DB:INSERT] FAILED TO BULK INSERT PASSENGER DEMAND ENTRIES IN DB: {e}")
-            else:
-                print("  [ERROR]: NO PASSENGER DEMAND ENTRIES TO INSERT INTO DB.")
+        # --- Bulk Insert into Database --- #
+        if not passenger_records_for_db:
+            print("  [SAVE:PASSENGER DEMAND] NO PASSENGER DEMAND ENTRIES TO INSERT INTO DB.")
+            return
+        
+        try:
+            db.connect()
+            
+            try:
+                result = db.passenger_demand.create_many(data=passenger_records_for_db)
+                print(f"  [DB:INSERT PASSENGER DEMAND] ATTEMPTED TO CREATE {len(passenger_records_for_db)} ENTRIES. SUCCESSFULLY BULK INSERTED: {result} ROWS")
+            except Exception as create_error:
+                print(f"  [DB:INSERT PASSENGER DEMAND] FAILED TO BULK INSERT ENTRIES: {create_error}")
+                
+        except Exception as connect_error:
+            print(f"  [DB:INSERT PASSENGER DEMAND] FAILED TO CONNECT TO DB: {connect_error}")
+            
+        finally:
+            try:
+                db.disconnect()
+            except Exception as disconnect_error:
+                print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT after saving passenger demand: {disconnect_error}")
 
     def compute_metrics(self):
         """Calculates aggregate metrics for the completed simulation scheme using pandas."""
@@ -1974,7 +2086,7 @@ class Simulation:
         } for demand in self.passenger_demand if demand.status == "completed"]
 
         if not demand_data:
-            print("  No completed passenger demand data to compute metrics from.")
+            print("  [COMPUTE:METRICS] No completed passenger demand data to compute metrics from.")
             return 0, 0
 
         demand_df = pd.DataFrame(demand_data)
@@ -1985,40 +2097,44 @@ class Simulation:
         completed_demand_count = len(demand_df)
         completed_passenger_count = demand_df['passenger_count'].sum()
 
-        print(f"  COMPLETED DEMAND COUNT: {completed_demand_count}")
-        print(f"  COMPLETED PASSENGER COUNT: {completed_passenger_count}")
-        print(f"  IN_TRANSIT PASSENGER COUNT: {sum([demand.passenger_count for demand in self.passenger_demand if demand.status != 'completed'])}")
-        print(f"  TOTAL PASSENGER TRAVEL TIME (sec): {total_travel_time_seconds}")
-        print(f"  TOTAL PASSENGER WAIT TIME (sec): {total_wait_time_seconds}")
+        print(f"  [COMPUTE:METRICS] COMPLETED DEMAND GROUP COUNT: {completed_demand_count}")
+        print(f"  [COMPUTE:METRICS] COMPLETED INDIVIDUAL PASSENGER COUNT: {completed_passenger_count}")
+        print(f"  [COMPUTE:METRICS] INDIVIDUAL PASSENGERS IN TRANSIT OR WAITING: {sum([demand.passenger_count for demand in self.passenger_demand if demand.status != 'completed'])}")
+        print(f"  [COMPUTE:METRICS] TOTAL INDIVIDUAL PASSENGER TRAVEL TIME (sec): {int(total_travel_time_seconds)}s")
+        print(f"  [COMPUTE:METRICS] TOTAL INDIVIDUAL PASSENGER WAIT TIME (sec): {int(total_wait_time_seconds)}s")
 
         return total_travel_time_seconds, total_wait_time_seconds, completed_passenger_count
 
     def save_metrics_to_db(self, travel_time, wait_time, completed_passenger_count):
         """Saves the calculated metrics to the SIMULATION_METRICS table."""
         print(f"\n[SAVING METRICS TO DB FOR SCHEME: {self.scheme_type}]")
-        if debug:
-            print("  DEBUG MODE: Skipping database save for metrics.")
-            return
-
-        if not db.is_connected():
-            print("  ERROR: DATABASE IS NOT CONNECTED. CANNOT SAVE METRICS.")
-            return
-        
         
         try:
-            db.simulation_metrics.create(
-                data={
-                    'SIMULATION_ID': self.simulation_id,
-                    'SCHEME_TYPE': self.scheme_type,
-                    'PASSENGER_COUNT': int(completed_passenger_count),
-                    'TOTAL_PASSENGER_TRAVEL_TIME_SECONDS': int(travel_time),
-                    'TOTAL_PASSENGER_WAITING_TIME_SECONDS': int(wait_time),
-                    'LOOP_TIME_MINUTES': self.loop_times[f"{self.scheme_type}_LOOP_TIME"]
-                }
-            )
-            print(f"  [DB:INSERT] SUCCESSFULLY created metrics entry for SIMULATION_ID: {self.simulation_id}, SCHEME: {self.scheme_type}")
-        except Exception as e:
-            print(f"  [DB:INSERT] FAILED to create metrics entry in DB: {e}")
+            db.connect()
+            
+            try:
+                db.simulation_metrics.create(
+                    data={
+                        'SIMULATION_ID': self.simulation_id,
+                        'SCHEME_TYPE': self.scheme_type,
+                        'PASSENGER_COUNT': int(completed_passenger_count),
+                        'TOTAL_PASSENGER_TRAVEL_TIME_SECONDS': int(travel_time),
+                        'TOTAL_PASSENGER_WAITING_TIME_SECONDS': int(wait_time),
+                        'LOOP_TIME_MINUTES': self.loop_times[f"{self.scheme_type}_LOOP_TIME"]
+                    }
+                )
+                print(f"  [DB:CREATE SIMULATION_METRICS] SUCCESSFULLY CREATED metrics entry for SIMULATION_ID: {self.simulation_id}, SCHEME: {self.scheme_type}")
+            except Exception as create_error:
+                print(f"  [DB:CREATE SIMULATION_METRICS] FAILED to create metrics entry in DB: {create_error}")
+
+        except Exception as connect_error:
+            print(f"  [DB:CREATE SIMULATION_METRICS] FAILED TO CONNECT TO DB: {connect_error}")
+            
+        finally:
+            try:
+                db.disconnect()
+            except Exception as disconnect_error:
+                print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT after saving metrics: {disconnect_error}")
 
     def get_station_by_id(self, station_id):
         """Fast O(1) station lookup by ID."""
@@ -2212,7 +2328,8 @@ if __name__ == "__main__":
         'deceleration': 0.8, 
         'dwellTime': 60, 
         'maxCapacity': 1182, 
-        'maxSpeed': 60, 
+        'cruisingSpeed': 60, 
+        'passthroughSpeed': 20,
         'turnaroundTime': 300, 
         'stationNames': ['North Avenue', 'Quezon Avenue', 'GMA-Kamuning', 'Cubao', 'Santolan-Annapolis', 'Ortigas', 'Shaw Boulevard', 'Boni Avenue', 'Guadalupe', 'Buendia', 'Ayala', 'Magallanes', 'Taft Avenue'], 
         'stationDistances': [1.2, 1.1, 1.8, 1.5, 1.4, 0.9, 1, 1.1, 1.3, 1, 1.2, 1.7],
