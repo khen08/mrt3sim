@@ -162,13 +162,26 @@ def get_timetable(simulation_id):
         try:
             timetable_entries = db.train_movements.find_many(
                 where={'SIMULATION_ID': simulation_id},
-                order=[{'ARRIVAL_TIME': 'asc'}]
+                order=[{'ARRIVAL_TIME': 'asc'}],
+                include={'simulation': True}
             )
             
-            # Convert to serializable format
+            service_periods_data = None
+            if timetable_entries:
+                simulation_record = timetable_entries[0].simulation 
+                if simulation_record and simulation_record.SERVICE_PERIODS:
+                    try:
+                        service_periods_data = json.loads(simulation_record.SERVICE_PERIODS)
+                    except json.JSONDecodeError as json_err:
+                        print(f"[ROUTE:/GET_TIMETABLE] WARNING: FAILED TO PARSE SERVICE_PERIODS JSON: {json_err}")
+                        service_periods_data = {"error": "Failed to parse service periods data"}
+                else:
+                    print(f"[ROUTE:/GET_TIMETABLE] WARNING: No simulation record or SERVICE_PERIODS found for included data.")
+            else:
+                 print(f"[ROUTE:/GET_TIMETABLE] No timetable entries found for simulation ID {simulation_id}")
+
             serializable_entries = []
             for entry in timetable_entries:
-                # Convert datetime objects to strings
                 entry_dict = entry.dict()
                 entry_dict['ARRIVAL_TIME'] = entry_dict['ARRIVAL_TIME'].strftime('%H:%M:%S')
                 if entry_dict['DEPARTURE_TIME']:
@@ -176,7 +189,10 @@ def get_timetable(simulation_id):
                 serializable_entries.append(entry_dict)
             
             print(f"[ROUTE:/GET_TIMETABLE] SUCCESSFULLY RETRIEVED {len(serializable_entries)} TIMETABLE ENTRIES FOR SIMULATION ID {simulation_id}")
-            return jsonify(serializable_entries)
+            return jsonify({
+                'timetable': serializable_entries,
+                'service_periods': service_periods_data 
+            })
         except Exception as e:
             print(f"[ROUTE:/GET_TIMETABLE] FAILED TO FETCH TIMETABLE ENTRIES: {e}")
             return jsonify({"error": str(e)}), 500
