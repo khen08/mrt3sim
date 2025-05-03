@@ -213,7 +213,9 @@ def get_history():
             serializable_entries = []
             for entry in history_entries:
                 entry_dict = entry.dict()
+                entry_dict['CREATED_AT'] = entry_dict['CREATED_AT'].strftime('%Y-%m-%d %H:%M:%S')
                 entry_dict['START_TIME'] = entry_dict['START_TIME'].strftime('%Y-%m-%d %H:%M:%S')
+                entry_dict['END_TIME'] = entry_dict['END_TIME'].strftime('%Y-%m-%d %H:%M:%S')
                 serializable_entries.append(entry_dict)
             
             print(f"[ROUTE:/GET_HISTORY] SUCCESSFULLY RETRIEVED {len(serializable_entries)} HISTORY ENTRIES")
