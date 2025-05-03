@@ -866,11 +866,11 @@ export default function Home() {
                   >
                     <AlertDialogTrigger asChild>
                       <Button
-                        variant="destructive"
+                        variant="outline"
                         className="w-full justify-start text-left"
                         disabled={isSimulating}
                       >
-                        <IconTrash className="mr-2 h-4 w-4" />
+                        <IconReplace className="mr-2 h-4 w-4" />
                         Clear Current Data & Settings
                       </Button>
                     </AlertDialogTrigger>
@@ -920,7 +920,6 @@ export default function Home() {
                 onStationDistanceChange={handleStationDistanceChange}
                 onStationSchemeChange={handleStationSchemeChange}
                 onSkipStopToggle={handleSkipStopToggle}
-                onToggleFullDayView={() => setIsFullDayView(!isFullDayView)}
                 loadedSimulationId={loadedSimulationId}
                 hasSimulationData={
                   !!simulationResult && simulationResult.length > 0
@@ -1073,9 +1072,15 @@ export default function Home() {
             <div className="flex-shrink-0">
               <SimulationController
                 startTime={
-                  isFullDayView ? FULL_DAY_HOURS.start : PEAK_HOURS.AM.start
+                  isFullDayView
+                    ? FULL_DAY_HOURS.start
+                    : PEAK_HOURS[selectedPeak].start
                 }
-                endTime={isFullDayView ? FULL_DAY_HOURS.end : PEAK_HOURS.PM.end}
+                endTime={
+                  isFullDayView
+                    ? FULL_DAY_HOURS.end
+                    : PEAK_HOURS[selectedPeak].end
+                }
                 onTimeUpdate={handleTimeUpdate}
                 onSimulationStateChange={handleSimulationStateChange}
                 isLoading={isSimulating}
@@ -1083,6 +1088,10 @@ export default function Home() {
                   !!simulationResult && simulationResult.length > 0
                 }
                 onSchemeChange={handleSchemeChange}
+                onToggleFullDayView={() => setIsFullDayView(!isFullDayView)}
+                hasSimulationData={
+                  !!simulationResult && simulationResult.length > 0
+                }
                 isFullDayView={isFullDayView}
                 selectedPeak={selectedPeak}
                 onPeakChange={setSelectedPeak}

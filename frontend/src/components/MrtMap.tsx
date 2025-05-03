@@ -1035,6 +1035,26 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
       ).length;
       let currentInactiveIndex = 0;
 
+      // Calculate depot box properties for centering
+      const depotBoxPadding = 15; // Horizontal padding inside the box
+      const depotBoxWidth =
+        finalInactiveCount > 0
+          ? INACTIVE_TRAIN_SPACING * finalInactiveCount + depotBoxPadding * 2
+          : 80;
+      const depotBoxX = centerStationX - depotBoxWidth / 2;
+
+      // Calculate the total width occupied by the trains themselves
+      const trainsWidth = finalInactiveCount * INACTIVE_TRAIN_SPACING;
+      // Calculate the starting X for the first train, centered within the box
+      // (Box Start X + Half Box Width - Half Trains Width)
+      // Simplified: Box Start X + (Box Width - Trains Width) / 2
+      // Or more accurately considering spacing: depotBoxX + depotBoxPadding
+      const firstTrainX =
+        depotBoxX +
+        depotBoxPadding +
+        INACTIVE_TRAIN_SPACING / 1.2 -
+        INACTIVE_TRAIN_SIZE / 2;
+
       // --- START: Re-insert Staggering Logic ---
       // Identify turning around trains by location (north/south terminus)
       const northTurningTrains = newTrainStates.filter(
@@ -1091,9 +1111,13 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
 
       newTrainStates.forEach((ts) => {
         if (ts.isInDepot) {
-          const depotStartX =
-            centerStationX - (finalInactiveCount * INACTIVE_TRAIN_SPACING) / 2;
-          ts.x = depotStartX + currentInactiveIndex * INACTIVE_TRAIN_SPACING;
+          // const depotStartX =
+          //   centerStationX - (finalInactiveCount * INACTIVE_TRAIN_SPACING) / 2;
+          // ts.x = depotStartX + currentInactiveIndex * INACTIVE_TRAIN_SPACING;
+
+          // Use the new centered position logic
+          ts.x = firstTrainX + currentInactiveIndex * INACTIVE_TRAIN_SPACING;
+
           currentInactiveIndex++;
         }
       });
@@ -1760,8 +1784,8 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                     : 80 // Adjusted min width slightly
                 }
                 height={INACTIVE_TRAIN_SIZE + 30} // INCREASED Height padding (15+15)
-                fill="rgba(150, 150, 150, 0.1)" // Semi-transparent grey
-                stroke="rgba(100, 100, 100, 0.3)" // Dim border
+                fill="rgba(150, 150, 150, 0.08)" // Semi-transparent grey - Reduced opacity
+                stroke="rgba(100, 100, 100, 0.25)" // Dim border
                 strokeWidth={1}
                 rx={5} // Rounded corners
               />
