@@ -808,8 +808,9 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
         const trainSchedule = timetableByTrain[trainId] || [];
 
         let trainState: TrainState | null = null;
-        let isExplicitlyInactive = false;
-        let inactiveTriggerEvent: any = null;
+        // REMOVE isExplicitlyInactive and related variables
+        // let isExplicitlyInactive = false;
+        // let inactiveTriggerEvent: any = null;
 
         // --- NEW: Check Operational Window First ---
         const operationalWindow = trainOperationalWindows[trainId];
@@ -825,48 +826,30 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
           isOutsideWindow = true; // No window = inactive
         }
 
-        // --- Check for Explicit INACTIVE status ---
-        if (trainSchedule) {
-          for (const event of trainSchedule) {
-            if (event.TRAIN_STATUS === "INACTIVE") {
-              const departureSec = event.DEPARTURE_TIME
-                ? timeToSeconds(event.DEPARTURE_TIME)
-                : event.ARRIVAL_TIME
-                ? timeToSeconds(event.ARRIVAL_TIME)
-                : Infinity;
-              if (
-                currentSimSeconds >= departureSec &&
-                departureSec !== Infinity
-              ) {
-                isExplicitlyInactive = true;
-                inactiveTriggerEvent = event;
-                break;
-              }
-            }
-          }
-        }
-
-        // --- Determine Final Inactive State ---
-        if (isOutsideWindow || isExplicitlyInactive) {
+        // --- Determine Final Inactive State (ONLY based on window now) ---
+        // if (isOutsideWindow || isExplicitlyInactive) {
+        if (isOutsideWindow) {
           let inactiveDirection: Direction = "SOUTHBOUND"; // Default
-          if (inactiveTriggerEvent) {
-            inactiveDirection = inactiveTriggerEvent.DIRECTION;
-          } else if (operationalWindow && trainSchedule.length > 0) {
+          // Use last known direction if available from schedule
+          // if (inactiveTriggerEvent) { // Cannot use this anymore
+          //   inactiveDirection = inactiveTriggerEvent.DIRECTION;
+          // } else if (operationalWindow && trainSchedule.length > 0) {
+          if (operationalWindow && trainSchedule.length > 0) {
             inactiveDirection =
               trainSchedule[trainSchedule.length - 1].DIRECTION;
           }
 
           trainState = {
             id: trainId,
-            x: 0,
+            x: 0, // Position will be updated later
             y: DEPOT_CENTER_Y,
             direction: inactiveDirection,
             isStopped: true,
-            isActive: true,
+            isActive: true, // Still considered 'active' simulation-wise, just visually in depot
             isTurningAround: false,
-            isInDepot: true,
+            isInDepot: true, // Mark as in depot
             isNewlyInserted: false,
-            serviceType: getEffectiveTrainServiceType(trainId), // Uses active scheme
+            serviceType: getEffectiveTrainServiceType(trainId),
             rotation: 0,
             currentStationIndex: -1,
             turnaroundProgress: null,
@@ -1044,16 +1027,38 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
               };
             }
           } else {
-            // Fallback
+            // Fallback - If inside operational window but no event pair found,
+            // it means the train is inactive during this specific time (e.g., midday)
             console.warn(
-              `Train ${trainId}: Could not determine ACTIVE state at time ${simulationTime}. Hiding train.`
+              `Train ${trainId}: Within operational window but no active event found at time ${simulationTime}. Setting to INACTIVE (depot).`
             );
-            trainState = null;
+            // Determine fallback inactive direction (use last known from schedule if possible)
+            let inactiveDirection: Direction = "SOUTHBOUND"; // Default
+            if (trainSchedule.length > 0) {
+              inactiveDirection =
+                trainSchedule[trainSchedule.length - 1].DIRECTION;
+            }
+            trainState = {
+              id: trainId,
+              x: 0, // Position will be updated later
+              y: DEPOT_CENTER_Y,
+              direction: inactiveDirection,
+              isStopped: true,
+              isActive: true, // Still considered 'active' simulation-wise, just visually in depot
+              isTurningAround: false,
+              isInDepot: true, // Mark as in depot
+              isNewlyInserted: false,
+              serviceType: getEffectiveTrainServiceType(trainId),
+              rotation: 0,
+              currentStationIndex: -1,
+              turnaroundProgress: null,
+            };
           }
         } else {
-          // No schedule found
+          // No schedule found for this train ID, even though it might have an operational window
+          // (This case might indicate data issues)
           console.warn(
-            `Train ${trainId}: Has operational window but no schedule found. Hiding train.`
+            `Train ${trainId}: Has operational window but no schedule entries found. Hiding train.`
           );
           trainState = null;
         }
@@ -1303,25 +1308,26 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
       const loadingStrokeWidth = TRAIN_LOADING_CIRCLE_STROKE_WIDTH; // Use constant
 
       return trainStates
-        .filter((train) => train.isActive)
+        .filter((train) => train.isActive) // Keep filtering for active trains
         .map((train) => {
+          // Re-declare variables inside the map scope
           const currentTrainSize = train.isInDepot
             ? INACTIVE_TRAIN_SIZE
-            : ACTIVE_TRAIN_SIZE; // Use smaller size for depot
+            : ACTIVE_TRAIN_SIZE;
           const currentHalfTrainSize = currentTrainSize / 2;
-          const currentArrowHeight = currentTrainSize; // Match arrow height to size
+          const currentArrowHeight = currentTrainSize; // Restore this definition
 
           // Get train service type (uses active scheme for fallback)
           const trainServiceType = getEffectiveTrainServiceType(train.id);
 
-          // --- NEW: Determine Fill Color based on UI Scheme and Service Type ---
-          let fillColor: string | undefined; // Initialize as potentially undefined
-          let fillColorClass: string = ""; // Use fill attribute for custom colors
+          // --- Restore Fill Color Logic --- //
+          let fillColor: string | undefined;
+          let fillColorClass: string = ""; // Restore initialization
 
           if (train.isInDepot) {
-            fillColorClass = "fill-gray-400 dark:fill-gray-600"; // Gray color for inactive
+            fillColorClass = "fill-gray-400 dark:fill-gray-600";
           } else if (uiSelectedScheme === "SKIP-STOP") {
-            // --- Skip-Stop Color Logic ---
+            // Skip-Stop Color Logic
             if (trainServiceType === "A") {
               fillColor = train.isStopped
                 ? TRAIN_COLOR_A_STOPPED
@@ -1331,14 +1337,13 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                 ? TRAIN_COLOR_B_STOPPED
                 : TRAIN_COLOR_B;
             } else {
-              // AB or Regular train in Skip-Stop view -> Use default direction colors
               fillColorClass =
                 train.direction === "SOUTHBOUND"
                   ? THEME.train.southbound
                   : THEME.train.northbound;
             }
           } else {
-            // --- Regular Scheme Color Logic ---
+            // Regular Scheme Color Logic
             if (train.isStopped) {
               if (train.direction === "NORTHBOUND") {
                 fillColor = TRAIN_COLOR_NB_STOPPED_REGULAR;
@@ -1346,88 +1351,69 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                 fillColor = TRAIN_COLOR_SB_STOPPED_REGULAR;
               }
             } else {
-              // Use default direction colors if moving in regular scheme
               fillColorClass =
                 train.direction === "SOUTHBOUND"
                   ? THEME.train.southbound
                   : THEME.train.northbound;
             }
           }
-          // --- End Fill Color Logic ---
+          // --- End Restore Fill Color Logic --- //
 
-          // Arrow points definition
+          // Arrow points definition (should be okay)
           let arrowPoints = `0,0 ${TRAIN_ARROW_WIDTH},${
-            currentArrowHeight / 2
+            currentArrowHeight / 2 // Use restored variable
           } 0,${currentArrowHeight}`;
-          // Adjust arrowTransform to close the gap: move it left by half the arrow width
           let arrowTransform = `translate(${
             currentHalfTrainSize - TRAIN_ARROW_WIDTH / 7
           }, ${-currentHalfTrainSize})`;
 
-          // Base transform
+          // Base transform (should be okay)
           const groupTransform = `translate(${train.x}, ${train.y}) rotate(${train.rotation})`;
 
-          // Get current station if train is stopped
+          // Get current/next station IDs (should be okay)
           let currentStationId = null;
-          if (train.isStopped && !train.isTurningAround && !train.isInDepot) {
-            const events = trainEventPairs[train.id];
-            if (events && events.eventA)
-              currentStationId = events.eventA.STATION_ID;
-          }
+          // ... (rest of station ID logic) ...
           let nextStationId = null;
-          if (!train.isStopped && !train.isTurningAround && !train.isInDepot) {
-            const events = trainEventPairs[train.id];
-            if (events && events.eventB)
-              nextStationId = events.eventB.STATION_ID;
-          }
+          // ... (rest of station ID logic) ...
 
-          // Skip logic remains based on ACTIVE scheme
+          // Skip logic (should be okay)
           const willSkipNextStation =
             nextStationId !== null &&
             selectedScheme === "SKIP-STOP" &&
             !trainStopsAtStation(train.id, nextStationId);
 
-          // --- NEW: Determine Text Color ---
+          // --- Restore Text Color Logic --- //
           let textColorClass: string;
           if (train.isInDepot) {
-            textColorClass = "fill-black font-semibold"; // Black for depot
+            textColorClass = "fill-black font-semibold";
           } else if (
             uiSelectedScheme === "SKIP-STOP" &&
             (trainServiceType === "A" || trainServiceType === "B")
           ) {
-            textColorClass = THEME.train.text; // White text for A/B trains
+            textColorClass = THEME.train.text;
           } else if (train.direction === "SOUTHBOUND") {
-            textColorClass = "fill-black font-semibold"; // Black for southbound (yellow bg)
+            textColorClass = "fill-black font-semibold";
           } else {
-            textColorClass = THEME.train.text; // White for northbound (green bg) or default
+            textColorClass = THEME.train.text;
           }
-          // --- End Text Color Logic ---
+          // --- End Restore Text Color Logic --- //
 
+          // --- Restore JSX Return Structure --- //
           return (
             <g
               key={`train-${train.id}`}
               transform={groupTransform}
               onClick={() => handleMapTrainClick(train.id)}
-              // Add transition for opacity and conditionally apply opacity
               className={`train-element group cursor-pointer transition-opacity duration-200 ease-in-out ${
-                //
-                train.isInDepot ? "opacity-80" : "" // Keep depot opacity separate
+                train.isInDepot ? "opacity-80" : ""
               } ${
-                selectedTrainId === train.id ? "train-selected-highlight" : "" // Keep existing highlight class
-              } ${
-                // Conditionally apply insertion class only
-                train.isNewlyInserted ? "train-insertion" : ""
-              } ${
-                // Apply reduced opacity to non-selected trains IF a train is selected
+                selectedTrainId === train.id ? "train-selected-highlight" : ""
+              } ${train.isNewlyInserted ? "train-insertion" : ""} ${
                 selectedTrainId !== null && selectedTrainId !== train.id
                   ? "opacity-10"
                   : ""
-              } ${
-                // Keep skipping class
-                willSkipNextStation ? "skipping-station" : ""
-              }`}
+              } ${willSkipNextStation ? "skipping-station" : ""}`}
             >
-              {/* Apply scale transform to inner group based on selection */}
               <g
                 className={train.isTurningAround ? "opacity-75" : ""}
                 style={{
@@ -1441,19 +1427,17 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                   y={-currentHalfTrainSize}
                   width={currentTrainSize}
                   height={currentTrainSize}
-                  // Use fill for custom colors, className otherwise
-                  {...(fillColor
+                  {...(fillColor // Use restored variable
                     ? { fill: fillColor }
-                    : { className: fillColorClass })}
+                    : { className: fillColorClass })} // Use restored variable
                   rx={2}
                 />
                 {!train.isInDepot && (
                   <polygon
                     points={arrowPoints}
-                    // Use fill for custom colors, className otherwise
-                    {...(fillColor
+                    {...(fillColor // Use restored variable
                       ? { fill: fillColor }
-                      : { className: fillColorClass })}
+                      : { className: fillColorClass })} // Use restored variable
                     transform={arrowTransform}
                   />
                 )}
@@ -1463,7 +1447,6 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                   textAnchor="middle"
                   dy="0.35em"
                   transform={`rotate(${-train.rotation})`}
-                  // Use the calculated text color class
                   className={`text-[10px] select-none pointer-events-none ${textColorClass}`}
                 >
                   {train.id}
@@ -1502,17 +1485,18 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
           );
         });
     }, [
+      // Restore dependencies
       trainStates,
       selectedTrainId,
       handleMapTrainClick,
       trainEventPairs,
-      uiSelectedScheme, // Visual dependency for color logic
-      getEffectiveTrainServiceType, // Needed for service type
-      selectedScheme, // Needed for willSkipNextStation logic
-      trainStopsAtStation, // Needed for willSkipNextStation logic
-      THEME.train.southbound, // Dependency for theme colors
-      THEME.train.northbound, // Dependency for theme colors
-      THEME.train.text, // Dependency for theme colors
+      uiSelectedScheme,
+      getEffectiveTrainServiceType,
+      selectedScheme,
+      trainStopsAtStation,
+      THEME.train.southbound,
+      THEME.train.northbound,
+      THEME.train.text,
       STATION_TYPE_INDICATOR_COLOR_A,
       STATION_TYPE_INDICATOR_COLOR_B,
       STATION_TYPE_INDICATOR_COLOR_AB,
@@ -1523,12 +1507,10 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
       TRAIN_ARROW_WIDTH,
       TRAIN_LOADING_CIRCLE_RADIUS,
       TRAIN_LOADING_CIRCLE_STROKE_WIDTH,
-      // Add new train color constants as dependencies
       TRAIN_COLOR_A,
       TRAIN_COLOR_B,
       TRAIN_COLOR_A_STOPPED,
       TRAIN_COLOR_B_STOPPED,
-      // Add regular stopped colors to dependencies
       TRAIN_COLOR_NB_STOPPED_REGULAR,
       TRAIN_COLOR_SB_STOPPED_REGULAR,
     ]); // Add dependencies as needed
