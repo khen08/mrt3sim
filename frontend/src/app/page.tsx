@@ -22,6 +22,9 @@ import {
   IconClock,
   IconInfoCircle,
   IconTrash,
+  IconCalendarEvent,
+  IconRepeat,
+  IconClockHour4,
 } from "@tabler/icons-react";
 import CsvUpload from "@/components/CsvUpload";
 import MrtMap, { MrtMapHandle } from "@/components/MrtMap";
@@ -57,6 +60,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface PassengerDistribution {
   hour: string;
@@ -127,6 +136,8 @@ export default function Home() {
 
   const [simulationSettings, setSimulationSettings] =
     useState<SimulationSettings | null>(null);
+  const [activeSimulationSettings, setActiveSimulationSettings] =
+    useState<SimulationSettings | null>(null);
 
   const [simulationTime, setSimulationTime] = useState(PEAK_HOURS.AM.start);
   const [isSimulationRunning, setIsSimulationRunning] = useState(false);
@@ -165,65 +176,80 @@ export default function Home() {
 
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
 
+  const [simulatePassengers, setSimulatePassengers] = useState<boolean>(true);
+
   const mrtMapRef = useRef<MrtMapHandle>(null);
 
+  // State for debug visibility
+  const [showDebugInfo, setShowDebugInfo] = useState(false);
+  // State for additional sim info
+  const [loadedServicePeriod, setLoadedServicePeriod] = useState<string | null>(
+    null
+  );
+  const [loadedHeadway, setLoadedHeadway] = useState<number | null>(null);
+  const [loadedLoopTime, setLoadedLoopTime] = useState<number | null>(null);
+
+  const fetchDefaultSettings = async (): Promise<SimulationSettings | null> => {
+    try {
+      const response = await fetch(GET_DEFAULT_SETTINGS_ENDPOINT);
+      if (!response.ok) {
+        const errorData = await response
+          .json()
+          .catch(() => ({ error: `HTTP error ${response.status}` }));
+        throw new Error(
+          `API Error (${response.status}): ${
+            errorData?.error || response.statusText
+          }`
+        );
+      }
+      const defaults = await response.json();
+      const defaultSchemePattern = defaults.schemePattern;
+      const stationsWithScheme = defaults.stations.map(
+        (station: any, index: number) => ({
+          ...station,
+          scheme: defaultSchemePattern[index] || "AB",
+        })
+      );
+      return {
+        ...defaults,
+        schemePattern: defaultSchemePattern,
+        stations: stationsWithScheme,
+      };
+    } catch (error: any) {
+      console.error("Failed to fetch default settings:", error);
+      return null;
+    }
+  };
+
   useEffect(() => {
-    const fetchDefaults = async () => {
+    const initializeSettings = async () => {
       setIsLoading(true);
       setApiError(null);
-      try {
-        const response = await fetch(GET_DEFAULT_SETTINGS_ENDPOINT);
-        if (!response.ok) {
-          const errorData = await response
-            .json()
-            .catch(() => ({ error: `HTTP error ${response.status}` }));
-          throw new Error(
-            `API Error (${response.status}): ${
-              errorData?.error || response.statusText
-            }`
-          );
-        }
-        const defaults = await response.json();
-
-        const defaultSchemePattern = defaults.schemePattern;
-
-        const stationsWithScheme = defaults.stations.map(
-          (station: any, index: number) => ({
-            ...station,
-            scheme: defaultSchemePattern[index] || "AB",
-          })
-        );
-
-        setSimulationSettings({
-          ...defaults,
-          schemePattern: defaultSchemePattern,
-          stations: stationsWithScheme,
-        });
-
+      const defaults = await fetchDefaultSettings();
+      if (defaults) {
+        setSimulationSettings(defaults);
+        setActiveSimulationSettings(defaults);
         setSimulationInput((prev) => ({
           ...prev,
-          config: {
-            ...defaults,
-            schemePattern: defaultSchemePattern,
-            stations: stationsWithScheme,
-          },
+          config: defaults,
         }));
-      } catch (error: any) {
-        console.error("Failed to fetch default settings:", error);
-        setApiError(`Failed to load default settings: ${error.message}`);
+      } else {
         setSimulationSettings(null);
+        setActiveSimulationSettings(null);
         setSimulationInput((prev) => ({ ...prev, config: null }));
+        setApiError("Failed to load initial default settings.");
         toast({
           title: "Error Loading Settings",
-          description: `Failed to load default simulation settings: ${error.message}. Please try refreshing.`,
+          description:
+            "Failed to load default simulation settings. Please try refreshing.",
           variant: "destructive",
         });
-      } finally {
-        setIsLoading(false);
       }
+      setIsLoading(false);
     };
 
-    fetchDefaults();
+    initializeSettings();
+    handleFetchHistory();
   }, [toast]);
 
   useEffect(() => {
@@ -521,12 +547,39 @@ export default function Home() {
     []
   );
 
+  const handleSimulatePassengersToggle = useCallback(
+    (checked: boolean) => {
+      setSimulatePassengers(checked);
+      if (!checked) {
+        console.log("Passenger simulation disabled, clearing file selection.");
+        setUploadedFileObject(null);
+        setSimulationInput((prev) => ({ ...prev, filename: null }));
+        toast({
+          title: "Passenger Simulation Disabled",
+          description:
+            "Simulation will run without CSV data. File selection cleared.",
+          variant: "default",
+        });
+      } else {
+        toast({
+          title: "Passenger Simulation Enabled",
+          description:
+            "Please ensure a passenger data CSV is uploaded before running.",
+          variant: "default",
+        });
+      }
+    },
+    [toast]
+  );
+
   const handleRunSimulation = async () => {
-    if (!simulationInput.filename) {
-      setApiError("Please upload a passenger data CSV file first.");
+    if (simulatePassengers && !simulationInput.filename) {
+      setApiError(
+        "Passenger simulation is enabled, but no CSV file has been uploaded."
+      );
       toast({
         title: "Missing File",
-        description: "Please upload a CSV file first.",
+        description: "Please upload a CSV file when simulating passengers.",
         variant: "destructive",
       });
       return;
@@ -543,7 +596,6 @@ export default function Home() {
 
     setIsSimulating(true);
     setApiError(null);
-    setSimulationResult(null);
 
     if (!simulationSettings) {
       toast({
@@ -570,7 +622,7 @@ export default function Home() {
     const { stations, ...otherSettings } = simulationSettings;
 
     const payload = {
-      filename: simulationInput.filename,
+      filename: simulatePassengers ? simulationInput.filename : null,
       config: {
         ...otherSettings,
         stationNames: stationNames,
@@ -588,7 +640,7 @@ export default function Home() {
 
     toast({
       title: "Running Simulation",
-      description: "Generating timetable...",
+      description: "Generating new timetable...",
       variant: "default",
     });
 
@@ -613,92 +665,133 @@ export default function Home() {
       }
 
       const resultData = await response.json();
-
       const runDuration = resultData?.run_duration;
+      const newSimulationId = resultData?.simulation_id;
 
-      let timetableData;
+      if (!newSimulationId) {
+        throw new Error("API did not return a new simulation ID.");
+      }
 
-      if (resultData.simulation_id) {
+      let timetableData = null;
+      let fetchedMetadata = null;
+      const maxRetries = 5;
+      const retryDelay = 1500;
+
+      for (let i = 0; i < maxRetries; i++) {
+        console.log(
+          `Attempt ${i + 1} to fetch timetable for ID ${newSimulationId}...`
+        );
         try {
           const timetableResponse = await fetch(
-            GET_TIMETABLE_ENDPOINT(resultData.simulation_id),
+            GET_TIMETABLE_ENDPOINT(newSimulationId),
             {
               method: "GET",
-              headers: {
-                "Content-Type": "application/json",
-              },
+              headers: { "Content-Type": "application/json" },
             }
           );
 
           if (!timetableResponse.ok) {
+            if (
+              (timetableResponse.status === 404 ||
+                timetableResponse.status >= 500) &&
+              i < maxRetries - 1
+            ) {
+              console.log(
+                `Timetable not ready (Status ${timetableResponse.status}), retrying...`
+              );
+              await new Promise((resolve) =>
+                setTimeout(resolve, retryDelay * (i + 1))
+              );
+              continue;
+            }
             throw new Error(
               `Failed to fetch timetable: HTTP ${timetableResponse.status}`
             );
           }
 
-          timetableData = await timetableResponse.json();
-        } catch (timetableError: any) {
-          console.error("Error fetching timetable:", timetableError);
-          toast({
-            title: "Timetable Fetch Error",
-            description: `Simulation completed but couldn't fetch timetable: ${timetableError.message}`,
-            variant: "destructive",
-          });
-          timetableData = [];
+          const fetchedResult = await timetableResponse.json();
+
+          if (fetchedResult && Array.isArray(fetchedResult.timetable)) {
+            timetableData = fetchedResult.timetable;
+            fetchedMetadata = fetchedResult;
+            console.log(`Timetable fetched successfully on attempt ${i + 1}.`);
+            break;
+          } else {
+            if (i < maxRetries - 1) {
+              console.log("Timetable data structure invalid, retrying...");
+              await new Promise((resolve) =>
+                setTimeout(resolve, retryDelay * (i + 1))
+              );
+              continue;
+            } else {
+              throw new Error(
+                "Timetable data has invalid structure after multiple retries."
+              );
+            }
+          }
+        } catch (fetchError: any) {
+          console.error(
+            `Error fetching timetable (attempt ${i + 1}):`,
+            fetchError
+          );
+          if (i < maxRetries - 1) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, retryDelay * (i + 1))
+            );
+          } else {
+            throw fetchError;
+          }
         }
-      } else if (Array.isArray(resultData)) {
-        timetableData = resultData;
-      } else if (
-        resultData.message === "Simulation completed successfully." &&
-        resultData.simulation_id
-      ) {
-        timetableData = [];
-      } else {
-        console.warn("Unexpected response format:", resultData);
-        timetableData = [];
       }
 
-      if (Array.isArray(timetableData)) {
+      if (Array.isArray(timetableData) && fetchedMetadata) {
         setSimulationResult(timetableData);
+        setLoadedSimulationId(newSimulationId);
+        setActiveSimulationSettings(simulationSettings);
 
-        const defaultPeakStart = PEAK_HOURS.AM.start;
-        setSimulationTime(defaultPeakStart);
+        console.log("Fetched Metadata (Run Sim):", fetchedMetadata);
+
+        setLoadedServicePeriod(fetchedMetadata.service_period || null);
+        setLoadedHeadway(fetchedMetadata.headway || null);
+        setLoadedLoopTime(fetchedMetadata.loop_time || null);
+
+        setSimulationTime(PEAK_HOURS.AM.start);
         setIsSimulationRunning(false);
         setMapRefreshKey((prev) => prev + 1);
+        setSelectedStation(null);
+        setSelectedTrainId(null);
+        setSelectedTrainDetails(null);
+        setApiError(null);
 
         toast({
-          title: `Simulation Completed${
-            runDuration !== undefined ? ` in ${runDuration}s` : ""
+          title: `Simulation Completed (ID: ${newSimulationId}) ${
+            runDuration !== undefined ? ` in ${runDuration.toFixed(2)}s` : ""
           }.`,
           description: `Timetable generated successfully (${timetableData.length} entries)`,
           variant: "default",
         });
 
         handleFetchHistory();
-        setLoadedSimulationId(null);
       } else {
-        console.warn("No timetable data available yet:", timetableData);
-        setSimulationResult([]);
+        console.error("Failed to fetch timetable data after all retries.");
         setApiError(
-          "Simulation successful, but timetable data not available yet."
+          `Simulation run (ID: ${newSimulationId}) but failed to fetch timetable data.`
         );
-
+        setLoadedSimulationId(newSimulationId);
         toast({
-          title: "Simulation Complete (No Data)",
-          description:
-            "The simulation ran successfully but no timetable data is available yet.",
-          variant: "default",
+          title: "Simulation Complete (Timetable Failed)",
+          description: `The simulation (ID: ${newSimulationId}) ran but timetable data could not be retrieved after ${maxRetries} attempts.`,
+          variant: "destructive",
         });
+        handleFetchHistory();
       }
     } catch (error: any) {
-      console.error("Simulation API Failed:", error);
+      console.error("Simulation API or Timetable Fetch Failed:", error);
       setApiError(
         error.message || "An unknown error occurred during simulation."
       );
-      setSimulationResult(null);
-      setLoadedSimulationId(null);
       toast({
-        title: "Simulation API Error",
+        title: "Simulation Error",
         description: `Simulation failed: ${error.message}`,
         variant: "destructive",
       });
@@ -712,8 +805,6 @@ export default function Home() {
     setLoadedSimulationId(null);
     setIsClearConfirmOpen(false);
   }, [handleFileSelect]);
-
-  const showUploadView = !uploadedFileObject && !simulationResult;
 
   const handleSchemeChange = useCallback(
     (scheme: "REGULAR" | "SKIP-STOP") => {
@@ -801,28 +892,50 @@ export default function Home() {
       if (!timetableData || !Array.isArray(timetableData.timetable)) {
         throw new Error("Invalid timetable data received from server.");
       }
-      setSimulationResult(timetableData.timetable);
-      setLoadedSimulationId(simulationId);
-      setSimulationTime(PEAK_HOURS.AM.start);
-      setIsSimulationRunning(false);
-      setMapRefreshKey((prev) => prev + 1);
-      setSelectedStation(null);
-      setSelectedTrainId(null);
-      setSelectedTrainDetails(null);
-      setSimulationInput((prev) => ({ ...prev, filename: filename }));
 
-      toast({
-        title: "Simulation Loaded",
-        description: `Successfully loaded timetable for simulation ID ${simulationId}.`,
-        variant: "default",
-      });
+      const defaultSettings = await fetchDefaultSettings();
+
+      if (defaultSettings && Array.isArray(timetableData.timetable)) {
+        setSimulationResult(timetableData.timetable);
+        setLoadedSimulationId(simulationId);
+        setSimulationSettings(defaultSettings);
+        setActiveSimulationSettings(defaultSettings);
+
+        console.log("Fetched Timetable Data (Load Sim):", timetableData);
+
+        setLoadedServicePeriod(timetableData.service_period || null);
+        setLoadedHeadway(timetableData.headway || null);
+        setLoadedLoopTime(timetableData.loop_time || null);
+
+        setSimulationTime(PEAK_HOURS.AM.start);
+        setIsSimulationRunning(false);
+        setMapRefreshKey((prev) => prev + 1);
+        setSelectedStation(null);
+        setSelectedTrainId(null);
+        setSelectedTrainDetails(null);
+        setApiError(null);
+        setSimulationInput((prev) => ({
+          ...prev,
+          filename: filename,
+          config: defaultSettings,
+        }));
+
+        toast({
+          title: "Simulation Loaded",
+          description: `Successfully loaded timetable for simulation ID ${simulationId}. Settings reset to defaults.`,
+          variant: "default",
+        });
+      } else {
+        throw new Error(
+          "Failed to fetch default settings or timetable data structure was invalid after loading history."
+        );
+      }
     } catch (error: any) {
       console.error("Failed to load simulation:", error);
       setApiError(
         `Failed to load simulation ${simulationId}: ${error.message}`
       );
       setLoadedSimulationId(null);
-      setSimulationResult(null);
       toast({
         title: "Load Failed",
         description: `Could not load simulation ${simulationId}: ${error.message}`,
@@ -832,6 +945,15 @@ export default function Home() {
       setIsHistoryLoading(false);
     }
   };
+
+  // Handler for debug info toggle
+  const handleShowDebugInfoChange = (show: boolean) => {
+    setShowDebugInfo(show);
+  };
+
+  // Determine what to show in the main content area
+  const hasResults = !!simulationResult && simulationResult.length > 0;
+  const showInitialState = !hasResults; // Show initial state if no results are loaded
 
   return (
     <main className="flex h-screen bg-background relative overflow-hidden">
@@ -859,7 +981,7 @@ export default function Home() {
               )}
 
               <div className="mb-4 space-y-2">
-                {!showUploadView && (
+                {!showInitialState && (
                   <AlertDialog
                     open={isClearConfirmOpen}
                     onOpenChange={setIsClearConfirmOpen}
@@ -924,6 +1046,8 @@ export default function Home() {
                 hasSimulationData={
                   !!simulationResult && simulationResult.length > 0
                 }
+                simulatePassengers={simulatePassengers}
+                onSimulatePassengersToggle={handleSimulatePassengersToggle}
               />
 
               {apiError && !simulationSettings && (
@@ -948,7 +1072,7 @@ export default function Home() {
                 disabled={
                   isSimulating ||
                   !simulationSettings ||
-                  !simulationInput.filename
+                  (simulatePassengers && !simulationInput.filename)
                 }
                 className="w-full bg-mrt-blue hover:bg-blue-700 text-white h-12 text-lg font-semibold border-2 border-gray-300 dark:border-transparent shadow-md hover:shadow-lg"
               >
@@ -984,21 +1108,51 @@ export default function Home() {
       </button>
 
       <div className="flex-grow h-full flex flex-col p-4 overflow-y-auto transition-all duration-300 ease-in-out">
-        {showUploadView ? (
+        {showInitialState ? (
           <div className="flex-grow flex items-center justify-center">
-            <Card className="w-full max-w-lg">
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <IconUpload className="mr-2" /> Data Input
-                </CardTitle>
-                <CardDescription>
-                  Upload passenger flow data (CSV) to begin.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <CsvUpload onFileSelect={handleFileSelect} />
-              </CardContent>
-            </Card>
+            {simulatePassengers ? (
+              <Card className="w-full max-w-lg">
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <IconUpload className="mr-2" /> Passenger Data Input
+                  </CardTitle>
+                  <CardDescription>
+                    Upload passenger flow data (CSV) to simulate passenger flow.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <CsvUpload
+                    onFileSelect={handleFileSelect}
+                    initialFileName={simulationInput.filename}
+                  />
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="w-full max-w-lg bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800">
+                <CardHeader>
+                  <CardTitle className="flex items-center text-amber-800 dark:text-amber-200">
+                    <IconInfoCircle className="mr-2" /> Passenger Simulation
+                    Disabled
+                  </CardTitle>
+                  <CardDescription className="text-amber-700 dark:text-amber-300">
+                    The simulation will run based on train operational logic
+                    only. Passenger counts and demand will not be considered.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    You can enable passenger simulation in the{" "}
+                    <IconSettings size={14} className="inline-block -mt-1" />{" "}
+                    <span className="font-medium">Simulation Settings</span>{" "}
+                    panel if needed.
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Click <span className="font-medium">Run Simulation</span> to
+                    proceed.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </div>
         ) : (
           <div className="flex-1 flex flex-col space-y-4 overflow-hidden">
@@ -1028,10 +1182,17 @@ export default function Home() {
                       entry.SERVICE_TYPE === selectedScheme
                     );
                   })}
-                  stationConfigData={simulationSettings?.stations}
-                  turnaroundTime={simulationSettings?.turnaroundTime}
-                  maxCapacity={simulationSettings?.maxCapacity ?? 0}
-                  selectedScheme={selectedScheme}
+                  stationConfigData={activeSimulationSettings?.stations}
+                  turnaroundTime={activeSimulationSettings?.turnaroundTime}
+                  maxCapacity={activeSimulationSettings?.maxCapacity ?? 0}
+                  selectedScheme={
+                    activeSimulationSettings?.schemeType ?? "REGULAR"
+                  }
+                  uiSelectedScheme={selectedScheme}
+                  showDebugInfo={showDebugInfo}
+                  servicePeriod={loadedServicePeriod}
+                  headway={loadedHeadway}
+                  loopTime={loadedLoopTime}
                 />
               </div>
 
@@ -1095,6 +1256,8 @@ export default function Home() {
                 isFullDayView={isFullDayView}
                 selectedPeak={selectedPeak}
                 onPeakChange={setSelectedPeak}
+                showDebugInfo={showDebugInfo}
+                onShowDebugInfoChange={handleShowDebugInfoChange}
               />
             </div>
           </div>

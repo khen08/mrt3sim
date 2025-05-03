@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { IconSettings, IconClock } from "@tabler/icons-react";
+import { IconSettings, IconClock, IconInfoCircle } from "@tabler/icons-react";
 import {
   Tooltip,
   TooltipContent,
@@ -60,6 +60,8 @@ interface SimulationSettingsCardProps {
   onSkipStopToggle: (checked: boolean) => void;
   loadedSimulationId?: number | null;
   hasSimulationData: boolean;
+  simulatePassengers: boolean;
+  onSimulatePassengersToggle: (checked: boolean) => void;
 }
 
 const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
@@ -72,6 +74,8 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
   onSkipStopToggle,
   loadedSimulationId = null,
   hasSimulationData,
+  simulatePassengers,
+  onSimulatePassengersToggle,
 }: SimulationSettingsCardProps) => {
   if (!simulationSettings) {
     // Render nothing or a loading indicator if settings are not yet loaded
@@ -100,6 +104,39 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
             Loaded Simulation ID: <strong>{loadedSimulationId}</strong>
           </div>
         )}
+
+        {/* New Toggle */}
+        <div className="flex items-center space-x-2 p-3 border bg-muted/50 rounded-md">
+          <Checkbox
+            id="simulatePassengers"
+            checked={simulatePassengers}
+            onCheckedChange={onSimulatePassengersToggle}
+            disabled={isSimulating} // Disable while simulating
+          />
+          <label
+            htmlFor="simulatePassengers"
+            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+          >
+            Simulate Passenger Flow (Requires CSV)
+          </label>
+          <TooltipProvider delayDuration={100}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <IconInfoCircle
+                  size={16}
+                  className="text-muted-foreground ml-1 cursor-help"
+                />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="max-w-[250px]">
+                  If checked, requires a passenger data CSV. If unchecked, the
+                  simulation runs based on train operational logic only (no
+                  passenger boarding/alighting).
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
 
         <Tabs defaultValue="train" className="w-full">
           <TabsList className="grid w-full grid-cols-2 mb-4">

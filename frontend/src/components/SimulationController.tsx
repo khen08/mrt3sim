@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   IconPlayerPlay,
   IconPlayerPause,
@@ -47,6 +48,8 @@ interface SimulationControllerProps {
   isFullDayView: boolean;
   selectedPeak: PeakPeriod; // Receive selected peak from parent
   onPeakChange: (peak: PeakPeriod) => void; // Add prop for callback
+  showDebugInfo?: boolean; // <-- Add prop to receive state
+  onShowDebugInfoChange?: (show: boolean) => void; // <-- Add handler prop
 }
 
 type OperationalScheme = "Regular" | "Skip-Stop"; // Type for visual scheme
@@ -65,6 +68,9 @@ const SimulationController = ({
   isFullDayView,
   selectedPeak,
   onPeakChange,
+  // Default value
+  showDebugInfo = false,
+  onShowDebugInfoChange,
 }: SimulationControllerProps) => {
   const [isRunning, setIsRunning] = useState(false);
   const [visualScheme, setVisualScheme] =
@@ -311,6 +317,12 @@ const SimulationController = ({
     }
   };
 
+  const handleDebugToggle = (checked: boolean) => {
+    if (onShowDebugInfoChange) {
+      onShowDebugInfoChange(checked);
+    }
+  };
+
   return (
     <div className="bg-card rounded-lg border shadow-sm p-4">
       <div className="flex items-center justify-between mb-4">
@@ -452,6 +464,22 @@ const SimulationController = ({
               </Label>
             </div>
           </RadioGroup>
+        </div>
+
+        {/* NEW: Debug Info Toggle Checkbox */}
+        <div className="flex items-center ml-4">
+          <Checkbox
+            id="show-debug"
+            checked={showDebugInfo}
+            onCheckedChange={handleDebugToggle}
+            disabled={!hasTimetableData} // Disable if no data
+          />
+          <Label
+            htmlFor="show-debug"
+            className="text-xs font-medium text-muted-foreground cursor-pointer ml-1"
+          >
+            Show Debug Info
+          </Label>
         </div>
       </div>
 

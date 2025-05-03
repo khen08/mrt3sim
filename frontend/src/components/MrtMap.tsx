@@ -10,7 +10,15 @@ import {
   useImperativeHandle,
 } from "react";
 import * as React from "react";
-import { IconClock, IconEye, IconEyeOff, IconRoute } from "@tabler/icons-react";
+import {
+  IconClock,
+  IconEye,
+  IconEyeOff,
+  IconRoute,
+  IconCalendarEvent,
+  IconRepeat,
+  IconClockHour4,
+} from "@tabler/icons-react"; // Add new icons
 import { parseTime, formatTime } from "@/lib/timeUtils";
 import {
   HORIZONTAL_STATION_SPACING,
@@ -29,6 +37,36 @@ import {
   DEPOT_CENTER_Y,
   INACTIVE_TRAIN_SIZE,
   INACTIVE_TRAIN_SPACING,
+  STATION_TYPE_INDICATOR_Y_OFFSET,
+  STATION_TYPE_INDICATOR_HEIGHT,
+  STATION_TYPE_INDICATOR_PADDING_X,
+  STATION_TYPE_INDICATOR_X_OFFSET,
+  STATION_TYPE_INDICATOR_PADDING_Y,
+  STATION_TYPE_INDICATOR_COLOR_A,
+  STATION_TYPE_INDICATOR_COLOR_B,
+  STATION_TYPE_INDICATOR_COLOR_AB,
+  STATION_TYPE_INDICATOR_TEXT_COLOR_AB,
+  STATION_TYPE_INDICATOR_TEXT_COLOR_DEFAULT,
+  STATION_TYPE_INDICATOR_BORDER_COLOR_AB,
+  STATION_SKIP_HIGHLIGHT_OFFSET,
+  STATION_SKIP_HIGHLIGHT_STROKE_WIDTH,
+  STATION_SKIP_HIGHLIGHT_DASHARRAY,
+  ACTIVE_TRAIN_SIZE,
+  TRAIN_ARROW_WIDTH,
+  TRAIN_LOADING_CIRCLE_RADIUS,
+  TRAIN_LOADING_CIRCLE_STROKE_WIDTH,
+  TRAIN_STAGGER_Y_OFFSET,
+  TRAIN_HIGHLIGHT_FILTER_STD_DEVIATION,
+  TRAIN_HIGHLIGHT_FILTER_COLOR,
+  TRAIN_HIGHLIGHT_FILTER_OPACITY,
+  // Import new train colors
+  TRAIN_COLOR_A,
+  TRAIN_COLOR_B,
+  TRAIN_COLOR_A_STOPPED,
+  TRAIN_COLOR_B_STOPPED,
+  // Import new regular stopped colors
+  TRAIN_COLOR_NB_STOPPED_REGULAR,
+  TRAIN_COLOR_SB_STOPPED_REGULAR,
 } from "@/lib/constants"; // Import layout constants
 
 // Type for the raw station config data passed as a prop
@@ -122,7 +160,13 @@ interface MrtMapProps {
   simulationTimetable?: SimulationTimetableEntry[] | null;
   turnaroundTime?: number;
   maxCapacity?: number;
-  selectedScheme?: "REGULAR" | "SKIP-STOP";
+  selectedScheme?: "REGULAR" | "SKIP-STOP"; // Scheme used for data/map logic
+  uiSelectedScheme?: "REGULAR" | "SKIP-STOP"; // Scheme selected in UI (for legend)
+  showDebugInfo?: boolean; // <-- Add new prop
+  // Add new sim info props
+  servicePeriod?: string | null;
+  headway?: number | null;
+  loopTime?: number | null;
 }
 
 // --- Theme Colors (Reinstating) ---
@@ -254,7 +298,13 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
       simulationTimetable = null,
       turnaroundTime = 60,
       maxCapacity = 0,
-      selectedScheme,
+      selectedScheme, // This is from activeSimulationSettings now (for logic)
+      uiSelectedScheme, // <<< DESTRUCTURE NEW PROP (from page state for UI)
+      showDebugInfo = false, // <-- Add new prop
+      // Destructure new props with defaults
+      servicePeriod = null,
+      headway = null,
+      loopTime = null,
     },
     ref
   ) => {
@@ -445,7 +495,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
     }, [
       simulationTimetable,
       simulationTime,
-      selectedScheme,
+      selectedScheme, // Needs active scheme for logging condition
       hasLoggedRawData,
       hasLoggedNormalizedData,
     ]);
@@ -455,21 +505,25 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
       return direction === "SOUTHBOUND" ? TRACK.southboundY : TRACK.northboundY;
     };
 
-    // Function to get train service type
+    // Fallback service type generator needs the ACTIVE scheme
+    const getFallbackTrainServiceType = useCallback(
+      (trainId: number): string => {
+        if (selectedScheme !== "SKIP-STOP") return "AB"; // Check ACTIVE scheme
+        if (trainId % 2 === 1) return "A";
+        return "B";
+      },
+      [selectedScheme] // Depends on ACTIVE scheme
+    );
+
+    // Function to get train service type (needs simulationTimetable, trainEventPairs)
     const getTrainServiceType = useCallback(
       (trainId: number) => {
-        // Get from eventPairs if possible
-        const trainEvents = trainEventPairs[trainId];
+        const trainEvents = trainEventPairs?.[trainId];
         if (trainEvents && (trainEvents.eventA || trainEvents.eventB)) {
           const event = trainEvents.eventA || trainEvents.eventB;
-          if (event?.TRAIN_SERVICE_TYPE) {
-            return event.TRAIN_SERVICE_TYPE;
-          }
+          if (event?.TRAIN_SERVICE_TYPE) return event.TRAIN_SERVICE_TYPE;
         }
-
-        // Fallback: search through the entire timetable
         if (simulationTimetable) {
-          // Look through all entries for this train
           for (const entry of simulationTimetable) {
             const anyEntry = entry as any;
             if (
@@ -477,79 +531,60 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                 anyEntry["Train ID"] === trainId) &&
               anyEntry.TRAIN_SERVICE_TYPE
             ) {
-              // console.log(
-              //   `Found TRAIN_SERVICE_TYPE for train ${trainId} in timetable:`,
-              //   anyEntry.TRAIN_SERVICE_TYPE
-              // );
               return anyEntry.TRAIN_SERVICE_TYPE;
             }
           }
         }
-
-        // console.log(`No TRAIN_SERVICE_TYPE found for train ${trainId}`);
         return null;
       },
       [simulationTimetable, trainEventPairs]
     );
 
-    // When all else fails, assign service types by train ID as fallback
-    // This is used only if we can't get the data from backend
-    const getFallbackTrainServiceType = useCallback(
-      (trainId: number): string => {
-        if (selectedScheme !== "SKIP-STOP") return "AB";
-
-        // For demo purposes, Train 1, 3, 5, etc. are A trains
-        // Train 2, 4, 6, etc. are B trains
-        if (trainId % 2 === 1) return "A";
-        return "B";
-      },
-      [selectedScheme]
-    );
-
-    // Get train service type with fallback
+    // Ensure getEffectiveTrainServiceType is correctly defined and memoized if necessary
+    // It relies on selectedScheme (active scheme) for its fallback logic.
     const getEffectiveTrainServiceType = useCallback(
       (trainId: number): string => {
         const serviceType = getTrainServiceType(trainId);
         if (serviceType) {
           return serviceType;
         }
-        // Use fallback if no data from backend
         return getFallbackTrainServiceType(trainId);
       },
-      [getTrainServiceType, getFallbackTrainServiceType]
+      [getTrainServiceType, getFallbackTrainServiceType] // Removed selectedScheme dependency here, it's implicit via fallback
     );
 
-    // Function to determine if a train stops at a specific station in skip-stop mode
+    // --- NEW: trainStopsAtStation needs the ACTIVE scheme ---
+    // This function determines if a train *actually* stops based on simulation data.
+    // It should continue using `selectedScheme` (from active settings).
     const trainStopsAtStation = useCallback(
       (trainId: number, stationId: number): boolean => {
+        console.log(
+          `trainStopsAtStation - Train: ${trainId}, Station: ${stationId}, Active Scheme: ${selectedScheme}`
+        );
         const trainServiceType = getEffectiveTrainServiceType(trainId);
+        console.log(`  Train Service Type: ${trainServiceType}`);
+        const station = stations.find((s) => s.id === stationId);
+        const stationScheme = station?.scheme || "AB";
+        console.log(`  Station Scheme: ${stationScheme}`);
 
-        // If it's not skip-stop or service type isn't A or B, train stops at all stations
-        if (!trainServiceType || trainServiceType === "AB") return true;
+        // If it's not skip-stop (based on ACTIVE scheme) or service type isn't A or B, train stops at all stations
+        if (
+          selectedScheme !== "SKIP-STOP" ||
+          !trainServiceType ||
+          trainServiceType === "AB"
+        )
+          return true; // <<< CHECK selectedScheme (active)
 
-        // Get corresponding station scheme pattern
-        if (selectedScheme === "SKIP-STOP") {
-          // Find the station by ID
-          const station = stations.find((s) => s.id === stationId);
-
-          if (!station) return true; // If station not found, assume it stops there (safety)
-
-          // Get station scheme (default to "AB" if not specified)
-          const stationScheme = station.scheme || "AB";
-
-          // Determine if the train stops at this station based on actual schemes:
-          // - A trains stop at A and AB stations
-          // - B trains stop at B and AB stations
-          if (trainServiceType === "A") {
-            return stationScheme === "A" || stationScheme === "AB";
-          } else if (trainServiceType === "B") {
-            return stationScheme === "B" || stationScheme === "AB";
-          }
+        // Determine if the train stops based on actual schemes:
+        if (trainServiceType === "A") {
+          return stationScheme === "A" || stationScheme === "AB";
+        } else if (trainServiceType === "B") {
+          return stationScheme === "B" || stationScheme === "AB";
         }
 
-        return true; // Default behavior: train stops at all stations
+        return true; // Default behavior
       },
-      [stations, selectedScheme, getEffectiveTrainServiceType]
+      [stations, selectedScheme, getEffectiveTrainServiceType] // <<< DEPENDS ON selectedScheme (active)
     );
 
     // --- NEW: Handle Train Click on Map --- //
@@ -831,7 +866,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
             isTurningAround: false,
             isInDepot: true,
             isNewlyInserted: false,
-            serviceType: getEffectiveTrainServiceType(trainId),
+            serviceType: getEffectiveTrainServiceType(trainId), // Uses active scheme
             rotation: 0,
             currentStationIndex: -1,
             turnaroundProgress: null,
@@ -876,7 +911,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                   isTurningAround: false,
                   isInDepot: false,
                   isNewlyInserted: true,
-                  serviceType: getEffectiveTrainServiceType(trainId),
+                  serviceType: getEffectiveTrainServiceType(trainId), // Uses active scheme
                   rotation: 180,
                   currentStationIndex: -1,
                   turnaroundProgress: null,
@@ -939,7 +974,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
               isTurningAround: false,
               isInDepot: false,
               isNewlyInserted: false,
-              serviceType: getEffectiveTrainServiceType(trainId),
+              serviceType: getEffectiveTrainServiceType(trainId), // Uses active scheme
               rotation: eventA.DIRECTION === "NORTHBOUND" ? 180 : 0,
               currentStationIndex: stations.findIndex(
                 (s) => s.id === eventA.STATION_ID
@@ -978,7 +1013,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                 isTurningAround: true,
                 isInDepot: false,
                 isNewlyInserted: false,
-                serviceType: getEffectiveTrainServiceType(trainId),
+                serviceType: getEffectiveTrainServiceType(trainId), // Uses active scheme
                 rotation: eventB.DIRECTION === "NORTHBOUND" ? 180 : 0,
                 currentStationIndex: -1,
                 turnaroundProgress: progress,
@@ -1002,7 +1037,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                 isTurningAround: false,
                 isInDepot: false,
                 isNewlyInserted: false,
-                serviceType: getEffectiveTrainServiceType(trainId),
+                serviceType: getEffectiveTrainServiceType(trainId), // Uses active scheme
                 rotation: eventA.DIRECTION === "NORTHBOUND" ? 180 : 0,
                 currentStationIndex: -1,
                 turnaroundProgress: null,
@@ -1070,7 +1105,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
 
       // Apply offset to trains turning around at north terminus
       if (northTurningTrains.length > 1) {
-        const Y_OFFSET = 15; // Offset distance for staggered display
+        const Y_OFFSET = TRAIN_STAGGER_Y_OFFSET; // Use constant
         const sortedTrains = [...northTurningTrains].sort((a, b) => {
           const eventsA = trainEventPairs[a.id]?.eventA;
           const eventsB = trainEventPairs[b.id]?.eventA;
@@ -1090,7 +1125,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
 
       // Apply offset to trains turning around at south terminus
       if (southTurningTrains.length > 1) {
-        const Y_OFFSET = 15; // Offset distance for staggered display
+        const Y_OFFSET = TRAIN_STAGGER_Y_OFFSET; // Use constant
         const sortedTrains = [...southTurningTrains].sort((a, b) => {
           const eventsA = trainEventPairs[a.id]?.eventA;
           const eventsB = trainEventPairs[b.id]?.eventA;
@@ -1151,20 +1186,23 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
             : "None",
         "Turnaround Time": turnaroundTime,
       };
-      setDebugInfo(currentDebugInfo);
+      // Only update debug info if it's actually going to be shown
+      // or if its content changes (though conditional rendering handles showing/hiding)
+      if (JSON.stringify(currentDebugInfo) !== JSON.stringify(debugInfo)) {
+        setDebugInfo(currentDebugInfo);
+      }
     }, [
       simulationTimetable,
       simulationTime,
-      stationsById, // Added
-      stations, // Added
-      // trainEventPairs, // Potentially remove if not needed elsewhere
+      stationsById,
+      stations,
       turnaroundTime,
       centerStationX,
-      trainOperationalWindows, // Added
-      getEffectiveTrainServiceType, // Added
+      trainOperationalWindows,
+      getEffectiveTrainServiceType, // Depends on active scheme
     ]); // End useEffect
 
-    // Memoize station elements to prevent unnecessary re-renders
+    // Memoize station elements
     const stationElements = useMemo(() => {
       return stations.map((station) => {
         const isSelected = station.id === selectedStation;
@@ -1172,77 +1210,42 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
         const strokeWidth = isSelected
           ? SELECTED_STATION_STROKE_WIDTH
           : STATION_STROKE_WIDTH;
-
-        // Get station scheme (default to "AB" if not specified)
         const stationScheme = station.scheme || "AB";
 
-        // Determine station skipping highlights for the selected train
+        // --- Corrected Skip Highlight Logic ---
         let stationSkipHighlight = null;
-        if (selectedTrainId && selectedScheme === "SKIP-STOP") {
-          const willTrainStop = trainStopsAtStation(
-            selectedTrainId,
-            station.id
-          );
+        // Check if skip-stop view is active in the UI and a train is selected
+        if (selectedTrainId && uiSelectedScheme === "SKIP-STOP") {
+          const trainServiceType =
+            getEffectiveTrainServiceType(selectedTrainId); // Get selected train's type (A/B/AB)
 
-          if (!willTrainStop) {
-            // Add a visual indicator that this station will be skipped by the selected train
+          let willTrainStopHypothetically = true; // Assume stops by default
+
+          // Apply skip-stop rules directly based on train and station types
+          if (trainServiceType === "A") {
+            willTrainStopHypothetically =
+              stationScheme === "A" || stationScheme === "AB";
+          } else if (trainServiceType === "B") {
+            willTrainStopHypothetically =
+              stationScheme === "B" || stationScheme === "AB";
+          }
+          // If trainServiceType is 'AB' or null/undefined, willTrainStopHypothetically remains true
+
+          // Render the highlight ONLY if the rules indicate a skip
+          if (!willTrainStopHypothetically) {
             stationSkipHighlight = (
               <circle
                 cx={0}
                 cy={0}
-                r={radius + 8}
+                r={radius + STATION_SKIP_HIGHLIGHT_OFFSET} // Use constant
                 className="fill-none stroke-red-500/50 dark:stroke-red-400/50"
-                strokeWidth={1.5}
-                strokeDasharray="4,4"
+                strokeWidth={STATION_SKIP_HIGHLIGHT_STROKE_WIDTH} // Use constant
+                strokeDasharray={STATION_SKIP_HIGHLIGHT_DASHARRAY} // Use constant
               />
             );
           }
         }
-
-        // Create station type indicator for skip-stop scheme
-        const stationTypeIndicator = selectedScheme === "SKIP-STOP" && (
-          <g className="station-type-indicator">
-            {stationScheme === "A" && (
-              <rect
-                x={-radius - 6}
-                y={-radius - 14}
-                width={radius * 2 + 12}
-                height={8}
-                rx={2}
-                className="fill-purple-600 dark:fill-purple-500"
-              />
-            )}
-            {stationScheme === "B" && (
-              <rect
-                x={-radius - 6}
-                y={-radius - 14}
-                width={radius * 2 + 12}
-                height={8}
-                rx={2}
-                className="fill-orange-500 dark:fill-orange-400"
-              />
-            )}
-            {stationScheme === "AB" && (
-              <rect
-                x={-radius - 6}
-                y={-radius - 14}
-                width={radius * 2 + 12}
-                height={8}
-                rx={2}
-                className="fill-gray-700 dark:fill-gray-200"
-              />
-            )}
-            <text
-              x={0}
-              y={-radius - 9}
-              textAnchor="middle"
-              dy=".3em"
-              className="text-[8px] font-semibold fill-white dark:fill-gray-900"
-            >
-              {stationScheme}
-            </text>
-          </g>
-        );
+        // --- End Corrected Skip Highlight Logic ---
 
         return (
           <g
@@ -1254,18 +1257,6 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
             })`}
           >
             {stationSkipHighlight}
-            {stationTypeIndicator}
-            <circle
-              cx={0}
-              cy={0}
-              r={radius + 5}
-              className={`fill-transparent transition-all duration-200 ease-in-out ${
-                isSelected
-                  ? THEME.station.selectedRing
-                  : `opacity-0 group-hover:opacity-100 ${THEME.station.hoverRing}`
-              }`}
-              strokeWidth={2.5}
-            />
             <circle
               cx={0}
               cy={0}
@@ -1296,129 +1287,173 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
       selectedStation,
       onStationClick,
       selectedTrainId,
-      selectedScheme,
-      trainStopsAtStation,
+      uiSelectedScheme, // Visual dependency for both indicator and highlight visibility
+      getEffectiveTrainServiceType, // Needed to determine train type for highlight logic
     ]);
 
     // Memoize train elements with new design
     const trainElements = useMemo(() => {
-      const trainSize = 18; // Size of the square
-      const halfTrainSize = trainSize / 2;
-      const arrowWidth = 6;
-      const arrowHeight = trainSize; // Arrow height matches square
+      // Use ACTIVE_TRAIN_SIZE
+      const halfTrainSize = ACTIVE_TRAIN_SIZE / 2;
+      const arrowHeight = ACTIVE_TRAIN_SIZE;
 
       // Loading circle properties
-      const loadingRadius = 12;
+      const loadingRadius = TRAIN_LOADING_CIRCLE_RADIUS; // Use constant
       const loadingCircumference = 2 * Math.PI * loadingRadius;
-      const loadingStrokeWidth = 2.5;
+      const loadingStrokeWidth = TRAIN_LOADING_CIRCLE_STROKE_WIDTH; // Use constant
 
       return trainStates
         .filter((train) => train.isActive)
         .map((train) => {
-          const trainSize = train.isInDepot ? INACTIVE_TRAIN_SIZE : 18; // Use smaller size for depot
-          const halfTrainSize = trainSize / 2;
-          const arrowWidth = 6;
-          const arrowHeight = trainSize;
+          const currentTrainSize = train.isInDepot
+            ? INACTIVE_TRAIN_SIZE
+            : ACTIVE_TRAIN_SIZE; // Use smaller size for depot
+          const currentHalfTrainSize = currentTrainSize / 2;
+          const currentArrowHeight = currentTrainSize; // Match arrow height to size
 
-          // Determine fill color - Use gray if in depot
-          const fillColorClass = train.isInDepot
-            ? "fill-gray-400 dark:fill-gray-600" // Gray color for inactive
-            : train.direction === "SOUTHBOUND"
-            ? THEME.train.southbound
-            : THEME.train.northbound;
-
-          // Get train service type for visual indicator
+          // Get train service type (uses active scheme for fallback)
           const trainServiceType = getEffectiveTrainServiceType(train.id);
-          const isSkipStopTrain =
-            selectedScheme === "SKIP-STOP" &&
-            trainServiceType &&
-            trainServiceType !== "AB";
 
-          // Arrow points definition (base orientation, points right = 0 degrees)
-          let arrowPoints = `0,0 ${arrowWidth},${
-            arrowHeight / 2
-          } 0,${arrowHeight}`;
-          // Position arrow relative to center square, pointing right initially
-          let arrowTransform = `translate(${halfTrainSize}, ${-halfTrainSize})`;
+          // --- NEW: Determine Fill Color based on UI Scheme and Service Type ---
+          let fillColor: string | undefined; // Initialize as potentially undefined
+          let fillColorClass: string = ""; // Use fill attribute for custom colors
 
-          // Base transform: Translate to train's x,y and apply fixed rotation based on direction
-          // NO transitions here for instant teleportation
+          if (train.isInDepot) {
+            fillColorClass = "fill-gray-400 dark:fill-gray-600"; // Gray color for inactive
+          } else if (uiSelectedScheme === "SKIP-STOP") {
+            // --- Skip-Stop Color Logic ---
+            if (trainServiceType === "A") {
+              fillColor = train.isStopped
+                ? TRAIN_COLOR_A_STOPPED
+                : TRAIN_COLOR_A;
+            } else if (trainServiceType === "B") {
+              fillColor = train.isStopped
+                ? TRAIN_COLOR_B_STOPPED
+                : TRAIN_COLOR_B;
+            } else {
+              // AB or Regular train in Skip-Stop view -> Use default direction colors
+              fillColorClass =
+                train.direction === "SOUTHBOUND"
+                  ? THEME.train.southbound
+                  : THEME.train.northbound;
+            }
+          } else {
+            // --- Regular Scheme Color Logic ---
+            if (train.isStopped) {
+              if (train.direction === "NORTHBOUND") {
+                fillColor = TRAIN_COLOR_NB_STOPPED_REGULAR;
+              } else {
+                fillColor = TRAIN_COLOR_SB_STOPPED_REGULAR;
+              }
+            } else {
+              // Use default direction colors if moving in regular scheme
+              fillColorClass =
+                train.direction === "SOUTHBOUND"
+                  ? THEME.train.southbound
+                  : THEME.train.northbound;
+            }
+          }
+          // --- End Fill Color Logic ---
+
+          // Arrow points definition
+          let arrowPoints = `0,0 ${TRAIN_ARROW_WIDTH},${
+            currentArrowHeight / 2
+          } 0,${currentArrowHeight}`;
+          // Adjust arrowTransform to close the gap: move it left by half the arrow width
+          let arrowTransform = `translate(${
+            currentHalfTrainSize - TRAIN_ARROW_WIDTH / 7
+          }, ${-currentHalfTrainSize})`;
+
+          // Base transform
           const groupTransform = `translate(${train.x}, ${train.y}) rotate(${train.rotation})`;
 
           // Get current station if train is stopped
           let currentStationId = null;
           if (train.isStopped && !train.isTurningAround && !train.isInDepot) {
-            // Get the eventA (current station) from the train event pairs
             const events = trainEventPairs[train.id];
-            if (events && events.eventA) {
+            if (events && events.eventA)
               currentStationId = events.eventA.STATION_ID;
-            }
           }
-
-          // Get information about next station for in-transit trains
           let nextStationId = null;
           if (!train.isStopped && !train.isTurningAround && !train.isInDepot) {
-            // Get the eventB (next station) from the train event pairs
             const events = trainEventPairs[train.id];
-            if (events && events.eventB) {
+            if (events && events.eventB)
               nextStationId = events.eventB.STATION_ID;
-            }
           }
 
-          // Check if the train is approaching a station it will skip
+          // Skip logic remains based on ACTIVE scheme
           const willSkipNextStation =
             nextStationId !== null &&
             selectedScheme === "SKIP-STOP" &&
             !trainStopsAtStation(train.id, nextStationId);
 
-          // Debug logging for skip-stop trains
-          if (
-            (selectedScheme === "SKIP-STOP" && train.id === 1) ||
-            train.id === 2
+          // --- NEW: Determine Text Color ---
+          let textColorClass: string;
+          if (train.isInDepot) {
+            textColorClass = "fill-black font-semibold"; // Black for depot
+          } else if (
+            uiSelectedScheme === "SKIP-STOP" &&
+            (trainServiceType === "A" || trainServiceType === "B")
           ) {
-            // console.log(
-            //   `Train ${train.id} display: ServiceType=${trainServiceType}, isSkipStopTrain=${isSkipStopTrain}`
-            // );
+            textColorClass = THEME.train.text; // White text for A/B trains
+          } else if (train.direction === "SOUTHBOUND") {
+            textColorClass = "fill-black font-semibold"; // Black for southbound (yellow bg)
+          } else {
+            textColorClass = THEME.train.text; // White for northbound (green bg) or default
           }
+          // --- End Text Color Logic ---
 
           return (
             <g
               key={`train-${train.id}`}
               transform={groupTransform}
               onClick={() => handleMapTrainClick(train.id)}
-              className={`train-element group cursor-pointer transition-transform duration-200 ease-in-out ${
-                train.isInDepot ? "opacity-80" : ""
+              // Add transition for opacity and conditionally apply opacity
+              className={`train-element group cursor-pointer transition-opacity duration-200 ease-in-out ${
+                //
+                train.isInDepot ? "opacity-80" : "" // Keep depot opacity separate
               } ${
-                selectedTrainId === train.id ? "train-selected-highlight" : ""
+                selectedTrainId === train.id ? "train-selected-highlight" : "" // Keep existing highlight class
               } ${
-                train.isNewlyInserted
-                  ? "train-insertion"
-                  : !train.isInDepot && !train.isTurningAround
-                  ? train.isStopped
-                    ? "train-at-station"
-                    : "train-in-transit"
+                // Conditionally apply insertion class only
+                train.isNewlyInserted ? "train-insertion" : ""
+              } ${
+                // Apply reduced opacity to non-selected trains IF a train is selected
+                selectedTrainId !== null && selectedTrainId !== train.id
+                  ? "opacity-10"
                   : ""
-              } ${willSkipNextStation ? "skipping-station" : ""}`}
+              } ${
+                // Keep skipping class
+                willSkipNextStation ? "skipping-station" : ""
+              }`}
             >
-              {/* Standard Train Visual (Square + Arrow + Text) */}
-              {/* Apply slight opacity reduction if turning around, but not full hiding */}
-              <g className={train.isTurningAround ? "opacity-75" : ""}>
+              {/* Apply scale transform to inner group based on selection */}
+              <g
+                className={train.isTurningAround ? "opacity-75" : ""}
+                style={{
+                  transform:
+                    selectedTrainId === train.id ? "scale(1.2)" : "scale(1)",
+                  transition: "transform 0.2s ease-in-out",
+                }}
+              >
                 <rect
-                  x={-halfTrainSize}
-                  y={-halfTrainSize}
-                  width={trainSize}
-                  height={trainSize}
-                  className={fillColorClass} // Use the derived fill class
-                  rx={2} // Slightly rounded corners
-                  strokeWidth={isSkipStopTrain ? 1.5 : 0} // Add stroke for skip-stop trains
-                  stroke={isSkipStopTrain ? "white" : "none"}
-                  strokeDasharray={trainServiceType === "A" ? "3,1.5" : "none"} // Dashed border for A-trains
+                  x={-currentHalfTrainSize}
+                  y={-currentHalfTrainSize}
+                  width={currentTrainSize}
+                  height={currentTrainSize}
+                  // Use fill for custom colors, className otherwise
+                  {...(fillColor
+                    ? { fill: fillColor }
+                    : { className: fillColorClass })}
+                  rx={2}
                 />
-                {/* Hide arrow if in depot */}
                 {!train.isInDepot && (
                   <polygon
                     points={arrowPoints}
-                    className={fillColorClass} // Use the derived fill class
+                    // Use fill for custom colors, className otherwise
+                    {...(fillColor
+                      ? { fill: fillColor }
+                      : { className: fillColorClass })}
                     transform={arrowTransform}
                   />
                 )}
@@ -1427,24 +1462,17 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                   y={0}
                   textAnchor="middle"
                   dy="0.35em"
-                  // Counter-rotate text so it's always upright relative to the map
                   transform={`rotate(${-train.rotation})`}
-                  className={`text-[10px] select-none pointer-events-none ${
-                    train.isInDepot
-                      ? "fill-black font-semibold" // Black text for depot trains
-                      : train.direction === "SOUTHBOUND"
-                      ? "fill-black font-semibold" // Existing black for southbound
-                      : THEME.train.text // White for northbound active trains
-                  }`}
+                  // Use the calculated text color class
+                  className={`text-[10px] select-none pointer-events-none ${textColorClass}`}
                 >
                   {train.id}
                 </text>
               </g>
 
-              {/* Loading Circle (Rendered only during turnaround visual phase) */}
+              {/* Loading Circle */}
               {train.isTurningAround && train.turnaroundProgress !== null && (
                 <g className="loading-circle">
-                  {/* Background Circle */}
                   <circle
                     cx="0"
                     cy="0"
@@ -1454,7 +1482,6 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                     opacity={selectedTrainId === train.id ? 0.3 : 0.2}
                     strokeWidth={loadingStrokeWidth}
                   />
-                  {/* Progress Circle */}
                   <circle
                     cx="0"
                     cy="0"
@@ -1479,9 +1506,34 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
       selectedTrainId,
       handleMapTrainClick,
       trainEventPairs,
-      selectedScheme,
-    ]);
+      uiSelectedScheme, // Visual dependency for color logic
+      getEffectiveTrainServiceType, // Needed for service type
+      selectedScheme, // Needed for willSkipNextStation logic
+      trainStopsAtStation, // Needed for willSkipNextStation logic
+      THEME.train.southbound, // Dependency for theme colors
+      THEME.train.northbound, // Dependency for theme colors
+      THEME.train.text, // Dependency for theme colors
+      STATION_TYPE_INDICATOR_COLOR_A,
+      STATION_TYPE_INDICATOR_COLOR_B,
+      STATION_TYPE_INDICATOR_COLOR_AB,
+      STATION_TYPE_INDICATOR_TEXT_COLOR_AB,
+      STATION_TYPE_INDICATOR_TEXT_COLOR_DEFAULT,
+      STATION_TYPE_INDICATOR_BORDER_COLOR_AB,
+      ACTIVE_TRAIN_SIZE,
+      TRAIN_ARROW_WIDTH,
+      TRAIN_LOADING_CIRCLE_RADIUS,
+      TRAIN_LOADING_CIRCLE_STROKE_WIDTH,
+      // Add new train color constants as dependencies
+      TRAIN_COLOR_A,
+      TRAIN_COLOR_B,
+      TRAIN_COLOR_A_STOPPED,
+      TRAIN_COLOR_B_STOPPED,
+      // Add regular stopped colors to dependencies
+      TRAIN_COLOR_NB_STOPPED_REGULAR,
+      TRAIN_COLOR_SB_STOPPED_REGULAR,
+    ]); // Add dependencies as needed
 
+    // Memoize station labels
     const stationLabelElements = useMemo(() => {
       return stations.map((station) => {
         const isSelected = selectedStation === station.id;
@@ -1506,6 +1558,78 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
       });
     }, [stations, selectedStation]);
 
+    // --- NEW: Memoize station type indicators (positioned below labels) ---
+    const stationTypeIndicatorElements = useMemo(() => {
+      if (uiSelectedScheme !== "SKIP-STOP") return null; // Only show for skip-stop UI
+
+      return stations.map((station) => {
+        const stationScheme = station.scheme || "AB";
+        // Remove the line below to show AB indicators
+        // if (stationScheme === "AB") return null;
+
+        const labelX =
+          station.x + STATION_VISUAL_X_OFFSET + STATION_TYPE_INDICATOR_X_OFFSET; // Apply X offset constant
+        const labelY =
+          TRACK.stationCenterY +
+          LABEL_Y_OFFSET +
+          STATION_TYPE_INDICATOR_Y_OFFSET; // Apply Y offset constant
+        const indicatorColor =
+          stationScheme === "A"
+            ? STATION_TYPE_INDICATOR_COLOR_A // Use constant
+            : stationScheme === "B"
+            ? STATION_TYPE_INDICATOR_COLOR_B // Use constant
+            : STATION_TYPE_INDICATOR_COLOR_AB; // Use constant
+
+        // Determine text color based on background
+        const textColor =
+          stationScheme === "AB"
+            ? STATION_TYPE_INDICATOR_TEXT_COLOR_AB // Use constant
+            : // Use default for both A and B now as both backgrounds are dark enough for white text
+              STATION_TYPE_INDICATOR_TEXT_COLOR_DEFAULT;
+
+        // Calculate width based on text ("A", "B", or "AB")
+        const textWidth = stationScheme === "AB" ? 12 : 8; // Estimate width
+        const indicatorWidth = textWidth + STATION_TYPE_INDICATOR_PADDING_X * 2; // Use constant
+
+        return (
+          <g
+            key={`type-indicator-${station.id}`}
+            transform={`translate(${labelX}, ${labelY}) rotate(-45)`}
+          >
+            <rect
+              x={-indicatorWidth / 2}
+              y={-STATION_TYPE_INDICATOR_HEIGHT / 2 - 1} // Use constant
+              width={indicatorWidth}
+              // Apply vertical padding to the height
+              height={
+                STATION_TYPE_INDICATOR_HEIGHT +
+                STATION_TYPE_INDICATOR_PADDING_Y * 2
+              } // Use constants
+              rx={2}
+              fill={indicatorColor}
+              // Add a subtle border for the white AB pill
+              stroke={
+                stationScheme === "AB"
+                  ? STATION_TYPE_INDICATOR_BORDER_COLOR_AB
+                  : "none"
+              } // Use constant
+              strokeWidth={0.5}
+            />
+            <text
+              x={0}
+              y={0}
+              textAnchor="middle"
+              dy=".3em"
+              // Use calculated text color
+              className={`text-[8px] font-semibold fill-[${textColor}]`}
+            >
+              {stationScheme}
+            </text>
+          </g>
+        );
+      });
+    }, [stations, uiSelectedScheme]); // Depends on UI scheme selection
+
     // Expose the train states, events, and stations to parent component
     useImperativeHandle(ref, () => ({
       getTrainEventPairs: () => trainEventPairs,
@@ -1522,35 +1646,13 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
             filter: url(#train-highlight);
             opacity: 1 !important; /* Ensure selected is fully opaque */
           }
-          
+
           @keyframes pulse-outline {
             0% { filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.5)); }
             50% { filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.9)); }
             100% { filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.5)); }
           }
-          
-          @keyframes pulse-transit {
-            0% { filter: drop-shadow(0 0 3px rgba(50, 74, 157, 0.6)); }
-            50% { filter: drop-shadow(0 0 10px rgba(50, 74, 157, 0.9)); }
-            100% { filter: drop-shadow(0 0 3px rgba(50, 74, 157, 0.6)); }
-          }
-          
-          .train-insertion {
-            animation: pulse-outline 1.2s infinite;
-          }
-          
-          .train-in-transit {
-            animation: pulse-transit 1.5s infinite;
-          }
-          
-          .train-at-station {
-            filter: drop-shadow(0 0 8px rgba(197, 33, 39, 0.8));
-          }
 
-          .skipping-station {
-            animation: pulse-skipping 1.5s infinite alternate;
-          }
-          
           @keyframes pulse-skipping {
             0% {
               filter: none;
@@ -1559,117 +1661,238 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
               filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.7));
             }
           }
-          
+
           /* Station type indicator animations */
           .station-type-indicator {
             transition: transform 0.2s ease-in-out;
           }
-          
+
           g:hover .station-type-indicator {
             transform: translateY(-3px);
+          }
+
+          .train-insertion {
+            animation: pulse-outline 1.2s infinite;
+          }
+
+          .skipping-station {
+            animation: pulse-skipping 1.5s infinite alternate;
           }
         `}
         </style>
         <div
           className={`relative w-full h-full overflow-hidden ${THEME.background}`}
         >
-          {/* Clock Icon for Current Time */}
+          {/* Sim Time & Metadata Display */}
           <div
-            className={`absolute top-2 right-2 bg-card/90 dark:bg-card/90 p-1.5 rounded-full shadow-md text-card-foreground z-20 flex items-center gap-1.5`}
+            className={`absolute top-2 right-2 bg-card/90 dark:bg-card/90 p-2 rounded-lg shadow-md text-card-foreground z-20 flex flex-col items-end gap-0.5 text-xs`} // Adjusted padding/gap
           >
-            <IconClock className="w-4 h-4" />
-            <span className="font-mono">{simulationTime}</span>
-          </div>
-
-          {/* Visualization Control Buttons */}
-
-          {/* Debug Info Overlay */}
-          <div
-            className={`absolute top-2 left-2 bg-card/80 dark:bg-card/80 p-2 rounded shadow text-xs font-mono z-20 max-w-xs text-card-foreground`}
-          >
-            <h4 className="font-bold mb-1">Debug Info</h4>
-            <ul>
-              {Object.entries(debugInfo).map(([key, value]) => (
-                <li
-                  key={key}
-                  className="whitespace-nowrap overflow-hidden text-ellipsis"
-                >
-                  <span className="font-semibold">{key}:</span>{" "}
-                  {JSON.stringify(value)}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Legend - conditionally show sections based on visibility */}
-          <div
-            className={`absolute bottom-2 right-2 p-2 rounded shadow text-xs z-10 flex flex-col space-y-2 ${THEME.legend}`}
-          >
-            <div className="flex space-x-4">
-              <div className="flex items-center">
-                {/* Use dedicated legend indicator theme color and increase height */}
-                <div
-                  className={`w-4 h-2 mr-2 rounded-sm ${THEME.legendIndicator.southbound}`}
-                ></div>
-                {/* Use HTML text theme color */}
-                <span className={THEME.textHtmlPrimary}>Southbound</span>
-              </div>
-              <div className="flex items-center">
-                {/* Use dedicated legend indicator theme color and increase height */}
-                <div
-                  className={`w-4 h-2 mr-2 rounded-sm ${THEME.legendIndicator.northbound}`}
-                ></div>
-                {/* Use HTML text theme color */}
-                <span className={THEME.textHtmlPrimary}>Northbound</span>
-              </div>
+            {/* Current Time */}
+            <div className="flex items-center gap-1.5 font-mono text-sm mb-0.5">
+              {" "}
+              {/* Larger time */}
+              <IconClock className="w-4 h-4" />
+              <span>{simulationTime}</span>
             </div>
-
-            {/* Skip-stop legend - only show when SKIP-STOP scheme is selected */}
-            {selectedScheme === "SKIP-STOP" && (
-              <div className="flex flex-col space-y-2 mt-1 pt-1 border-t border-gray-200 dark:border-gray-700">
-                <div className="text-xs font-medium mb-1">
-                  Skip-Stop Trains:
-                </div>
-                <div className="flex space-x-4">
-                  <div className="flex items-center">
-                    <div className="w-5 h-5 mr-2 border border-black dark:border-white rounded-sm bg-yellow-500/70"></div>
-                    <span className={THEME.textHtmlPrimary}>A-Train</span>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="w-5 h-5 mr-2 border border-black dark:border-white rounded-sm bg-green-500/70"></div>
-                    <span className={THEME.textHtmlPrimary}>B-Train</span>
-                  </div>
-                </div>
-
-                {/* Add explanation for skipped stations with dashed circles */}
-                <div className="flex items-center mt-1">
-                  <div className="w-5 h-5 mr-2 border border-black dark:border-white border-dashed rounded-full bg-transparent"></div>
-                  <span className={THEME.textHtmlPrimary}>
-                    Skipped Stations
-                  </span>
-                </div>
-
-                {/* Station type legend */}
-                <div className="text-xs font-medium mt-1 mb-1">
-                  Station Types:
-                </div>
-                <div className="flex space-x-4">
-                  <div className="flex items-center">
-                    <div className="w-6 h-3 mr-2 rounded-sm bg-purple-600 dark:bg-purple-500"></div>
-                    <span className={THEME.textHtmlPrimary}>A Stations</span>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="w-6 h-3 mr-2 rounded-sm bg-orange-500 dark:bg-orange-400"></div>
-                    <span className={THEME.textHtmlPrimary}>B Stations</span>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="w-6 h-3 mr-2 rounded-sm bg-gray-700 dark:bg-gray-200"></div>
-                    <span className={THEME.textHtmlPrimary}>AB Stations</span>
-                  </div>
-                </div>
+            {/* Service Period */}
+            {servicePeriod && (
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <IconCalendarEvent className="w-3.5 h-3.5" />
+                <span>{servicePeriod}</span>
+              </div>
+            )}
+            {/* Headway */}
+            {headway !== null && headway !== undefined && (
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <IconClockHour4 className="w-3.5 h-3.5" />
+                <span>Headway: {headway} min</span>
+              </div>
+            )}
+            {/* Loop Time */}
+            {loopTime !== null && loopTime !== undefined && (
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <IconRepeat className="w-3.5 h-3.5" />
+                <span>Loop Time: {loopTime} min</span>
               </div>
             )}
           </div>
+
+          {/* Debug Info Overlay - Conditionally render */}
+          {showDebugInfo && (
+            <div
+              className={`absolute top-2 left-2 bg-card/80 dark:bg-card/80 p-2 rounded shadow text-xs font-mono z-20 max-w-xs text-card-foreground`}
+            >
+              <h4 className="font-bold mb-1">Debug Info</h4>
+              <ul>
+                {Object.entries(debugInfo).map(([key, value]) => (
+                  <li
+                    key={key}
+                    className="whitespace-nowrap overflow-hidden text-ellipsis"
+                  >
+                    <span className="font-semibold">{key}:</span>{" "}
+                    {JSON.stringify(value)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Legend - Conditionally show sections based on visibility AND selection */}
+          {selectedTrainId === null && selectedStation === null && (
+            <div
+              className={`absolute bottom-2 right-2 p-2 rounded shadow text-xs z-10 flex flex-col space-y-2 ${THEME.legend}`}
+            >
+              {/* Regular Direction Legend */}
+              <div className="flex space-x-4">
+                <div className="flex items-center">
+                  {/* Use dedicated legend indicator theme color and increase height */}
+                  <div
+                    className={`w-4 h-2 mr-2 rounded-sm ${THEME.legendIndicator.southbound}`}
+                  ></div>
+                  {/* Use HTML text theme color */}
+                  <span className={THEME.textHtmlPrimary}>
+                    Southbound{" "}
+                    {uiSelectedScheme === "REGULAR" ? "(In transit)" : ""}
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  {/* Use dedicated legend indicator theme color and increase height */}
+                  <div
+                    className={`w-4 h-2 mr-2 rounded-sm ${THEME.legendIndicator.northbound}`}
+                  ></div>
+                  {/* Use HTML text theme color */}
+                  <span className={THEME.textHtmlPrimary}>
+                    Northbound{" "}
+                    {uiSelectedScheme === "REGULAR" ? "(In transit)" : ""}
+                  </span>
+                </div>
+              </div>
+
+              {/* Regular Scheme Stopped Colors Legend */}
+              {uiSelectedScheme === "REGULAR" && (
+                <div className="flex space-x-4 mt-1 pt-1 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center">
+                    <div
+                      className="w-4 h-2 mr-2 rounded-sm"
+                      style={{
+                        backgroundColor: TRAIN_COLOR_SB_STOPPED_REGULAR,
+                      }}
+                    ></div>
+                    <span className={THEME.textHtmlPrimary}>
+                      Southbound (Stopped)
+                    </span>
+                  </div>
+                  <div className="flex items-center">
+                    <div
+                      className="w-4 h-2 mr-2 rounded-sm"
+                      style={{
+                        backgroundColor: TRAIN_COLOR_NB_STOPPED_REGULAR,
+                      }}
+                    ></div>
+                    <span className={THEME.textHtmlPrimary}>
+                      Northbound (Stopped)
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Skip-stop legend - only show when SKIP-STOP scheme is selected IN THE UI */}
+              {uiSelectedScheme === "SKIP-STOP" && ( // <<< CONDITION ALREADY CORRECT
+                <div className="flex flex-col space-y-2 mt-1 pt-1 border-t border-gray-200 dark:border-gray-700">
+                  <div className="text-xs font-medium mb-1">
+                    Skip-Stop Trains:
+                  </div>
+                  {/* In Transit Section */}
+                  <div className="pl-2">
+                    <div className="text-xs mb-1 text-muted-foreground">
+                      In transit:
+                    </div>
+                    <div className="flex space-x-4">
+                      <div className="flex items-center">
+                        <div
+                          className="w-5 h-5 mr-2 border border-black dark:border-white rounded-sm"
+                          style={{ backgroundColor: TRAIN_COLOR_A }} // Moving A color
+                        ></div>
+                        <span className={THEME.textHtmlPrimary}>A-Train</span>
+                      </div>
+                      <div className="flex items-center">
+                        <div
+                          className="w-5 h-5 mr-2 border border-black dark:border-white rounded-sm"
+                          style={{ backgroundColor: TRAIN_COLOR_B }} // Moving B color
+                        ></div>
+                        <span className={THEME.textHtmlPrimary}>B-Train</span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Stopped Section */}
+                  <div className="pl-2 mt-1">
+                    <div className="text-xs mb-1 text-muted-foreground">
+                      Stopped:
+                    </div>
+                    <div className="flex space-x-4">
+                      <div className="flex items-center">
+                        <div
+                          className="w-5 h-5 mr-2 border border-black dark:border-white rounded-sm"
+                          style={{ backgroundColor: TRAIN_COLOR_A_STOPPED }} // Stopped A color
+                        ></div>
+                        <span className={THEME.textHtmlPrimary}>A-Train</span>
+                      </div>
+                      <div className="flex items-center">
+                        <div
+                          className="w-5 h-5 mr-2 border border-black dark:border-white rounded-sm"
+                          style={{ backgroundColor: TRAIN_COLOR_B_STOPPED }} // Stopped B color
+                        ></div>
+                        <span className={THEME.textHtmlPrimary}>B-Train</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Conditionally render skipped station legend entry */}
+                  {selectedTrainId !== null && (
+                    <div className="flex items-center mt-1 pt-1 border-t border-gray-200 dark:border-gray-700">
+                      {/* Adjusted border to be more visible */}
+                      <div className="w-5 h-5 mr-2 border-2 border-red-500 dark:border-red-400 border-dashed rounded-full bg-transparent"></div>
+                      <span className={THEME.textHtmlPrimary}>
+                        Skipped by Selected Train
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Station type legend - Use updated colors */}
+                  <div className="text-xs font-medium mt-1 mb-1">
+                    Station Types:
+                  </div>
+                  <div className="flex space-x-4">
+                    <div className="flex items-center">
+                      {/* Use A-Train color */}
+                      <div
+                        className="w-6 h-3 mr-2 rounded-sm"
+                        style={{
+                          backgroundColor: STATION_TYPE_INDICATOR_COLOR_A,
+                        }} // Use constant
+                      ></div>
+                      <span className={THEME.textHtmlPrimary}>A Stations</span>
+                    </div>
+                    <div className="flex items-center">
+                      {/* Use B-Train color */}
+                      <div
+                        className="w-6 h-3 mr-2 rounded-sm"
+                        style={{
+                          backgroundColor: STATION_TYPE_INDICATOR_COLOR_B,
+                        }} // Use constant
+                      ></div>
+                      <span className={THEME.textHtmlPrimary}>B Stations</span>
+                    </div>
+                    <div className="flex items-center">
+                      {/* Keep AB color */}
+                      <div className="w-6 h-3 mr-2 rounded-sm bg-gray-700 dark:bg-gray-200"></div>
+                      <span className={THEME.textHtmlPrimary}>AB Stations</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <svg
             ref={svgRef}
@@ -1713,9 +1936,9 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                 <feDropShadow
                   dx="0"
                   dy="0"
-                  stdDeviation="3"
-                  floodColor="#FBBF24"
-                  floodOpacity="0.8"
+                  stdDeviation={TRAIN_HIGHLIGHT_FILTER_STD_DEVIATION} // Use constant
+                  floodColor={TRAIN_HIGHLIGHT_FILTER_COLOR} // Use constant
+                  floodOpacity={TRAIN_HIGHLIGHT_FILTER_OPACITY} // Use constant
                 />
               </filter>
             </defs>
@@ -1758,6 +1981,13 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
 
             {/* Render station labels first (behind stations/trains) */}
             <g className="station-labels">{stationLabelElements}</g>
+
+            {/* Render station type indicators AFTER labels */}
+            {uiSelectedScheme === "SKIP-STOP" && (
+              <g className="station-type-indicators">
+                {stationTypeIndicatorElements}
+              </g>
+            )}
 
             {/* Station Elements */}
             <g className="stations">{stationElements}</g>
@@ -1805,5 +2035,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
     );
   }
 );
+
+MrtMap.displayName = "MrtMap"; // Add display name for forwardRef
 
 export default MrtMap;
