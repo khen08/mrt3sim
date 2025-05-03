@@ -131,6 +131,26 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Hide number input spinners */
+  /* Chrome, Safari, Edge, Opera */
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  /* Firefox */
+  input[type=number] {
+    -moz-appearance: textfield;
+    /* Future-proofing */
+    appearance: textfield;
+  }
+}
+
+/* Custom text size smaller than text-xs */
+.text-xxs {
+  font-size: 0.625rem; /* 10px */
+  line-height: 0.875rem;
 }
 
 /* Custom animation keyframes */

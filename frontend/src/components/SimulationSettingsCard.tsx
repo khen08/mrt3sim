@@ -136,37 +136,47 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
             {/* Basic Settings Fields */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <Label htmlFor="dwellTime">Dwell Time (s)</Label>
-                <Input
-                  id="dwellTime"
-                  name="dwellTime"
-                  type="number"
-                  step="1"
-                  min="0"
-                  value={simulationSettings.dwellTime}
-                  onChange={onSettingChange}
-                  className="mt-1"
-                  disabled={isSimulating}
-                />
-                <p className="text-sm text-muted-foreground mt-1">
-                  Train stop duration at stations.
+                <Label htmlFor="dwellTime">Dwell Time</Label>
+                <div className="relative mt-1">
+                  <Input
+                    id="dwellTime"
+                    name="dwellTime"
+                    type="number"
+                    step="1"
+                    min="0"
+                    value={simulationSettings.dwellTime}
+                    onChange={onSettingChange}
+                    className="pr-8 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isSimulating}
+                  />
+                  <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
+                    seconds
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Passengers board/alight time
                 </p>
               </div>
               <div>
-                <Label htmlFor="turnaroundTime">Turnaround Time (s)</Label>
-                <Input
-                  id="turnaroundTime"
-                  name="turnaroundTime"
-                  type="number"
-                  step="1"
-                  min="0"
-                  value={simulationSettings.turnaroundTime}
-                  onChange={onSettingChange}
-                  className="mt-1"
-                  disabled={isSimulating}
-                />
-                <p className="text-sm text-muted-foreground mt-1">
-                  Time to reverse at terminals.
+                <Label htmlFor="turnaroundTime">Turnaround Time</Label>
+                <div className="relative mt-1">
+                  <Input
+                    id="turnaroundTime"
+                    name="turnaroundTime"
+                    type="number"
+                    step="1"
+                    min="0"
+                    value={simulationSettings.turnaroundTime}
+                    onChange={onSettingChange}
+                    className="pr-8 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isSimulating}
+                  />
+                  <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
+                    seconds
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Switching directions at endpoints
                 </p>
               </div>
             </div>
@@ -174,46 +184,61 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
             {/* Advanced Settings Fields - Train Specs */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
-                <Label htmlFor="acceleration">Acceleration (m/s²)</Label>
-                <Input
-                  id="acceleration"
-                  name="acceleration"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={simulationSettings.acceleration}
-                  onChange={onSettingChange}
-                  className="mt-1"
-                  disabled={isSimulating}
-                />
+                <Label htmlFor="acceleration">Acceleration</Label>
+                <div className="relative mt-1">
+                  <Input
+                    id="acceleration"
+                    name="acceleration"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={simulationSettings.acceleration}
+                    onChange={onSettingChange}
+                    className="pr-12 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isSimulating}
+                  />
+                  <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
+                    m/s²
+                  </span>
+                </div>
               </div>
               <div>
-                <Label htmlFor="deceleration">Deceleration (m/s²)</Label>
-                <Input
-                  id="deceleration"
-                  name="deceleration"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={simulationSettings.deceleration}
-                  onChange={onSettingChange}
-                  className="mt-1"
-                  disabled={isSimulating}
-                />
+                <Label htmlFor="deceleration">Deceleration</Label>
+                <div className="relative mt-1">
+                  <Input
+                    id="deceleration"
+                    name="deceleration"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={simulationSettings.deceleration}
+                    onChange={onSettingChange}
+                    className="pr-12 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isSimulating}
+                  />
+                  <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
+                    m/s²
+                  </span>
+                </div>
               </div>
               <div>
-                <Label htmlFor="cruisingSpeed">Max Speed (km/h)</Label>
-                <Input
-                  id="cruisingSpeed"
-                  name="cruisingSpeed"
-                  type="number"
-                  step="1"
-                  min="0"
-                  value={simulationSettings.cruisingSpeed}
-                  onChange={onSettingChange}
-                  className="mt-1"
-                  disabled={isSimulating}
-                />
+                <Label htmlFor="cruisingSpeed">Max Speed</Label>
+                <div className="relative mt-1">
+                  <Input
+                    id="cruisingSpeed"
+                    name="cruisingSpeed"
+                    type="number"
+                    step="1"
+                    min="0"
+                    value={simulationSettings.cruisingSpeed}
+                    onChange={onSettingChange}
+                    className="pr-14 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isSimulating}
+                  />
+                  <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
+                    km/h
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -221,17 +246,22 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <Label htmlFor="maxCapacity">Max Capacity</Label>
-                <Input
-                  id="maxCapacity"
-                  name="maxCapacity"
-                  type="number"
-                  step="1"
-                  min="0"
-                  value={simulationSettings.maxCapacity}
-                  onChange={onSettingChange}
-                  className="mt-1"
-                  disabled={isSimulating}
-                />
+                <div className="relative mt-1">
+                  <Input
+                    id="maxCapacity"
+                    name="maxCapacity"
+                    type="number"
+                    step="1"
+                    min="0"
+                    value={simulationSettings.maxCapacity}
+                    onChange={onSettingChange}
+                    className="pr-16 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isSimulating}
+                  />
+                  <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
+                    pax
+                  </span>
+                </div>
                 <p className="text-sm text-muted-foreground mt-1">
                   Max passengers per train.
                 </p>
