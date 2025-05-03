@@ -65,16 +65,16 @@ const config = {
       },
       keyframes: {
         "accordion-down": {
-          from: { height: 0 },
+          from: { height: "0" },
           to: { height: "var(--radix-accordion-content-height)" },
         },
         "accordion-up": {
           from: { height: "var(--radix-accordion-content-height)" },
-          to: { height: 0 },
+          to: { height: "0" },
         },
         "pulse-train": {
-          "0%, 100%": { opacity: 1, transform: "scale(1)" },
-          "50%": { opacity: 0.8, transform: "scale(1.1)" },
+          "0%, 100%": { opacity: "1", transform: "scale(1)" },
+          "50%": { opacity: "0.8", transform: "scale(1.1)" },
         },
       },
       animation: {
@@ -87,4 +87,4 @@ const config = {
   plugins: [require("tailwindcss-animate")],
 } satisfies Config;
 
-export default config; 
+export default config;

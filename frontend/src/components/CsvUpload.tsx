@@ -42,7 +42,7 @@ const CsvUpload = ({
 
       // console.log("Uploading file to /upload_csv:", selectedFile.name);
       toast({
-        title: "Uploading File...",
+        title: "Uploading File",
         description: `Uploading '${selectedFile.name}'. Please wait.`,
       });
 

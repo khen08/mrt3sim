@@ -21,10 +21,9 @@ import {
   IconHistory,
   IconClock,
   IconInfoCircle,
+  IconTrash,
 } from "@tabler/icons-react";
 import CsvUpload from "@/components/CsvUpload";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import MrtMap, { MrtMapHandle } from "@/components/MrtMap";
 import SimulationController from "@/components/SimulationController";
 import StationInfo from "@/components/StationInfo";
@@ -36,14 +35,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
 import { DarkModeToggle } from "@/components/DarkModeToggle";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import SimulationHistoryModal from "@/components/SimulationHistoryModal";
 import SimulationSettingsCard from "@/components/SimulationSettingsCard";
 import {
@@ -56,11 +47,16 @@ import {
   GET_SIMULATION_HISTORY_ENDPOINT,
 } from "@/lib/constants";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface PassengerDistribution {
   hour: string;
@@ -166,6 +162,8 @@ export default function Home() {
   const [selectedPeak, setSelectedPeak] = useState<PeakPeriod>("AM");
 
   const [hasLoggedSchemeType, setHasLoggedSchemeType] = useState(false);
+
+  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
 
   const mrtMapRef = useRef<MrtMapHandle>(null);
 
@@ -378,7 +376,6 @@ export default function Home() {
             ...prevInput,
             config: updatedSettings,
           }));
-          setLoadedSimulationId(null);
           return updatedSettings;
         });
       }
@@ -404,7 +401,6 @@ export default function Home() {
           ...prevInput,
           config: updatedSettings,
         }));
-        setLoadedSimulationId(null);
         return updatedSettings;
       });
     },
@@ -437,7 +433,6 @@ export default function Home() {
           ...prevInput,
           config: updatedSettings,
         }));
-        setLoadedSimulationId(null);
         return updatedSettings;
       });
     },
@@ -462,7 +457,6 @@ export default function Home() {
         ...prevInput,
         config: updatedSettings,
       }));
-      setLoadedSimulationId(null);
       return updatedSettings;
     });
   }, []);
@@ -716,6 +710,7 @@ export default function Home() {
   const handleLoadNewData = useCallback(() => {
     handleFileSelect(null);
     setLoadedSimulationId(null);
+    setIsClearConfirmOpen(false);
   }, [handleFileSelect]);
 
   const showUploadView = !uploadedFileObject && !simulationResult;
@@ -780,8 +775,8 @@ export default function Home() {
     setIsHistoryModalOpen(false);
 
     toast({
-      title: "Loading Simulation...",
-      description: `Fetching timetable for simulation ID ${simulationId}...`,
+      title: "Loading Simulation",
+      description: `Fetching timetable for simulation ID ${simulationId}`,
       variant: "default",
     });
 
@@ -864,6 +859,46 @@ export default function Home() {
               )}
 
               <div className="mb-4 space-y-2">
+                {!showUploadView && (
+                  <AlertDialog
+                    open={isClearConfirmOpen}
+                    onOpenChange={setIsClearConfirmOpen}
+                  >
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="destructive"
+                        className="w-full justify-start text-left"
+                        disabled={isSimulating}
+                      >
+                        <IconTrash className="mr-2 h-4 w-4" />
+                        Clear Current Data & Settings
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>
+                          Are you absolutely sure?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This action cannot be undone. This will clear the
+                          current timetable data and reset all simulation
+                          settings to their defaults. You will need to upload a
+                          new CSV or load from history again.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={handleLoadNewData}
+                          className="bg-destructive hover:bg-destructive/90"
+                        >
+                          Yes, Clear Data
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+
                 <Button
                   variant="outline"
                   className="w-full justify-start text-left"
@@ -875,18 +910,6 @@ export default function Home() {
                   <IconHistory className="mr-2 h-4 w-4" />
                   Simulation History
                 </Button>
-
-                {uploadedFileObject && (
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start text-left"
-                    onClick={handleLoadNewData}
-                    disabled={isSimulating}
-                  >
-                    <IconReplace className="mr-2 h-4 w-4" />
-                    Clear Current Data & Settings
-                  </Button>
-                )}
               </div>
 
               <SimulationSettingsCard
@@ -924,7 +947,9 @@ export default function Home() {
               <Button
                 onClick={handleRunSimulation}
                 disabled={
-                  !uploadedFileObject || isSimulating || !simulationSettings
+                  isSimulating ||
+                  !simulationSettings ||
+                  !simulationInput.filename
                 }
                 className="w-full bg-mrt-blue hover:bg-blue-700 text-white h-12 text-lg font-semibold border-2 border-gray-300 dark:border-transparent shadow-md hover:shadow-lg"
               >
