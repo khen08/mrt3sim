@@ -18,7 +18,9 @@ export interface SimulationHistoryEntry {
 type HistoryEntry = SimulationHistoryEntry;
 
 export const columns = (
-  onLoadSimulation: (simulationId: number) => void
+  onLoadSimulation: (simulationId: number) => void,
+  loadedSimulationId: number | null,
+  isSimulating: boolean
 ): ColumnDef<HistoryEntry>[] => [
   // Selection Checkbox Column
   {
@@ -105,14 +107,17 @@ export const columns = (
     header: () => <div className="text-center">Action</div>,
     cell: ({ row }) => {
       const simulation = row.original;
+      const isCurrentlyLoaded = simulation.SIMULATION_ID === loadedSimulationId;
+
       return (
         <div className="w-[80px] text-center">
           <Button
-            variant="outline"
+            variant={isCurrentlyLoaded ? "secondary" : "outline"}
             size="sm"
             onClick={() => onLoadSimulation(simulation.SIMULATION_ID)}
+            disabled={isCurrentlyLoaded || isSimulating}
           >
-            Load
+            {isCurrentlyLoaded ? "Loaded" : "Load"}
           </Button>
         </div>
       );

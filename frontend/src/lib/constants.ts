@@ -71,7 +71,7 @@ export const TRAIN_STAGGER_Y_OFFSET = 15; // For overlapping turning trains
 // Train Highlight Filter Constants
 export const TRAIN_HIGHLIGHT_FILTER_STD_DEVIATION = "3";
 export const TRAIN_HIGHLIGHT_FILTER_COLOR = "#FBBF24";
-export const TRAIN_HIGHLIGHT_FILTER_OPACITY = "0.8";
+export const TRAIN_HIGHLIGHT_FILTER_OPACITY = "1";
 
 // Simulation Controller Constants
 export const SIMULATION_SPEED_PRESETS = [0.5, 1, 2, 5, 10, 20, 30];

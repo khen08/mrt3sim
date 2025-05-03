@@ -16,7 +16,7 @@ import {
 } from "@/lib/constants";
 
 interface CsvUploadProps {
-  onFileSelect: (file: File | null) => void;
+  onFileSelect: (file: File | null, backendFilename: string | null) => void;
   initialFileName?: string | null;
 }
 
@@ -63,7 +63,7 @@ const CsvUpload = ({
         // console.log("File uploaded successfully:", result);
         setFileName(result.filename);
         setIsFileSelected(true);
-        onFileSelect(selectedFile);
+        onFileSelect(selectedFile, result.filename);
 
         toast({
           title: "Upload Successful",
@@ -74,7 +74,7 @@ const CsvUpload = ({
         console.error("Error uploading file:", error);
         setFileName(null);
         setIsFileSelected(false);
-        onFileSelect(null);
+        onFileSelect(null, null);
         if (fileInputRef.current) {
           fileInputRef.current.value = "";
         }
@@ -108,7 +108,7 @@ const CsvUpload = ({
     // console.log("Removing file selection in CsvUpload");
     setFileName(null);
     setIsFileSelected(false);
-    onFileSelect(null);
+    onFileSelect(null, null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }

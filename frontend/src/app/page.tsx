@@ -221,40 +221,67 @@ export default function Home() {
     }
   };
 
-  useEffect(() => {
-    const initializeSettings = async () => {
-      setIsLoading(true);
-      setApiError(null);
-      const defaults = await fetchDefaultSettings();
-      if (defaults) {
-        setSimulationSettings(defaults);
-        setActiveSimulationSettings(defaults);
-        setSimulationInput((prev) => ({
-          ...prev,
-          config: defaults,
-        }));
-      } else {
-        setSimulationSettings(null);
-        setActiveSimulationSettings(null);
-        setSimulationInput((prev) => ({ ...prev, config: null }));
-        setApiError("Failed to load initial default settings.");
-        toast({
-          title: "Error Loading Settings",
-          description:
-            "Failed to load default simulation settings. Please try refreshing.",
-          variant: "destructive",
-        });
-      }
-      setIsLoading(false);
-    };
+  const initializeSettings = useCallback(async () => {
+    setIsLoading(true);
+    setApiError(null);
+    const defaults = await fetchDefaultSettings();
+    if (defaults) {
+      setSimulationSettings(defaults);
+      setActiveSimulationSettings(defaults);
+      setSimulationInput((prev) => ({
+        ...prev,
+        config: defaults,
+      }));
+    } else {
+      setSimulationSettings(null);
+      setActiveSimulationSettings(null);
+      setSimulationInput((prev) => ({ ...prev, config: null }));
+      setApiError("Failed to load initial default settings.");
+      toast({
+        title: "Error Loading Settings",
+        description:
+          "Failed to load default simulation settings. Please try refreshing.",
+        variant: "destructive",
+      });
+    }
+    setIsLoading(false);
+  }, [toast]);
 
-    initializeSettings();
-    handleFetchHistory();
+  const handleFetchHistory = useCallback(async () => {
+    setIsHistoryLoading(true);
+    setApiError(null);
+    try {
+      console.log("Fetching simulation history...");
+      const response = await fetch(GET_SIMULATION_HISTORY_ENDPOINT);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP error ${response.status}`);
+      }
+      const data: SimulationHistoryEntry[] = await response.json();
+      console.log("Fetched history:", data);
+      setHistorySimulations(data);
+    } catch (error: any) {
+      console.error("Failed to fetch history:", error);
+      setApiError(`Failed to load simulation history: ${error.message}`);
+      setHistorySimulations([]);
+      toast({
+        title: "Error Loading History",
+        description: `Could not fetch simulation history: ${error.message}`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsHistoryLoading(false);
+    }
   }, [toast]);
 
   useEffect(() => {
-    handleFetchHistory();
-  }, []);
+    const loadInitialData = async () => {
+      await initializeSettings();
+      await handleFetchHistory();
+    };
+
+    loadInitialData();
+  }, [initializeSettings, handleFetchHistory]);
 
   const stationData = (() => {
     let data = {
@@ -348,27 +375,30 @@ export default function Home() {
     return data;
   })();
 
-  const handleFileSelect = useCallback((file: File | null) => {
-    setUploadedFileObject(file);
+  const handleFileSelect = useCallback(
+    (file: File | null, backendFilename: string | null) => {
+      setUploadedFileObject(file);
 
-    if (file) {
-      setSimulationInput((prev) => ({ ...prev, filename: file.name }));
-      setSimulationResult(null);
-      setSelectedStation(null);
-      setSelectedTrainId(null);
-      setSelectedTrainDetails(null);
-      setSimulationTime(PEAK_HOURS.AM.start);
-      setIsSimulationRunning(false);
-      setApiError(null);
-    } else {
-      setSimulationInput((prev) => ({ ...prev, filename: null }));
-      setSimulationResult(null);
-      setSelectedStation(null);
-      setSelectedTrainId(null);
-      setSelectedTrainDetails(null);
-      setIsSimulationRunning(false);
-    }
-  }, []);
+      if (file && backendFilename) {
+        setSimulationInput((prev) => ({ ...prev, filename: backendFilename }));
+        setSimulationResult(null);
+        setSelectedStation(null);
+        setSelectedTrainId(null);
+        setSelectedTrainDetails(null);
+        setSimulationTime(PEAK_HOURS.AM.start);
+        setIsSimulationRunning(false);
+        setApiError(null);
+      } else {
+        setSimulationInput((prev) => ({ ...prev, filename: null }));
+        setSimulationResult(null);
+        setSelectedStation(null);
+        setSelectedTrainId(null);
+        setSelectedTrainDetails(null);
+        setIsSimulationRunning(false);
+      }
+    },
+    []
+  );
 
   const handleSettingChange = useCallback(
     (
@@ -801,7 +831,7 @@ export default function Home() {
   };
 
   const handleLoadNewData = useCallback(() => {
-    handleFileSelect(null);
+    handleFileSelect(null, null);
     setLoadedSimulationId(null);
     setIsClearConfirmOpen(false);
   }, [handleFileSelect]);
@@ -832,33 +862,6 @@ export default function Home() {
     },
     [simulationResult]
   );
-
-  const handleFetchHistory = async () => {
-    setIsHistoryLoading(true);
-    setApiError(null);
-    try {
-      console.log("Fetching simulation history...");
-      const response = await fetch(GET_SIMULATION_HISTORY_ENDPOINT);
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP error ${response.status}`);
-      }
-      const data: SimulationHistoryEntry[] = await response.json();
-      console.log("Fetched history:", data);
-      setHistorySimulations(data);
-    } catch (error: any) {
-      console.error("Failed to fetch history:", error);
-      setApiError(`Failed to load simulation history: ${error.message}`);
-      setHistorySimulations([]);
-      toast({
-        title: "Error Loading History",
-        description: `Could not fetch simulation history: ${error.message}`,
-        variant: "destructive",
-      });
-    } finally {
-      setIsHistoryLoading(false);
-    }
-  };
 
   const handleLoadSimulation = async (simulationId: number) => {
     setIsHistoryLoading(true);
@@ -1272,6 +1275,8 @@ export default function Home() {
           handleLoadSimulation(id);
         }}
         isLoading={isHistoryLoading}
+        loadedSimulationId={loadedSimulationId}
+        isSimulating={isSimulating}
       />
     </main>
   );

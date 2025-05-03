@@ -26,6 +26,8 @@ interface SimulationHistoryModalProps {
   simulations: SimulationHistoryEntry[]; // Array of simulation data (will be fetched later)
   onLoadSimulation: (simulationId: number) => void; // Function to handle loading a simulation
   isLoading?: boolean; // Optional loading state
+  loadedSimulationId?: number | null; // Add prop to receive the currently loaded ID
+  isSimulating?: boolean; // Add prop to know if a simulation is running
 }
 
 export function SimulationHistoryModal({
@@ -34,15 +36,17 @@ export function SimulationHistoryModal({
   simulations, // Use data passed from parent
   onLoadSimulation,
   isLoading = false,
+  loadedSimulationId, // Destructure the new prop
+  isSimulating = false, // Destructure the new prop with a default
 }: SimulationHistoryModalProps) {
   // State for row selection
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
 
   // Memoize columns definition to prevent re-creation on every render
-  // Pass onLoadSimulation into the columns definition
+  // Pass onLoadSimulation, loadedSimulationId, AND isSimulating into the columns definition
   const tableColumns = React.useMemo(
-    () => columns(onLoadSimulation),
-    [onLoadSimulation]
+    () => columns(onLoadSimulation, loadedSimulationId ?? null, isSimulating), // Pass isSimulating here
+    [onLoadSimulation, loadedSimulationId, isSimulating] // Add isSimulating to dependency array
   );
 
   // Get number of selected rows
