@@ -21,6 +21,12 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   PEAK_HOURS,
   FULL_DAY_HOURS,
   type PeakPeriod,
@@ -33,8 +39,10 @@ interface SimulationControllerProps {
   onTimeUpdate: (time: string) => void;
   onSimulationStateChange: (isRunning: boolean) => void;
   onSchemeChange?: (scheme: "REGULAR" | "SKIP-STOP") => void;
+  onToggleFullDayView: () => void;
   isLoading: boolean;
   hasTimetableData: boolean;
+  hasSimulationData: boolean;
   // New props
   isFullDayView: boolean;
   selectedPeak: PeakPeriod; // Receive selected peak from parent
@@ -49,8 +57,10 @@ const SimulationController = ({
   onTimeUpdate,
   onSimulationStateChange,
   onSchemeChange,
+  onToggleFullDayView,
   isLoading,
   hasTimetableData,
+  hasSimulationData,
   // New props
   isFullDayView,
   selectedPeak,
@@ -365,6 +375,27 @@ const SimulationController = ({
               </Label>
             </div>
           </RadioGroup>
+
+          {/* --- MOVED Toggle Button --- */}
+          <TooltipProvider delayDuration={100}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onToggleFullDayView}
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground ml-1" // Added ml-1 for spacing
+                  disabled={!hasSimulationData}
+                >
+                  <IconClock size={16} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Toggle Full Day / Peak Hours Timeline View</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          {/* --- END MOVED Toggle Button --- */}
         </div>
 
         {/* Operational Scheme Selector */}

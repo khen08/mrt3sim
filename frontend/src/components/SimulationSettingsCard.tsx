@@ -58,7 +58,6 @@ interface SimulationSettingsCardProps {
   ) => void;
   onStationSchemeChange: (index: number, value: "AB" | "A" | "B") => void;
   onSkipStopToggle: (checked: boolean) => void;
-  onToggleFullDayView: () => void;
   loadedSimulationId?: number | null;
   hasSimulationData: boolean;
 }
@@ -71,7 +70,6 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
   onStationDistanceChange,
   onStationSchemeChange,
   onSkipStopToggle,
-  onToggleFullDayView,
   loadedSimulationId = null,
   hasSimulationData,
 }: SimulationSettingsCardProps) => {
@@ -89,24 +87,6 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
             <IconSettings className="mr-2 inline-block h-5 w-5" />
             Simulation Settings
           </CardTitle>
-          <TooltipProvider delayDuration={100}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onToggleFullDayView}
-                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                  disabled={!hasSimulationData}
-                >
-                  <IconClock size={16} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Toggle Full Day / Peak Hours Timeline View</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
         </div>
         <CardDescription>
           Configure simulation parameters. Applied when "Run Simulation" is
