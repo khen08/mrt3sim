@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import {
   Card,
   CardContent,
@@ -25,6 +25,8 @@ import {
   IconCalendarEvent,
   IconRepeat,
   IconClockHour4,
+  IconFile,
+  IconX,
 } from "@tabler/icons-react";
 import CsvUpload from "@/components/CsvUpload";
 import MrtMap, { MrtMapHandle } from "@/components/MrtMap";
@@ -48,6 +50,7 @@ import {
   RUN_SIMULATION_ENDPOINT,
   GET_TIMETABLE_ENDPOINT,
   GET_SIMULATION_HISTORY_ENDPOINT,
+  API_BASE_URL,
 } from "@/lib/constants";
 import {
   AlertDialog,
@@ -122,6 +125,40 @@ interface SimulationHistoryEntry {
   TOTAL_RUN_TIME_SECONDS: number;
 }
 
+// Define the interface matching MrtMap.tsx
+interface ServicePeriod {
+  NAME: string;
+  START_HOUR: number;
+  TRAIN_COUNT?: number;
+  REGULAR_HEADWAY: number;
+  SKIP_STOP_HEADWAY: number;
+  REGULAR_LOOP_TIME_MINUTES: number;
+  SKIP_STOP_LOOP_TIME_MINUTES: number;
+}
+
+// Define structure for aggregated passenger demand data for the chart
+interface PassengerDistributionData {
+  hour: string; // e.g., "07:00"
+  count: number;
+}
+
+// Define props for the new LoadingPlaceholder component
+interface LoadingPlaceholderProps {
+  message?: string;
+}
+
+// Define the LoadingPlaceholder component structure (implementation later)
+const LoadingPlaceholder: React.FC<LoadingPlaceholderProps> = ({
+  message = "Loading...",
+}) => {
+  return (
+    <div className="flex-grow flex flex-col items-center justify-center text-muted-foreground p-4 space-y-4">
+      <IconLoader2 className="h-12 w-12 animate-spin text-mrt-blue" />
+      <p className="text-lg font-medium">{message}</p>
+    </div>
+  );
+};
+
 export default function Home() {
   const [uploadedFileObject, setUploadedFileObject] = useState<File | null>(
     null
@@ -157,6 +194,7 @@ export default function Home() {
 
   const [hasFetchedInitialHistory, setHasFetchedInitialHistory] =
     useState(false);
+  const [nextRunFilename, setNextRunFilename] = useState<string | null>(null);
   const { toast } = useToast();
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -184,12 +222,20 @@ export default function Home() {
 
   // State for debug visibility
   const [showDebugInfo, setShowDebugInfo] = useState(false);
-  // State for additional sim info
-  const [loadedServicePeriod, setLoadedServicePeriod] = useState<string | null>(
-    null
-  );
-  const [loadedHeadway, setLoadedHeadway] = useState<number | null>(null);
-  const [loadedLoopTime, setLoadedLoopTime] = useState<number | null>(null);
+
+  // State to store the raw service periods data structure
+  const [loadedServicePeriodsData, setLoadedServicePeriodsData] = useState<
+    ServicePeriod[] | null
+  >(null);
+
+  // State for aggregated passenger demand data (for chart)
+  const [passengerDistributionData, setPassengerDistributionData] = useState<
+    PassengerDistributionData[] | null
+  >(null);
+
+  const [isMapLoading, setIsMapLoading] = useState(false); // New state for map loading
+
+  const fileInputRef = useRef<HTMLInputElement>(null); // Add ref for programmatic click
 
   const fetchDefaultSettings = async (): Promise<SimulationSettings | null> => {
     try {
@@ -424,6 +470,7 @@ export default function Home() {
   const handleFileSelect = useCallback(
     (file: File | null, backendFilename: string | null) => {
       setUploadedFileObject(file);
+      setNextRunFilename(null);
 
       if (file && backendFilename) {
         setSimulationInput((prev) => ({ ...prev, filename: backendFilename }));
@@ -626,30 +673,27 @@ export default function Home() {
   const handleSimulatePassengersToggle = useCallback(
     (checked: boolean) => {
       setSimulatePassengers(checked);
-      if (!checked) {
-        console.log("Passenger simulation disabled, clearing file selection.");
-        setUploadedFileObject(null);
-        setSimulationInput((prev) => ({ ...prev, filename: null }));
+      if (checked) {
         toast({
-          title: "Passenger Simulation Disabled",
-          description:
-            "Simulation will run without CSV data. File selection cleared.",
+          title: "Passenger Simulation Enabled",
+          description: simulationInput.filename
+            ? `Will use '${simulationInput.filename}' for the next run.`
+            : "Please upload or select a passenger data CSV.",
           variant: "default",
         });
       } else {
         toast({
-          title: "Passenger Simulation Enabled",
-          description:
-            "Please ensure a passenger data CSV is uploaded before running.",
+          title: "Passenger Simulation Disabled",
+          description: "Next run will not use passenger data.",
           variant: "default",
         });
       }
     },
-    [toast]
+    [toast, simulationInput.filename]
   );
 
   const handleRunSimulation = async () => {
-    if (simulatePassengers && !simulationInput.filename) {
+    if (simulatePassengers && !simulationInput.filename && !nextRunFilename) {
       setApiError(
         "Passenger simulation is enabled, but no CSV file has been uploaded."
       );
@@ -671,6 +715,7 @@ export default function Home() {
     }
 
     setIsSimulating(true);
+    setIsMapLoading(true); // Start loading map area
     setApiError(null);
 
     if (!simulationSettings) {
@@ -697,22 +742,26 @@ export default function Home() {
 
     const { stations, ...otherSettings } = simulationSettings;
 
-    const payload = {
-      filename: simulatePassengers ? simulationInput.filename : null,
-      config: {
-        ...otherSettings,
-        stationNames: stationNames,
-        stationDistances: stationDistances,
-        schemePattern:
-          simulationSettings.schemePattern ||
-          (simulationSettings.schemeType === "SKIP-STOP"
-            ? stationSchemes
-            : Array(stationNames.length).fill("AB")),
-        ...(simulationSettings.schemeType === "SKIP-STOP" && {
-          stationSchemes: stationSchemes,
-        }),
-      },
-    };
+    let payloadFilename: string | null = null;
+    if (simulatePassengers) {
+      if (
+        loadedSimulationId !== null &&
+        simulationInput.filename === null &&
+        nextRunFilename !== null
+      ) {
+        payloadFilename = nextRunFilename;
+        console.log(
+          `Using explicitly uploaded override file for loaded history run: ${payloadFilename}`
+        );
+      } else {
+        payloadFilename = simulationInput.filename;
+        console.log(
+          `Using standard input filename for run: ${payloadFilename}`
+        );
+      }
+    } else {
+      console.log("Passenger simulation disabled, sending null filename.");
+    }
 
     toast({
       title: "Running Simulation",
@@ -726,7 +775,22 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          filename: payloadFilename,
+          config: {
+            ...otherSettings,
+            stationNames: stationNames,
+            stationDistances: stationDistances,
+            schemePattern:
+              simulationSettings.schemePattern ||
+              (simulationSettings.schemeType === "SKIP-STOP"
+                ? stationSchemes
+                : Array(stationNames.length).fill("AB")),
+            ...(simulationSettings.schemeType === "SKIP-STOP" && {
+              stationSchemes: stationSchemes,
+            }),
+          },
+        }),
       });
 
       if (!response.ok) {
@@ -822,15 +886,28 @@ export default function Home() {
 
       if (Array.isArray(timetableData) && fetchedMetadata) {
         setSimulationResult(timetableData);
+
+        // --- Persist Settings & Update Input State ---
+        const settingsUsedForRun = simulationSettings!; // Not null checked at start
         setLoadedSimulationId(newSimulationId);
-        setActiveSimulationSettings(simulationSettings);
+        setActiveSimulationSettings(settingsUsedForRun);
+        setSimulationSettings(settingsUsedForRun);
+        setSimulationInput({
+          filename: payloadFilename, // Reflect the file actually used
+          config: settingsUsedForRun,
+        });
+        // *Only* set simulatePassengers based on the file used *if* it's different from current state
+        // This prevents overriding the user's toggle if they ran without passengers intentionally
+        if (simulatePassengers !== !!payloadFilename) {
+          setSimulatePassengers(!!payloadFilename);
+        }
+        setNextRunFilename(null); // Clear override filename
 
         console.log("Fetched Metadata (Run Sim):", fetchedMetadata);
+        // Store the raw service periods array
+        setLoadedServicePeriodsData(fetchedMetadata.service_periods || null);
 
-        setLoadedServicePeriod(fetchedMetadata.service_period || null);
-        setLoadedHeadway(fetchedMetadata.headway || null);
-        setLoadedLoopTime(fetchedMetadata.loop_time || null);
-
+        // Reset UI state
         setSimulationTime(PEAK_HOURS.AM.start);
         setIsSimulationRunning(false);
         setMapRefreshKey((prev) => prev + 1);
@@ -847,25 +924,37 @@ export default function Home() {
           variant: "default",
         });
 
-        handleFetchHistory();
+        handleFetchHistory(); // Refresh history list
+
+        // Fetch passenger demand after simulation run completes
+        if (newSimulationId) {
+          fetchPassengerDemand(newSimulationId, setPassengerDistributionData);
+        }
       } else {
+        // --- Handle failed timetable fetch after successful run ---
         console.error("Failed to fetch timetable data after all retries.");
         setApiError(
           `Simulation run (ID: ${newSimulationId}) but failed to fetch timetable data.`
         );
-        setLoadedSimulationId(newSimulationId);
+        // Don't clear simulationResult here, might still want to see old map? Or maybe clear it? Let's clear it.
+        setSimulationResult(null);
+        setLoadedSimulationId(null); // Clear loaded ID as well
         toast({
           title: "Simulation Complete (Timetable Failed)",
           description: `The simulation (ID: ${newSimulationId}) ran but timetable data could not be retrieved after ${maxRetries} attempts.`,
           variant: "destructive",
         });
-        handleFetchHistory();
+        handleFetchHistory(); // Still refresh history
       }
     } catch (error: any) {
+      // --- Handle errors during simulation run or initial fetch ---
       console.error("Simulation API or Timetable Fetch Failed:", error);
       setApiError(
         error.message || "An unknown error occurred during simulation."
       );
+      // Clear results on error
+      setSimulationResult(null);
+      setLoadedSimulationId(null);
       toast({
         title: "Simulation Error",
         description: `Simulation failed: ${error.message}`,
@@ -873,12 +962,14 @@ export default function Home() {
       });
     } finally {
       setIsSimulating(false);
+      setIsMapLoading(false); // Stop loading map area
     }
   };
 
   const handleLoadNewData = useCallback(() => {
     handleFileSelect(null, null);
     setLoadedSimulationId(null);
+    setNextRunFilename(null);
     setIsClearConfirmOpen(false);
   }, [handleFileSelect]);
 
@@ -911,6 +1002,7 @@ export default function Home() {
 
   const handleLoadSimulation = async (simulationId: number) => {
     setIsHistoryLoading(true);
+    setIsMapLoading(true); // Start loading map area
     setApiError(null);
     setIsHistoryModalOpen(false);
 
@@ -952,9 +1044,8 @@ export default function Home() {
 
         console.log("Fetched Timetable Data (Load Sim):", timetableData);
 
-        setLoadedServicePeriod(timetableData.service_period || null);
-        setLoadedHeadway(timetableData.headway || null);
-        setLoadedLoopTime(timetableData.loop_time || null);
+        // Store the raw service periods array
+        setLoadedServicePeriodsData(timetableData.service_periods || null);
 
         setSimulationTime(PEAK_HOURS.AM.start);
         setIsSimulationRunning(false);
@@ -969,11 +1060,19 @@ export default function Home() {
           config: defaultSettings,
         }));
 
+        setSimulatePassengers(!!filename);
+        setNextRunFilename(null);
+
         toast({
           title: "Simulation Loaded",
-          description: `Successfully loaded timetable for simulation ID ${simulationId}. Settings reset to defaults.`,
+          description: `Successfully loaded timetable for simulation ID ${simulationId}. Settings reset to defaults. Passenger sim ${
+            filename ? "enabled" : "disabled"
+          }.`,
           variant: "default",
         });
+
+        // Fetch passenger demand after simulation load completes
+        fetchPassengerDemand(simulationId, setPassengerDistributionData);
       } else {
         throw new Error(
           "Failed to fetch default settings or timetable data structure was invalid after loading history."
@@ -985,13 +1084,17 @@ export default function Home() {
         `Failed to load simulation ${simulationId}: ${error.message}`
       );
       setLoadedSimulationId(null);
+      setNextRunFilename(null);
+      setSimulationResult(null);
       toast({
         title: "Load Failed",
         description: `Could not load simulation ${simulationId}: ${error.message}`,
         variant: "destructive",
+        duration: 7000,
       });
     } finally {
       setIsHistoryLoading(false);
+      setIsMapLoading(false); // Stop loading map area
     }
   };
 
@@ -1002,7 +1105,282 @@ export default function Home() {
 
   // Determine what to show in the main content area
   const hasResults = !!simulationResult && simulationResult.length > 0;
-  const showInitialState = !hasResults; // Show initial state if no results are loaded
+  const showInitialState = !isMapLoading && !hasResults;
+
+  // --- Define content for the main area ---
+  let mainContent: ReactNode;
+
+  if (isMapLoading) {
+    mainContent = <LoadingPlaceholder message="Processing simulation..." />;
+  } else if (hasResults) {
+    mainContent = (
+      <div className="flex-1 flex flex-col overflow-y-auto px-4">
+        {/* Conditionally show CsvUpload if loading a file-less sim and enabling passengers */}
+        {loadedSimulationId !== null &&
+          simulationInput.filename === null &&
+          simulatePassengers && (
+            <Card className="border-dashed border-amber-500 bg-amber-50 dark:bg-amber-950/50">
+              <CardHeader>
+                <CardTitle className="text-amber-700 dark:text-amber-300 flex items-center">
+                  <IconUpload className="mr-2" /> Passenger Data Required
+                </CardTitle>
+                <CardDescription className="text-amber-600 dark:text-amber-400">
+                  You've enabled passenger simulation for a run that didn't
+                  originally include passenger data. Please upload a CSV file to
+                  use for the next simulation run.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CsvUpload
+                  onFileSelect={(file, backendFilename) =>
+                    setNextRunFilename(backendFilename)
+                  }
+                  initialFileName={nextRunFilename}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+        {/* Display SELECTED file info if results are loaded, passengers enabled, AND a file is selected */}
+        {hasResults &&
+          simulatePassengers &&
+          simulationInput.filename !== null && (
+            <Card className="border-blue-300 bg-blue-50 dark:bg-blue-950/50 p-3 my-2">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <IconFile
+                    size={20}
+                    className="text-blue-600 dark:text-blue-400 flex-shrink-0"
+                  />
+                  <div className="flex flex-col overflow-hidden">
+                    <span
+                      className="text-sm font-medium text-blue-800 dark:text-blue-200 truncate"
+                      title={simulationInput.filename}
+                    >
+                      Selected for next run: {simulationInput.filename}
+                    </span>
+                    <span className="text-xs text-blue-600 dark:text-blue-400">
+                      {" "}
+                      inherited from loaded simulation or previous selection{" "}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  {/* Hidden file input */}
+                  <input
+                    type="file"
+                    accept=".csv"
+                    className="hidden"
+                    ref={fileInputRef} // Assign ref
+                    onChange={(e) => {
+                      // Use the main handleFileSelect when changing here
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        handleFileSelect(file, file.name); // Trigger upload + state update
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()} // Trigger hidden input
+                  >
+                    <IconReplace size={14} className="mr-1" /> Change
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
+
+        {/* Map takes remaining space */}
+        <div className="mt-2 flex-1 min-h-0">
+          <MrtMap
+            ref={mrtMapRef}
+            key={mapRefreshKey}
+            selectedStation={selectedStation}
+            onStationClick={handleStationClick}
+            selectedTrainId={selectedTrainId}
+            onTrainClick={handleTrainClick}
+            simulationTime={simulationTime}
+            isRunning={isSimulationRunning}
+            simulationTimetable={simulationResult?.filter((entry) => {
+              if (
+                simulationResult &&
+                simulationResult.length > 0 &&
+                !hasLoggedSchemeType
+              ) {
+                setHasLoggedSchemeType(true);
+              }
+              return (
+                !entry.SCHEME_TYPE ||
+                entry.SCHEME_TYPE === selectedScheme ||
+                entry.SERVICE_TYPE === selectedScheme
+              );
+            })}
+            stationConfigData={activeSimulationSettings?.stations}
+            turnaroundTime={activeSimulationSettings?.turnaroundTime}
+            maxCapacity={activeSimulationSettings?.maxCapacity ?? 0}
+            selectedScheme={activeSimulationSettings?.schemeType ?? "REGULAR"}
+            uiSelectedScheme={selectedScheme}
+            showDebugInfo={showDebugInfo}
+            servicePeriodsData={loadedServicePeriodsData}
+          />
+        </div>
+
+        {/* Controller is always visible below map */}
+        <div
+          className={cn(
+            "flex-shrink-0",
+            // Add margin only if an info card is displayed below it
+            (selectedStation !== null || selectedTrainId !== null) && "mb-4"
+          )}
+        >
+          <SimulationController
+            startTime={
+              isFullDayView
+                ? FULL_DAY_HOURS.start
+                : PEAK_HOURS[selectedPeak].start
+            }
+            endTime={
+              isFullDayView ? FULL_DAY_HOURS.end : PEAK_HOURS[selectedPeak].end
+            }
+            onTimeUpdate={handleTimeUpdate}
+            onSimulationStateChange={handleSimulationStateChange}
+            isLoading={
+              isSimulating /* Controller uses isSimulating, not isMapLoading */
+            }
+            hasSimulationData={
+              !!simulationResult && simulationResult.length > 0
+            }
+            hasTimetableData={!!simulationResult && simulationResult.length > 0}
+            onSchemeChange={handleSchemeChange}
+            onToggleFullDayView={() => setIsFullDayView(!isFullDayView)}
+            isFullDayView={isFullDayView}
+            selectedPeak={selectedPeak}
+            onPeakChange={setSelectedPeak}
+            showDebugInfo={showDebugInfo}
+            onShowDebugInfoChange={handleShowDebugInfoChange}
+            className={cn(
+              selectedStation === null &&
+                selectedTrainId === null &&
+                "border-b-0 rounded-b-none"
+            )}
+          />
+        </div>
+
+        {/* Station Info */}
+        <div
+          className={cn(
+            "flex-shrink-0 transition-all duration-300 ease-in-out overflow-hidden",
+            selectedStation !== null
+              ? "opacity-100 max-h-[500px]"
+              : "opacity-0 max-h-0 pointer-events-none"
+          )}
+        >
+          {selectedStation !== null && simulationResult && (
+            <StationInfo
+              {...stationData}
+              simulationTime={simulationTime}
+              simulationResult={simulationResult}
+              passengerDistributionData={passengerDistributionData}
+              className={cn(
+                selectedStation !== null &&
+                  selectedTrainId === null &&
+                  "border-b-0 rounded-b-none"
+              )}
+            />
+          )}
+        </div>
+
+        {/* Train Info */}
+        <div
+          className={cn(
+            "flex-shrink-0 transition-all duration-300 ease-in-out overflow-hidden",
+            selectedTrainId !== null && selectedTrainDetails !== null
+              ? "opacity-100 max-h-[500px]"
+              : "opacity-0 max-h-0 pointer-events-none"
+          )}
+        >
+          {selectedTrainId !== null && selectedTrainDetails !== null && (
+            <TrainInfo
+              {...selectedTrainDetails}
+              simulationTime={simulationTime}
+              simulationTimetable={simulationResult}
+              trainEventPairs={mrtMapRef.current?.getTrainEventPairs()}
+              trainStates={mrtMapRef.current?.getTrainStates()}
+              stationsById={mrtMapRef.current?.getStationsById()}
+              className={cn(
+                selectedTrainId !== null &&
+                  selectedTrainDetails !== null &&
+                  "border-b-0 rounded-b-none"
+              )}
+            />
+          )}
+        </div>
+      </div>
+    );
+  } else {
+    // Initial State (CSV Upload or Passenger Sim Disabled message)
+    mainContent = (
+      <div className="flex-grow flex items-center justify-center p-4">
+        {simulatePassengers ? (
+          <Card className="w-full max-w-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <IconUpload className="mr-2" /> Passenger Data Input
+              </CardTitle>
+              <CardDescription>
+                Upload passenger flow data (CSV) to simulate passenger flow.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CsvUpload
+                // Use nextRunFilename for initial display if available
+                onFileSelect={(file, backendFilename) => {
+                  // When a new file is selected in the initial state,
+                  // update both nextRunFilename (for immediate use)
+                  // and simulationInput.filename (for persistence if run is clicked)
+                  setNextRunFilename(backendFilename);
+                  setSimulationInput((prev) => ({
+                    ...prev,
+                    filename: backendFilename,
+                  }));
+                }}
+                initialFileName={
+                  nextRunFilename ?? simulationInput.filename /* Fallback */
+                }
+              />
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="w-full max-w-lg bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800">
+            <CardHeader>
+              <CardTitle className="flex items-center text-amber-800 dark:text-amber-200">
+                <IconInfoCircle className="mr-2" /> Passenger Simulation
+                Disabled
+              </CardTitle>
+              <CardDescription className="text-amber-700 dark:text-amber-300">
+                The simulation will run based on train operational logic only.
+                Passenger counts and demand will not be considered.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                You can enable passenger simulation in the{" "}
+                <IconSettings size={14} className="inline-block -mt-1" />{" "}
+                <span className="font-medium">Simulation Settings</span> panel
+                if needed.
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Click <span className="font-medium">Run Simulation</span> to
+                proceed.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    );
+  }
 
   return (
     <main className="flex h-screen bg-background relative overflow-hidden">
@@ -1030,7 +1408,7 @@ export default function Home() {
               )}
 
               <div className="mb-4 space-y-2">
-                {!showInitialState && (
+                {!showInitialState && !isMapLoading && (
                   <AlertDialog
                     open={isClearConfirmOpen}
                     onOpenChange={setIsClearConfirmOpen}
@@ -1039,23 +1417,29 @@ export default function Home() {
                       <Button
                         variant="outline"
                         className="w-full justify-start text-left bg-transparent border border-destructive/50 text-destructive hover:bg-destructive/10"
-                        disabled={isSimulating}
-                        title="Clear current loaded timetable data and reset settings to default. Does not delete history."
+                        disabled={isSimulating || isMapLoading}
+                        title="Resets the main view, clearing the current map/timetable and file selection. Prepares for a new simulation setup or history load. Does not affect saved history or current settings adjustments."
                       >
                         <IconReplace className="mr-2 h-4 w-4" />
-                        Clear Current Data
+                        Reset View & Clear Loaded Data
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
                         <AlertDialogTitle>
-                          Are you absolutely sure?
+                          Reset Simulation View?
                         </AlertDialogTitle>
                         <AlertDialogDescription>
-                          This action cannot be undone. This will clear the
-                          current timetable data and reset all simulation
-                          settings to their defaults. You will need to upload a
-                          new CSV or load from history again.
+                          This will clear the currently displayed map/timetable
+                          and any selected passenger file. It prepares the
+                          interface for a new simulation setup or loading from
+                          history.
+                          <br />
+                          <strong className="mt-2 block">
+                            This action does NOT delete saved simulation history
+                            and does NOT reset your current settings
+                            adjustments.
+                          </strong>
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -1064,7 +1448,7 @@ export default function Home() {
                           onClick={handleLoadNewData}
                           className="bg-destructive hover:bg-destructive/90"
                         >
-                          Yes, Clear Current Data
+                          Yes, Reset View
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
@@ -1090,6 +1474,7 @@ export default function Home() {
                     setIsHistoryModalOpen(true);
                   }}
                   title="View past simulation runs"
+                  disabled={isMapLoading}
                 >
                   <IconHistory className="mr-2 h-4 w-4" />
                   Simulation History
@@ -1098,16 +1483,14 @@ export default function Home() {
 
               <SimulationSettingsCard
                 simulationSettings={simulationSettings}
-                isSimulating={isSimulating}
+                isSimulating={isSimulating || isMapLoading}
                 isFullDayView={isFullDayView}
                 onSettingChange={handleSettingChange}
                 onStationDistanceChange={handleStationDistanceChange}
                 onStationSchemeChange={handleStationSchemeChange}
                 onSkipStopToggle={handleSkipStopToggle}
                 loadedSimulationId={loadedSimulationId}
-                hasSimulationData={
-                  !!simulationResult && simulationResult.length > 0
-                }
+                hasSimulationData={hasResults}
                 simulatePassengers={simulatePassengers}
                 onSimulatePassengersToggle={handleSimulatePassengersToggle}
               />
@@ -1122,7 +1505,7 @@ export default function Home() {
             </div>
 
             <div className="p-4 border-t mt-auto">
-              {apiError && (
+              {apiError && simulationSettings && (
                 <Alert variant="destructive" className="mb-4">
                   <IconAlertCircle className="h-4 w-4" />
                   <AlertTitle>Error</AlertTitle>
@@ -1133,15 +1516,18 @@ export default function Home() {
                 onClick={handleRunSimulation}
                 disabled={
                   isSimulating ||
+                  isMapLoading ||
                   !simulationSettings ||
-                  (simulatePassengers && !simulationInput.filename)
+                  (simulatePassengers &&
+                    !simulationInput.filename &&
+                    !nextRunFilename)
                 }
                 className="w-full bg-mrt-blue hover:bg-blue-700 text-white h-12 text-lg font-semibold border-2 border-gray-300 dark:border-transparent shadow-md hover:shadow-lg"
               >
-                {isSimulating ? (
+                {isSimulating || isMapLoading ? (
                   <>
                     <IconLoader2 className="mr-2 h-5 w-5 animate-spin" />{" "}
-                    Running Simulation...
+                    {isSimulating ? "Running Simulation..." : "Loading Data..."}
                   </>
                 ) : (
                   <>
@@ -1170,176 +1556,77 @@ export default function Home() {
       </button>
 
       <div className="flex-grow h-full flex flex-col overflow-hidden">
-        {showInitialState ? (
-          <div className="flex-grow flex items-center justify-center p-4">
-            {simulatePassengers ? (
-              <Card className="w-full max-w-lg">
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <IconUpload className="mr-2" /> Passenger Data Input
-                  </CardTitle>
-                  <CardDescription>
-                    Upload passenger flow data (CSV) to simulate passenger flow.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <CsvUpload
-                    onFileSelect={handleFileSelect}
-                    initialFileName={simulationInput.filename}
-                  />
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="w-full max-w-lg bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800">
-                <CardHeader>
-                  <CardTitle className="flex items-center text-amber-800 dark:text-amber-200">
-                    <IconInfoCircle className="mr-2" /> Passenger Simulation
-                    Disabled
-                  </CardTitle>
-                  <CardDescription className="text-amber-700 dark:text-amber-300">
-                    The simulation will run based on train operational logic
-                    only. Passenger counts and demand will not be considered.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">
-                    You can enable passenger simulation in the{" "}
-                    <IconSettings size={14} className="inline-block -mt-1" />{" "}
-                    <span className="font-medium">Simulation Settings</span>{" "}
-                    panel if needed.
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Click <span className="font-medium">Run Simulation</span> to
-                    proceed.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col overflow-y-auto p-4 space-y-2">
-            {/* Map takes remaining space */}
-            <div className="flex-1 min-h-0">
-              <MrtMap
-                ref={mrtMapRef}
-                key={mapRefreshKey}
-                selectedStation={selectedStation}
-                onStationClick={handleStationClick}
-                selectedTrainId={selectedTrainId}
-                onTrainClick={handleTrainClick}
-                simulationTime={simulationTime}
-                isRunning={isSimulationRunning}
-                simulationTimetable={simulationResult?.filter((entry) => {
-                  if (
-                    simulationResult &&
-                    simulationResult.length > 0 &&
-                    !hasLoggedSchemeType
-                  ) {
-                    setHasLoggedSchemeType(true);
-                  }
-
-                  return (
-                    !entry.SCHEME_TYPE ||
-                    entry.SCHEME_TYPE === selectedScheme ||
-                    entry.SERVICE_TYPE === selectedScheme
-                  );
-                })}
-                stationConfigData={activeSimulationSettings?.stations}
-                turnaroundTime={activeSimulationSettings?.turnaroundTime}
-                maxCapacity={activeSimulationSettings?.maxCapacity ?? 0}
-                selectedScheme={
-                  activeSimulationSettings?.schemeType ?? "REGULAR"
-                }
-                uiSelectedScheme={selectedScheme}
-                showDebugInfo={showDebugInfo}
-                servicePeriod={loadedServicePeriod}
-                headway={loadedHeadway}
-                loopTime={loadedLoopTime}
-              />
-            </div>
-
-            {/* Controller is always visible below map */}
-            <div className="flex-shrink-0">
-              <SimulationController
-                startTime={
-                  isFullDayView
-                    ? FULL_DAY_HOURS.start
-                    : PEAK_HOURS[selectedPeak].start
-                }
-                endTime={
-                  isFullDayView
-                    ? FULL_DAY_HOURS.end
-                    : PEAK_HOURS[selectedPeak].end
-                }
-                onTimeUpdate={handleTimeUpdate}
-                onSimulationStateChange={handleSimulationStateChange}
-                isLoading={isSimulating}
-                hasTimetableData={
-                  !!simulationResult && simulationResult.length > 0
-                }
-                onSchemeChange={handleSchemeChange}
-                onToggleFullDayView={() => setIsFullDayView(!isFullDayView)}
-                hasSimulationData={
-                  !!simulationResult && simulationResult.length > 0
-                }
-                isFullDayView={isFullDayView}
-                selectedPeak={selectedPeak}
-                onPeakChange={setSelectedPeak}
-                showDebugInfo={showDebugInfo}
-                onShowDebugInfoChange={handleShowDebugInfoChange}
-              />
-            </div>
-
-            {/* Station Info (conditionally pushes controller up) */}
-            <div
-              className={cn(
-                "flex-shrink-0 transition-all duration-300 ease-in-out overflow-hidden",
-                selectedStation !== null
-                  ? "opacity-100 max-h-[500px]" // No margin-top needed here due to space-y-4
-                  : "opacity-0 max-h-0 pointer-events-none"
-              )}
-            >
-              {selectedStation !== null && simulationResult && (
-                <StationInfo {...stationData} />
-              )}
-            </div>
-
-            {/* Train Info (conditionally pushes controller/station up) */}
-            <div
-              className={cn(
-                "flex-shrink-0 transition-all duration-300 ease-in-out overflow-hidden",
-                selectedTrainId !== null && selectedTrainDetails !== null
-                  ? "opacity-100 max-h-[500px]" // No margin-top needed here
-                  : "opacity-0 max-h-0 pointer-events-none"
-              )}
-            >
-              {selectedTrainId !== null && selectedTrainDetails !== null && (
-                <TrainInfo
-                  {...selectedTrainDetails}
-                  simulationTime={simulationTime}
-                  simulationTimetable={simulationResult}
-                  trainEventPairs={mrtMapRef.current?.getTrainEventPairs()}
-                  trainStates={mrtMapRef.current?.getTrainStates()}
-                  stationsById={mrtMapRef.current?.getStationsById()}
-                />
-              )}
-            </div>
-          </div>
-        )}
+        {mainContent}
       </div>
 
       <SimulationHistoryModal
         isOpen={isHistoryModalOpen}
         onClose={() => setIsHistoryModalOpen(false)}
         simulations={historySimulations}
-        onLoadSimulation={(id) => {
-          handleLoadSimulation(id);
-        }}
+        onLoadSimulation={(id) => handleLoadSimulation(id)}
         onRefreshHistory={() => handleFetchHistory(true)}
         isLoading={isHistoryLoading}
         loadedSimulationId={loadedSimulationId}
-        isSimulating={isSimulating}
+        isSimulating={isSimulating || isMapLoading}
       />
     </main>
   );
 }
+
+// --- NEW: Function to fetch passenger demand data (accepts setter as argument) --- //
+const fetchPassengerDemand = async (
+  simId: number | null,
+  setter: React.Dispatch<
+    React.SetStateAction<PassengerDistributionData[] | null>
+  >
+) => {
+  if (simId === null) {
+    setter(null); // Use the passed setter
+    return;
+  }
+
+  console.log(`Fetching passenger demand data for simulation ID: ${simId}...`);
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/get_passenger_demand/${simId}`
+    );
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `HTTP error ${response.status}`);
+    }
+    const demandData = await response.json();
+
+    // --- Aggregate demand data for the chart --- //
+    const hourlyTotals: Record<string, number> = {};
+    if (Array.isArray(demandData)) {
+      demandData.forEach((entry) => {
+        const demandTime = entry["Demand Time"]; // HH:MM:SS
+        if (demandTime && typeof demandTime === "string") {
+          const hour = demandTime.substring(0, 2); // Extract HH
+          const passengers = entry.Passengers || 0;
+          if (hour) {
+            hourlyTotals[hour] = (hourlyTotals[hour] || 0) + passengers;
+          }
+        }
+      });
+    }
+
+    const distributionForChart = Object.entries(hourlyTotals)
+      .map(([hour, count]) => ({ hour: `${hour}:00`, count }))
+      .sort((a, b) => a.hour.localeCompare(b.hour));
+
+    setter(distributionForChart);
+    console.log(
+      "Passenger demand distribution data processed:",
+      distributionForChart
+    );
+  } catch (error: any) {
+    console.error(
+      `Failed to fetch or process passenger demand for sim ${simId}:`,
+      error
+    );
+    setter(null); // Use the passed setter
+    // Optional: Show a toast, but might be noisy
+    // toast({ title: "Passenger Demand Error", description: error.message, variant: "warning" });
+  }
+};

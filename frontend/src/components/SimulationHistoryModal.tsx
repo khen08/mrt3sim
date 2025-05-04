@@ -18,7 +18,9 @@ import {
   SimulationHistoryEntry,
 } from "@/components/SimulationHistoryColumns"; // Re-add SimulationHistoryEntry here
 import { DataTable } from "@/components/DataTable"; // Import the DataTable component
-import { RowSelectionState } from "@tanstack/react-table"; // Import RowSelectionState
+import { RowSelectionState, SortingState } from "@tanstack/react-table"; // Import RowSelectionState and SortingState
+import { useToast } from "@/lib/toast"; // Import custom toast hook
+import { API_BASE_URL } from "@/lib/constants"; // Import base URL
 
 interface SimulationHistoryModalProps {
   isOpen: boolean;
@@ -43,6 +45,12 @@ export function SimulationHistoryModal({
 }: SimulationHistoryModalProps) {
   // State for row selection
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
+  // State for sorting
+  const [sorting, setSorting] = React.useState<SortingState>([]);
+  // Add state for delete loading
+  const [isDeleting, setIsDeleting] = React.useState(false);
+  // Use custom toast
+  const { toast } = useToast();
 
   // Memoize columns definition to prevent re-creation on every render
   // Pass onLoadSimulation, loadedSimulationId, AND isSimulating into the columns definition
@@ -55,14 +63,67 @@ export function SimulationHistoryModal({
   const selectedRowCount = Object.keys(rowSelection).length;
 
   const handleDeleteSelected = () => {
+    handleDeleteSelectedSimulations();
+  };
+
+  // Function to handle the delete API call
+  const handleDeleteSelectedSimulations = async () => {
     const selectedIds = Object.keys(rowSelection).map(
       (index) => simulations[parseInt(index)].SIMULATION_ID
     );
-    console.log("TODO: Implement delete logic for IDs:", selectedIds);
-    // Reset selection after (potential) delete action
-    setRowSelection({});
-    // Here you would call the API endpoint to delete simulations
-    // Example: deleteSimulations(selectedIds).then(() => { refreshHistory(); onClose(); });
+
+    if (selectedIds.length === 0) {
+      toast({
+        title: "No Selection",
+        description: "Please select simulations to delete.",
+        variant: "warning",
+      });
+      return;
+    }
+
+    setIsDeleting(true);
+    toast({
+      title: "Deleting Simulations...",
+      description: `Attempting to delete ${selectedIds.length} selected simulation(s).`,
+      variant: "info",
+    });
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/delete_history`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ simulationId: selectedIds }), // Match backend expected key
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || `HTTP Error ${response.status}`);
+      }
+
+      toast({
+        title: "Deletion Successful",
+        description:
+          result.message || `${selectedIds.length} simulation(s) deleted.`,
+        variant: "success",
+      });
+
+      setRowSelection({}); // Clear selection
+      if (onRefreshHistory) {
+        onRefreshHistory(); // Refresh the list in the parent
+      }
+    } catch (error: any) {
+      console.error("Failed to delete simulations:", error);
+      toast({
+        title: "Deletion Failed",
+        description: error.message || "Could not delete selected simulations.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -106,6 +167,8 @@ export function SimulationHistoryModal({
             data={simulations}
             rowSelection={rowSelection}
             setRowSelection={setRowSelection}
+            sorting={sorting}
+            setSorting={setSorting}
           />
         )}
         {/* </ScrollArea> */}
@@ -119,9 +182,18 @@ export function SimulationHistoryModal({
               <Button
                 variant="destructive"
                 onClick={handleDeleteSelected}
-                disabled={true} // Keep disabled until delete logic is ready
+                disabled={
+                  selectedRowCount === 0 ||
+                  isDeleting ||
+                  isLoading ||
+                  isSimulating
+                }
               >
-                <IconTrash className="mr-2 h-4 w-4" />
+                {isDeleting ? (
+                  <IconLoader className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <IconTrash className="mr-2 h-4 w-4" />
+                )}
                 Delete ({selectedRowCount})
               </Button>
             )}

@@ -167,6 +167,17 @@ interface MrtMapProps {
   servicePeriod?: string | null;
   headway?: number | null;
   loopTime?: number | null;
+  servicePeriodsData?: ServicePeriod[] | null; // Accept the new prop
+}
+
+interface ServicePeriod {
+  NAME: string;
+  START_HOUR: number;
+  TRAIN_COUNT?: number;
+  REGULAR_HEADWAY: number;
+  SKIP_STOP_HEADWAY: number;
+  REGULAR_LOOP_TIME_MINUTES: number;
+  SKIP_STOP_LOOP_TIME_MINUTES: number;
 }
 
 // --- Theme Colors (Reinstating) ---
@@ -304,7 +315,8 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
       // Destructure new props with defaults
       servicePeriod = null,
       headway = null,
-      loopTime = null,
+      loopTime = null, // Keep for now, might remove later
+      servicePeriodsData = null, // Accept the new prop
     },
     ref
   ) => {
@@ -360,6 +372,13 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
     // State for debug information displayed on the map
     const [debugInfo, setDebugInfo] = useState<Record<string, any>>({});
     const [inactiveTrainCount, setInactiveTrainCount] = useState(0); // State for dynamic box width
+
+    // State for dynamically calculated period info
+    const [currentPeriodName, setCurrentPeriodName] = useState<string | null>(
+      null
+    );
+    const [currentHeadway, setCurrentHeadway] = useState<number | null>(null);
+    const [currentLoopTime, setCurrentLoopTime] = useState<number | null>(null);
 
     // Debug states
     const [hasLoggedRawData, setHasLoggedRawData] = useState(false);
@@ -873,14 +892,13 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
             ) {
               // Calculate position during insertion
               const station1X = stationsById[1]?.x ?? 0;
-              const station2X = stationsById[2]?.x ?? 0; // Need next station for direction
-              const depotEntryX = station1X - 50; // Approximate depot entry point relative to station 1
+              const station2X = stationsById[2]?.x ?? 0; // Get station 2 for midpoint
+              const midPointX = (station1X + station2X) / 2; // Start between Stn 1 and 2
               const insertionDuration = arrivalAtStation1 - insertionStartTime;
               const timeInInsertion = currentSimSeconds - insertionStartTime;
               const progress = Math.min(1, timeInInsertion / insertionDuration);
-              // Move from depot entry towards station 1
-              const currentX =
-                depotEntryX + (station1X - depotEntryX) * progress;
+              // Move from midpoint towards station 1
+              const currentX = midPointX + (station1X - midPointX) * progress;
 
               trainState = {
                 id: trainId,
@@ -1286,15 +1304,88 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
       });
       // *** DEBUG LOGGING END ***
     }, [
-      simulationTimetable,
       simulationTime,
       stationsById,
       stations,
       turnaroundTime,
       centerStationX,
-      trainOperationalWindows,
-      getEffectiveTrainServiceType, // Depends on active scheme
+      trainOperationalWindows, // Pre-calculated windows
+      getEffectiveTrainServiceType, // Function to get service type (depends on active scheme)
+      trainEventPairs, // Needed for staggering logic
     ]); // End useEffect
+
+    // Effect to calculate current service period details
+    useEffect(() => {
+      if (!servicePeriodsData || servicePeriodsData.length === 0) {
+        setCurrentPeriodName(null);
+        setCurrentHeadway(null);
+        setCurrentLoopTime(null);
+        return;
+      }
+
+      const simHour = parseInt(simulationTime.split(":")[0], 10);
+      let activePeriod: ServicePeriod | null = null;
+
+      // Find the latest period whose start hour is <= current hour
+      // Assumes servicePeriodsData is sorted by START_HOUR ascending (or we sort it here)
+      const sortedPeriods = [...servicePeriodsData].sort(
+        (a, b) => a.START_HOUR - b.START_HOUR
+      );
+
+      for (let i = sortedPeriods.length - 1; i >= 0; i--) {
+        if (sortedPeriods[i].START_HOUR <= simHour) {
+          activePeriod = sortedPeriods[i];
+          break;
+        }
+      }
+
+      // Fallback to the first period if simHour is before the first START_HOUR
+      if (!activePeriod && sortedPeriods.length > 0) {
+        activePeriod = sortedPeriods[0];
+      }
+
+      // --- DEBUG LOG START ---
+      console.log("[Loop Time Debug - Display]");
+      console.log("  - Sim Time:", simulationTime, `(Hour: ${simHour})`);
+      console.log("  - Selected Scheme (UI):", uiSelectedScheme); // Use UI scheme for display
+      console.log("  - Active Period Found:", activePeriod?.NAME ?? "None");
+      if (activePeriod) {
+        console.log(
+          "    - Regular Loop Time:",
+          activePeriod.REGULAR_LOOP_TIME_MINUTES
+        );
+        console.log(
+          "    - Skip-Stop Loop Time:",
+          activePeriod.SKIP_STOP_LOOP_TIME_MINUTES
+        );
+      }
+      // --- DEBUG LOG END ---
+
+      if (activePeriod) {
+        setCurrentPeriodName(activePeriod.NAME);
+        if (uiSelectedScheme === "SKIP-STOP") {
+          // Use UI scheme for display
+          setCurrentHeadway(activePeriod.SKIP_STOP_HEADWAY);
+          setCurrentLoopTime(activePeriod.SKIP_STOP_LOOP_TIME_MINUTES);
+          console.log(
+            `  - Setting Display Loop Time to SKIP-STOP: ${activePeriod.SKIP_STOP_LOOP_TIME_MINUTES}`
+          ); // DEBUG
+        } else {
+          // Default to Regular if UI scheme is Regular or undefined
+          setCurrentHeadway(activePeriod.REGULAR_HEADWAY);
+          setCurrentLoopTime(activePeriod.REGULAR_LOOP_TIME_MINUTES);
+          console.log(
+            `  - Setting Display Loop Time to REGULAR: ${activePeriod.REGULAR_LOOP_TIME_MINUTES}`
+          ); // DEBUG
+        }
+      } else {
+        // Reset if no active period found (shouldn't happen with fallback)
+        setCurrentPeriodName(null);
+        setCurrentHeadway(null);
+        setCurrentLoopTime(null);
+        console.log("  - No active period, resetting loop time."); // DEBUG
+      }
+    }, [simulationTime, servicePeriodsData, uiSelectedScheme]); // Depend on uiSelectedScheme now
 
     // Memoize station elements
     const stationElements = useMemo(() => {
@@ -1468,7 +1559,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
           // Skip logic (should be okay)
           const willSkipNextStation =
             nextStationId !== null &&
-            selectedScheme === "SKIP-STOP" &&
+            uiSelectedScheme === "SKIP-STOP" &&
             !trainStopsAtStation(train.id, nextStationId);
 
           // --- Restore Text Color Logic --- //
@@ -1766,24 +1857,24 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
               <span>{simulationTime}</span>
             </div>
             {/* Service Period */}
-            {servicePeriod && (
+            {currentPeriodName && (
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <IconCalendarEvent className="w-3.5 h-3.5" />
-                <span>{servicePeriod}</span>
+                <span>{currentPeriodName}</span>
               </div>
             )}
             {/* Headway */}
-            {headway !== null && headway !== undefined && (
+            {currentHeadway !== null && currentHeadway !== undefined && (
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <IconClockHour4 className="w-3.5 h-3.5" />
-                <span>Headway: {headway} min</span>
+                <span>Headway: {currentHeadway} min</span>
               </div>
             )}
             {/* Loop Time */}
-            {loopTime !== null && loopTime !== undefined && (
+            {currentLoopTime !== null && currentLoopTime !== undefined && (
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <IconRepeat className="w-3.5 h-3.5" />
-                <span>Loop Time: {loopTime} min</span>
+                <span>Loop Time: {currentLoopTime} min</span>
               </div>
             )}
           </div>

@@ -68,6 +68,7 @@ interface TrainInfoProps extends TrainInfoData {
   trainEventPairs?: Record<number, TrainEventPair>;
   trainStates?: TrainState[];
   stationsById?: Record<number, { name: string; id: number }>;
+  className?: string;
 }
 
 const TrainInfo = ({
@@ -87,6 +88,7 @@ const TrainInfo = ({
   trainEventPairs,
   trainStates,
   stationsById,
+  className,
 }: TrainInfoProps) => {
   // State for real-time train information
   const [currentStatus, setCurrentStatus] = useState(status);
@@ -289,7 +291,7 @@ const TrainInfo = ({
       : "bg-mrt-blue text-white";
 
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader className="bg-gray-700 text-white p-3">
         {" "}
         {/* Darker header for trains */}

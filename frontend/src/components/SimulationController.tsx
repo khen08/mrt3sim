@@ -50,6 +50,7 @@ interface SimulationControllerProps {
   onPeakChange: (peak: PeakPeriod) => void; // Add prop for callback
   showDebugInfo?: boolean; // <-- Add prop to receive state
   onShowDebugInfoChange?: (show: boolean) => void; // <-- Add handler prop
+  className?: string; // Add className prop
 }
 
 type OperationalScheme = "Regular" | "Skip-Stop"; // Type for visual scheme
@@ -68,9 +69,9 @@ const SimulationController = ({
   isFullDayView,
   selectedPeak,
   onPeakChange,
-  // Default value
   showDebugInfo = false,
   onShowDebugInfoChange,
+  className, // Destructure className
 }: SimulationControllerProps) => {
   const [isRunning, setIsRunning] = useState(false);
   const [visualScheme, setVisualScheme] =
@@ -324,7 +325,7 @@ const SimulationController = ({
   };
 
   return (
-    <div className="bg-card rounded-lg border shadow-sm p-4">
+    <div className={cn("bg-card rounded-lg border shadow-sm p-4", className)}>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-md font-medium mr-4 text-card-foreground">
           Simulation Control
@@ -572,10 +573,10 @@ const SimulationController = ({
                 {SIMULATION_SPEED_PRESETS.map((preset) => (
                   <Button
                     key={preset}
-                    variant={speed === preset ? "default" : "outline"}
+                    variant={speed === preset ? "cta" : "outline"}
                     size="sm"
                     onClick={() => handleSpeedChange(preset)}
-                    className="px-3 py-1 h-auto text-xs font-medium shadow-sm hover:shadow-md transition-all"
+                    className="min-w-[40px] h-7 px-2 justify-center text-xs font-medium shadow-sm hover:shadow-md transition-all"
                     disabled={!hasTimetableData}
                   >
                     {preset}x

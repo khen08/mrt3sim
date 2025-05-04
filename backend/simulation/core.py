@@ -578,7 +578,8 @@ class EventHandler:
     def _handle_service_period_change(self, event):
         """Adjust the number of active trains based on the service period."""
         # Immediately activate the new period's headway
-        self.simulation.active_headway = event.period[f"{self.simulation.scheme_type}_HEADWAY"]#
+        scheme_type_underscore = self.simulation.scheme_type.replace("-", "_") # Get scheme type and convert
+        self.simulation.active_headway = event.period[f"{scheme_type_underscore}_HEADWAY"] # Use the converted key
         period = event.period
         trains = self.simulation.trains
         active_trains = self.simulation.active_trains
@@ -1670,8 +1671,9 @@ class Simulation:
         
         for i, period in enumerate(self.service_periods):
             #period["HEADWAY"] = custom_round(loop_time / period["TRAIN_COUNT"])
-            period[f"{scheme_type}_HEADWAY"] = custom_round(loop_time / period["TRAIN_COUNT"])
-            period[f"{scheme_type}_LOOP_TIME_MINUTES"] = loop_time
+            scheme_type_underscore = scheme_type.replace("-", "_")
+            period[f"{scheme_type_underscore}_HEADWAY"] = custom_round(loop_time / period["TRAIN_COUNT"])
+            period[f"{scheme_type_underscore}_LOOP_TIME_MINUTES"] = loop_time
 
             # Schedule service period start event
             start_datetime = datetime.combine(
@@ -1696,7 +1698,7 @@ class Simulation:
                 {
                     "NAME": period["NAME"],
                     "TRAIN_COUNT": period["TRAIN_COUNT"],
-                    f"{scheme_type}_HEADWAY": period[f"{scheme_type}_HEADWAY"],
+                    f"{scheme_type_underscore}_HEADWAY": period[f"{scheme_type_underscore}_HEADWAY"], # Use underscore key
                 }
                 for period in self.service_periods
             ]

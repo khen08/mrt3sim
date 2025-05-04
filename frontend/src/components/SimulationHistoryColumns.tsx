@@ -3,6 +3,7 @@
 import { ColumnDef } from "@tanstack/react-table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { ArrowUpDown } from "lucide-react";
 
 // Define the structure for a single simulation history entry
 export interface SimulationHistoryEntry {
@@ -50,49 +51,128 @@ export const columns = (
   // Data Columns
   {
     accessorKey: "SIMULATION_ID",
-    header: "ID",
+    header: ({ column }) => {
+      return (
+        <Button
+          variant="ghost"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          className="p-0 hover:bg-transparent"
+        >
+          ID
+          <ArrowUpDown className="ml-2 h-3 w-3" />
+        </Button>
+      );
+    },
     cell: ({ row }) => (
-      <div className="w-[60px] font-medium">
+      <div className="w-[50px] text-center font-medium">
         {row.getValue("SIMULATION_ID")}
       </div>
     ),
   },
   {
     accessorKey: "CREATED_AT",
-    header: "Created",
-    cell: ({ row }) => (
-      <div className="w-[150px]">{row.getValue("CREATED_AT")}</div>
-    ),
+    header: ({ column }) => {
+      return (
+        <Button
+          variant="ghost"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          className="p-0 hover:bg-transparent"
+        >
+          Created
+          <ArrowUpDown className="ml-2 h-3 w-3" />
+        </Button>
+      );
+    },
+    cell: ({ row }) => {
+      const dateStr = row.getValue("CREATED_AT") as string;
+      let formattedDate = "Invalid Date";
+      try {
+        formattedDate = new Date(dateStr).toLocaleString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true,
+        });
+      } catch (e) {}
+      return <div className="w-[170px]">{formattedDate}</div>;
+    },
   },
   {
     accessorKey: "PASSENGER_DATA_FILE",
     header: "Input File",
-    cell: ({ row }) => (
-      <div
-        className="truncate max-w-[200px]"
-        title={row.getValue("PASSENGER_DATA_FILE")}
-      >
-        {row.getValue("PASSENGER_DATA_FILE")}
-      </div>
-    ),
+    cell: ({ row }) => {
+      const filename = row.getValue("PASSENGER_DATA_FILE") as string | null;
+      if (filename) {
+        return (
+          <div className="truncate max-w-[200px]" title={filename}>
+            {filename}
+          </div>
+        );
+      } else {
+        return (
+          <span className="text-xs text-muted-foreground italic">
+            N/A (Train Only)
+          </span>
+        );
+      }
+    },
   },
   {
     accessorKey: "START_TIME",
-    header: "Sim Start",
-    cell: ({ row }) => (
-      <div className="w-[150px]">{row.getValue("START_TIME")}</div>
-    ),
+    header: ({ column }) => {
+      return (
+        <Button
+          variant="ghost"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          className="p-0 hover:bg-transparent"
+        >
+          Simulation Start Time
+          <ArrowUpDown className="ml-2 h-3 w-3" />
+        </Button>
+      );
+    },
+    cell: ({ row }) => {
+      const dateTimeStr = row.getValue("START_TIME") as string;
+      const timePart = dateTimeStr.split(" ")[1] || "--:--:--";
+      return <div className="w-[140px] font-mono text-center">{timePart}</div>;
+    },
   },
   {
     accessorKey: "END_TIME",
-    header: "Sim End",
-    cell: ({ row }) => (
-      <div className="w-[150px]">{row.getValue("END_TIME")}</div>
-    ),
+    header: ({ column }) => {
+      return (
+        <Button
+          variant="ghost"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          className="p-0 hover:bg-transparent"
+        >
+          Simulation End Time
+          <ArrowUpDown className="ml-2 h-3 w-3" />
+        </Button>
+      );
+    },
+    cell: ({ row }) => {
+      const dateTimeStr = row.getValue("END_TIME") as string;
+      const timePart = dateTimeStr.split(" ")[1] || "--:--:--";
+      return <div className="w-[140px] font-mono text-center">{timePart}</div>;
+    },
   },
   {
     accessorKey: "TOTAL_RUN_TIME_SECONDS",
-    header: () => <div className="text-right">Duration</div>,
+    header: ({ column }) => {
+      return (
+        <Button
+          variant="ghost"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          className="p-0 hover:bg-transparent w-full justify-end"
+        >
+          Duration
+          <ArrowUpDown className="ml-2 h-3 w-3" />
+        </Button>
+      );
+    },
     cell: ({ row }) => {
       const amount = parseFloat(row.getValue("TOTAL_RUN_TIME_SECONDS"));
       const formatted = amount.toFixed(2) + "s";
