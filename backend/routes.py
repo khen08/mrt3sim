@@ -79,29 +79,28 @@ def run_simulation():
         print(f"[ROUTE:/RUN_SIMULATION] FAILED TO GET JSON DATA: {e}")
         return jsonify({"error": f"Could not parse request JSON: {e}"}), 400
 
-    # Get the filename and config from the JSON payload
-    filename = simulation_input_data.get('filename')
     config = simulation_input_data.get('config')
 
-    if not filename:
-        print("[ROUTE:/RUN_SIMULATION] ERROR: 'filename' MISSING IN JSON PAYLOAD")
-        return jsonify({"error": "'filename' is missing in the request JSON"}), 400
     if config is None: # Check for None specifically, as config could be an empty dict {}
         print("[ROUTE:/RUN_SIMULATION] ERROR: 'config' MISSING IN JSON PAYLOAD")
         return jsonify({"error": "'config' is missing in the request JSON"}), 400
 
-    secure_name = secure_filename(filename)
+    filename = simulation_input_data.get('filename')
+    secure_name = None
+    
+    if filename != None:
+        secure_name = secure_filename(filename)
 
-    # Check if the file exists in the upload folder
-    file_path = os.path.join(UPLOAD_FOLDER, secure_name)
+        # Check if the file exists in the upload folder
+        file_path = os.path.join(UPLOAD_FOLDER, secure_name)
 
-    if not os.path.exists(file_path):
-        print(f"[ROUTE:/RUN_SIMULATION] FILE '{secure_name}' NOT FOUND IN UPLOAD FOLDER '{UPLOAD_FOLDER}'")
-        if not os.path.exists(UPLOAD_FOLDER):
-            print(f"[ROUTE:/RUN_SIMULATION] UNDERLYING ISSUE: UPLOAD FOLDER '{UPLOAD_FOLDER}' DOES NOT EXIST.")
-            return jsonify({"error": f"Upload folder '{UPLOAD_FOLDER}' is missing. Cannot find file '{secure_name}'."}), 500
-        else:
-            return jsonify({"error": f"File '{secure_name}' not found. Please upload the file first."}), 404
+        if not os.path.exists(file_path):
+            print(f"[ROUTE:/RUN_SIMULATION] FILE '{secure_name}' NOT FOUND IN UPLOAD FOLDER '{UPLOAD_FOLDER}'")
+            if not os.path.exists(UPLOAD_FOLDER):
+                print(f"[ROUTE:/RUN_SIMULATION] UNDERLYING ISSUE: UPLOAD FOLDER '{UPLOAD_FOLDER}' DOES NOT EXIST.")
+                return jsonify({"error": f"Upload folder '{UPLOAD_FOLDER}' is missing. Cannot find file '{secure_name}'."}), 500
+            else:
+                return jsonify({"error": f"File '{secure_name}' not found. Please upload the file first."}), 404
 
     try:
         # Instantiate the Simulation class
@@ -131,7 +130,7 @@ def run_simulation():
 def get_default_settings():
     try:
         # DEFAULT_SETTINGS is imported from config
-        print(f"[ROUTE:GET_DEFAULT_SETTINGS] Returning default settings: {DEFAULT_SETTINGS}")
+        print(f"[ROUTE:GET_DEFAULT_SETTINGS] Returning default settings")
         return jsonify(DEFAULT_SETTINGS)
     except Exception as e:
         print(f"[ROUTE:GET_DEFAULT_SETTINGS] FAILED TO FETCH DEFAULT SETTINGS: {e}")

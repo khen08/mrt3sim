@@ -24,7 +24,7 @@ model SIMULATIONS {
   DWELL_TIME          Int
   TURNAROUND_TIME     Int
   SERVICE_PERIODS     Json     @db.Json // Assumes appropriate JSON structure
-  PASSENGER_DATA_FILE String   @db.VarChar(255)
+  PASSENGER_DATA_FILE String?   @db.VarChar(255)
   TOTAL_RUN_TIME_SECONDS Float @default(0) // RUN TIME (overall execution time of simulation.run())
   CREATED_AT          DateTime @default(now())
 

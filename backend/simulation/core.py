@@ -1449,7 +1449,9 @@ class Simulation:
         self._initialize_track_segments() # Track segments are the same for all schemes
         self._initialize_trains(scheme_type)
         self._initialize_service_periods(scheme_type)
-        self._initialize_passengers_demand()
+        
+        if self.passenger_data_file:
+            self._initialize_passengers_demand()
 
         # Create station map for efficient lookup
         self.station_type_map = {s.station_id: s.station_type for s in self.stations}
@@ -1457,7 +1459,7 @@ class Simulation:
     def _create_simulation_entry(self):
         """Create a simulation entry in the database."""
         print("\n[CREATING SIMULATION ENTRY IN DB]")
-        base_date = self.get_datetime_from_csv()
+        base_date = self.get_datetime_from_csv() if self.passenger_data_file else datetime.now()
         if base_date:
             self.start_time = datetime.combine(base_date, time(hour=5, minute=0))
             self.end_time = datetime.combine(base_date, time(hour=22, minute=0))
@@ -1479,7 +1481,7 @@ class Simulation:
                         "DWELL_TIME": self.dwell_time,
                         "TURNAROUND_TIME": self.turnaround_time,
                         "SERVICE_PERIODS": json.dumps(self.service_periods),
-                        "PASSENGER_DATA_FILE": self.passenger_data_file
+                        "PASSENGER_DATA_FILE": self.passenger_data_file if self.passenger_data_file else None
                     }
                 )
             except Exception as create_error:
@@ -2004,10 +2006,13 @@ class Simulation:
 
     def post_simulation_save(self):
         """Saves the timetable, passenger demand, and metrics to the database."""
-        travel_time, wait_time, completed_passenger_count = self.compute_metrics()
-        self.save_metrics_to_db(travel_time, wait_time, completed_passenger_count)
+        # Only save passenger demand and metrics if a passenger data file was provided
+        if self.passenger_data_file:
+            self.save_passenger_demand_to_db()
+            travel_time, wait_time, completed_passenger_count = self.compute_metrics()
+            self.save_metrics_to_db(travel_time, wait_time, completed_passenger_count)
+        
         self.save_timetable_to_db()
-        self.save_passenger_demand_to_db()
 
     def save_timetable_to_db(self):
         """Formats timetable entries and bulk inserts them into the TRAIN_MOVEMENTS table."""
