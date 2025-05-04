@@ -1517,25 +1517,18 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                 ? TRAIN_COLOR_B_STOPPED
                 : TRAIN_COLOR_B;
             } else {
+              // Fallback for AB/other in Skip-stop (keep directional)
               fillColorClass =
                 train.direction === "SOUTHBOUND"
                   ? THEME.train.southbound
                   : THEME.train.northbound;
             }
           } else {
-            // Regular Scheme Color Logic
-            if (train.isStopped) {
-              if (train.direction === "NORTHBOUND") {
-                fillColor = TRAIN_COLOR_NB_STOPPED_REGULAR;
-              } else {
-                fillColor = TRAIN_COLOR_SB_STOPPED_REGULAR;
-              }
-            } else {
-              fillColorClass =
-                train.direction === "SOUTHBOUND"
-                  ? THEME.train.southbound
-                  : THEME.train.northbound;
-            }
+            // Regular Scheme Color Logic (Updated)
+            fillColor = train.isStopped
+              ? TRAIN_COLOR_A_STOPPED // Use A-Stopped color for ALL stopped regular trains
+              : TRAIN_COLOR_A; // Use A color for ALL in-transit regular trains
+            fillColorClass = ""; // Ensure class is not set when fillColor is used
           }
           // --- End Restore Fill Color Logic --- //
 
@@ -1563,7 +1556,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
             !trainStopsAtStation(train.id, nextStationId);
 
           // --- Restore Text Color Logic --- //
-          let textColorClass: string;
+          let textColorClass: string = THEME.train.text; // Default to white
           if (train.isInDepot) {
             textColorClass = "fill-black font-semibold";
           } else if (
@@ -1572,10 +1565,15 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
           ) {
             textColorClass = THEME.train.text;
           } else if (train.direction === "SOUTHBOUND") {
-            textColorClass = "fill-black font-semibold";
-          } else {
-            textColorClass = THEME.train.text;
+            // Only make SB text black if it's Skip-Stop and NOT A/B type (i.e., fallback yellow)
+            if (
+              uiSelectedScheme === "SKIP-STOP" &&
+              !(trainServiceType === "A" || trainServiceType === "B")
+            ) {
+              textColorClass = "fill-black font-semibold";
+            } // Otherwise, keep default white for Regular SB
           }
+          // Regular NB is already default white
           // --- End Restore Text Color Logic --- //
 
           // --- Restore JSX Return Structure --- //
@@ -1915,8 +1913,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                   ></div>
                   {/* Use HTML text theme color */}
                   <span className={THEME.textHtmlPrimary}>
-                    Southbound{" "}
-                    {uiSelectedScheme === "REGULAR" ? "(In transit)" : ""}
+                    Southbound {uiSelectedScheme === "REGULAR"}
                   </span>
                 </div>
                 <div className="flex items-center">
@@ -1926,8 +1923,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                   ></div>
                   {/* Use HTML text theme color */}
                   <span className={THEME.textHtmlPrimary}>
-                    Northbound{" "}
-                    {uiSelectedScheme === "REGULAR" ? "(In transit)" : ""}
+                    Northbound {uiSelectedScheme === "REGULAR"}
                   </span>
                 </div>
               </div>
@@ -1938,59 +1934,25 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                   <div className="text-xs font-medium mb-1">
                     Regular Trains:
                   </div>
-                  {/* In Transit Section */}
-                  <div className="pl-2">
-                    <div className="text-xs mb-1 text-muted-foreground">
-                      In transit:
+                  {/* Combined In Transit and Stopped Sections */}
+                  <div className="flex space-x-4 pl-2">
+                    {" "}
+                    {/* Use flex and spacing */}
+                    {/* In Transit Item */}
+                    <div className="flex items-center">
+                      <div
+                        className="w-5 h-5 mr-2 border border-black dark:border-white rounded-sm"
+                        style={{ backgroundColor: TRAIN_COLOR_A }} // Use MRT Blue
+                      ></div>
+                      <span className={THEME.textHtmlPrimary}>In Transit</span>
                     </div>
-                    <div className="flex space-x-4">
-                      <div className="flex items-center">
-                        <div
-                          className={`w-5 h-5 mr-2 rounded-sm ${THEME.train.southbound}`}
-                          // Apply the theme class directly or use style if needed
-                        ></div>
-                        <span className={THEME.textHtmlPrimary}>
-                          Southbound
-                        </span>
-                      </div>
-                      <div className="flex items-center">
-                        <div
-                          className={`w-5 h-5 mr-2 rounded-sm ${THEME.train.northbound}`}
-                        ></div>
-                        <span className={THEME.textHtmlPrimary}>
-                          Northbound
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  {/* Stopped Section */}
-                  <div className="pl-2 mt-1">
-                    <div className="text-xs mb-1 text-muted-foreground">
-                      Stopped:
-                    </div>
-                    <div className="flex space-x-4">
-                      <div className="flex items-center">
-                        <div
-                          className="w-5 h-5 mr-2 border border-black dark:border-white rounded-sm"
-                          style={{
-                            backgroundColor: TRAIN_COLOR_SB_STOPPED_REGULAR,
-                          }}
-                        ></div>
-                        <span className={THEME.textHtmlPrimary}>
-                          Southbound
-                        </span>
-                      </div>
-                      <div className="flex items-center">
-                        <div
-                          className="w-5 h-5 mr-2 border border-black dark:border-white rounded-sm"
-                          style={{
-                            backgroundColor: TRAIN_COLOR_NB_STOPPED_REGULAR,
-                          }}
-                        ></div>
-                        <span className={THEME.textHtmlPrimary}>
-                          Northbound
-                        </span>
-                      </div>
+                    {/* Stopped Item */}
+                    <div className="flex items-center">
+                      <div
+                        className="w-5 h-5 mr-2 border border-black dark:border-white rounded-sm"
+                        style={{ backgroundColor: TRAIN_COLOR_A_STOPPED }} // Use A-Stopped color
+                      ></div>
+                      <span className={THEME.textHtmlPrimary}>Stopped</span>
                     </div>
                   </div>
                 </div>

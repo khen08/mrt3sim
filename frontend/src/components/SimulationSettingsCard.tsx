@@ -35,6 +35,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import React, { useRef } from "react";
 import { cn } from "@/lib/utils";
+import { uploadCsvFile } from "@/lib/fileUpload";
+import { toast } from "@/components/ui/use-toast";
 
 // Define SimulationSettings type locally (copied from page.tsx)
 interface SimulationSettings {
@@ -71,6 +73,7 @@ interface SimulationSettingsCardProps {
   onSimulatePassengersToggle: (checked: boolean) => void;
   hasResults: boolean;
   simulationInputFilename: string | null;
+  nextRunFilename?: string | null;
   handleFileSelect: (file: File | null, backendFilename: string | null) => void;
 }
 
@@ -88,6 +91,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
   onSimulatePassengersToggle,
   hasResults,
   simulationInputFilename,
+  nextRunFilename = null,
   handleFileSelect,
 }: SimulationSettingsCardProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -157,9 +161,8 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
         </div>
 
         {/* -- Inserted Selected File Info Card -- */}
-        {hasResults &&
-          simulatePassengers &&
-          simulationInputFilename !== null && (
+        {(simulationInputFilename !== null || nextRunFilename !== null) &&
+          simulatePassengers && (
             <Card className="border-blue-300 bg-blue-50 dark:bg-blue-950/50 p-3 mb-4">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2 overflow-hidden">
@@ -168,17 +171,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     className="text-blue-600 dark:text-blue-400 flex-shrink-0"
                   />
                   <div className="flex flex-col overflow-hidden">
-                    <span
-                      className="text-sm font-medium text-blue-800 dark:text-blue-200"
-                      title={simulationInputFilename}
-                    >
-                      Selected for next run:
+                    <span className="text-xs font-medium text-blue-800 dark:text-blue-200">
+                      {nextRunFilename
+                        ? "Selected for next run:"
+                        : "Using file from loaded simulation:"}
                     </span>
                     <span className="text-xs font-medium text-blue-800 dark:text-blue-200 truncate">
-                      {simulationInputFilename}
+                      {nextRunFilename || simulationInputFilename}
                     </span>
                     <span className="text-xs text-blue-600 dark:text-blue-400">
-                      inherited from loaded simulation or previous selection
+                      {nextRunFilename
+                        ? "selected for next simulation run"
+                        : "inherited from loaded simulation"}
                     </span>
                   </div>
                 </div>
@@ -189,10 +193,53 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     accept=".csv"
                     className="hidden"
                     ref={fileInputRef}
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (file) {
-                        handleFileSelect(file, file.name);
+                        console.log(
+                          "File selected via Change button:",
+                          file.name
+                        );
+
+                        // Show loading state using toast
+                        toast({
+                          title: "Uploading File",
+                          description: `Uploading '${file.name}'. Please wait.`,
+                          variant: "default",
+                        });
+
+                        try {
+                          // Use uploadCsvFile utility directly
+                          const result = await uploadCsvFile(file);
+                          console.log("Upload result:", result);
+
+                          // Handle the result
+                          if (result.success && result.filename) {
+                            console.log(
+                              "Setting nextRunFilename to:",
+                              result.filename
+                            );
+                            // Call handleFileSelect with ONLY the backend filename
+                            // This will set only nextRunFilename without changing UI
+                            handleFileSelect(file, result.filename);
+
+                            toast({
+                              title: "File Uploaded",
+                              description: `'${file.name}' will be used for the next simulation run.`,
+                              variant: "default",
+                            });
+                          } else {
+                            throw new Error("Upload failed with unknown error");
+                          }
+                        } catch (error: any) {
+                          console.error("File upload error:", error);
+                          toast({
+                            title: "Upload Failed",
+                            description:
+                              error.message || "Failed to upload file",
+                            variant: "destructive",
+                          });
+                        }
                       }
                     }}
                   />

@@ -18,12 +18,51 @@ import {
 interface CsvUploadProps {
   onFileSelect: (file: File | null, backendFilename: string | null) => void;
   initialFileName?: string | null;
+  forceHide?: boolean;
 }
 
-const CsvUpload = ({
+// Export a utility function that can be called directly without rendering the component
+export async function uploadFileWithoutUI(
+  file: File,
+  callback: (file: File | null, backendFilename: string | null) => void
+) {
+  if (!file) return;
+
+  try {
+    const formData = new FormData();
+    formData.append("passenger_data_file", file);
+
+    const response = await fetch(UPLOAD_CSV_ENDPOINT, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `HTTP error ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.success && data.filename) {
+      callback(file, data.filename);
+    } else {
+      throw new Error(data.error || "Unknown error during upload");
+    }
+  } catch (error: any) {
+    console.error("Error uploading file:", error);
+    callback(null, null);
+  }
+}
+
+const CsvUpload: React.FC<CsvUploadProps> = ({
   onFileSelect,
   initialFileName = null,
-}: CsvUploadProps) => {
+  forceHide = false,
+}) => {
+  if (forceHide) {
+    return null;
+  }
+
   const [fileName, setFileName] = useState<string | null>(initialFileName);
   const [isFileSelected, setIsFileSelected] = useState<boolean>(
     !!initialFileName
