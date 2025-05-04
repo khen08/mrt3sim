@@ -1847,36 +1847,38 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
         >
           {/* Sim Time & Metadata Display */}
           <div
-            className={`absolute top-2 right-2 bg-card/90 dark:bg-card/90 p-2 rounded-lg shadow-md text-card-foreground z-20 flex flex-col items-end gap-0.5 text-xs`} // Adjusted padding/gap
+            className={`absolute top-2 right-2 bg-card/90 dark:bg-card/90 p-2 rounded-lg shadow-md text-card-foreground z-20 flex flex-col items-center gap-0.5 text-xs`} // Changed to items-center
           >
-            {/* Current Time */}
-            <div className="flex items-center gap-1.5 font-mono text-sm mb-0.5">
+            {/* Current Time - Centered and Larger */}
+            <div className="flex items-center justify-center gap-1.5 font-mono text-lg mb-1 w-full">
               {" "}
-              {/* Larger time */}
-              <IconClock className="w-4 h-4" />
+              {/* Adjusted text size, margin, centering */}
+              <IconClock className="w-5 h-5" /> {/* Slightly larger icon */}
               <span>{simulationTime}</span>
             </div>
-            {/* Service Period */}
-            {currentPeriodName && (
-              <div className="flex items-center gap-1.5 text-muted-foreground">
-                <IconCalendarEvent className="w-3.5 h-3.5" />
-                <span>{currentPeriodName}</span>
-              </div>
-            )}
-            {/* Headway */}
-            {currentHeadway !== null && currentHeadway !== undefined && (
-              <div className="flex items-center gap-1.5 text-muted-foreground">
-                <IconClockHour4 className="w-3.5 h-3.5" />
-                <span>Headway: {currentHeadway} min</span>
-              </div>
-            )}
-            {/* Loop Time */}
-            {currentLoopTime !== null && currentLoopTime !== undefined && (
-              <div className="flex items-center gap-1.5 text-muted-foreground">
-                <IconRepeat className="w-3.5 h-3.5" />
-                <span>Loop Time: {currentLoopTime} min</span>
-              </div>
-            )}
+            {/* Service Period, Headway, Loop Time - Left Aligned */}
+            <div className="flex flex-col items-start w-full gap-0.5">
+              {" "}
+              {/* New container for left alignment */}
+              {currentPeriodName && (
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <IconCalendarEvent className="w-3.5 h-3.5" />
+                  <span>{currentPeriodName}</span>
+                </div>
+              )}
+              {currentHeadway !== null && currentHeadway !== undefined && (
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <IconClockHour4 className="w-3.5 h-3.5" />
+                  <span>Headway: {currentHeadway} min</span>
+                </div>
+              )}
+              {currentLoopTime !== null && currentLoopTime !== undefined && (
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <IconRepeat className="w-3.5 h-3.5" />
+                  <span>Loop Time: {currentLoopTime} min</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Debug Info Overlay - Conditionally render */}
@@ -1932,35 +1934,73 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
 
               {/* Regular Scheme Stopped Colors Legend */}
               {uiSelectedScheme === "REGULAR" && (
-                <div className="flex space-x-4 mt-1 pt-1 border-t border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center">
-                    <div
-                      className="w-4 h-2 mr-2 rounded-sm"
-                      style={{
-                        backgroundColor: TRAIN_COLOR_SB_STOPPED_REGULAR,
-                      }}
-                    ></div>
-                    <span className={THEME.textHtmlPrimary}>
-                      Southbound (Stopped)
-                    </span>
+                <div className="flex flex-col space-y-2">
+                  <div className="text-xs font-medium mb-1">
+                    Regular Trains:
                   </div>
-                  <div className="flex items-center">
-                    <div
-                      className="w-4 h-2 mr-2 rounded-sm"
-                      style={{
-                        backgroundColor: TRAIN_COLOR_NB_STOPPED_REGULAR,
-                      }}
-                    ></div>
-                    <span className={THEME.textHtmlPrimary}>
-                      Northbound (Stopped)
-                    </span>
+                  {/* In Transit Section */}
+                  <div className="pl-2">
+                    <div className="text-xs mb-1 text-muted-foreground">
+                      In transit:
+                    </div>
+                    <div className="flex space-x-4">
+                      <div className="flex items-center">
+                        <div
+                          className={`w-5 h-5 mr-2 rounded-sm ${THEME.train.southbound}`}
+                          // Apply the theme class directly or use style if needed
+                        ></div>
+                        <span className={THEME.textHtmlPrimary}>
+                          Southbound
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <div
+                          className={`w-5 h-5 mr-2 rounded-sm ${THEME.train.northbound}`}
+                        ></div>
+                        <span className={THEME.textHtmlPrimary}>
+                          Northbound
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Stopped Section */}
+                  <div className="pl-2 mt-1">
+                    <div className="text-xs mb-1 text-muted-foreground">
+                      Stopped:
+                    </div>
+                    <div className="flex space-x-4">
+                      <div className="flex items-center">
+                        <div
+                          className="w-5 h-5 mr-2 border border-black dark:border-white rounded-sm"
+                          style={{
+                            backgroundColor: TRAIN_COLOR_SB_STOPPED_REGULAR,
+                          }}
+                        ></div>
+                        <span className={THEME.textHtmlPrimary}>
+                          Southbound
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <div
+                          className="w-5 h-5 mr-2 border border-black dark:border-white rounded-sm"
+                          style={{
+                            backgroundColor: TRAIN_COLOR_NB_STOPPED_REGULAR,
+                          }}
+                        ></div>
+                        <span className={THEME.textHtmlPrimary}>
+                          Northbound
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* Skip-stop legend - only show when SKIP-STOP scheme is selected IN THE UI */}
               {uiSelectedScheme === "SKIP-STOP" && ( // <<< CONDITION ALREADY CORRECT
-                <div className="flex flex-col space-y-2 mt-1 pt-1 border-t border-gray-200 dark:border-gray-700">
+                <div className="flex flex-col space-y-2 pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
+                  {" "}
+                  {/* Add margin and border */}
                   <div className="text-xs font-medium mb-1">
                     Skip-Stop Trains:
                   </div>
@@ -2008,7 +2048,6 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                       </div>
                     </div>
                   </div>
-
                   {/* Conditionally render skipped station legend entry */}
                   {selectedTrainId !== null && (
                     <div className="flex items-center mt-1 pt-1 border-t border-gray-200 dark:border-gray-700">
@@ -2019,7 +2058,6 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                       </span>
                     </div>
                   )}
-
                   {/* Station type legend - Use updated colors */}
                   <div className="text-xs font-medium mt-1 mb-1">
                     Station Types:

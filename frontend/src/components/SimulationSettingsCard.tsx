@@ -19,15 +19,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { IconSettings, IconClock, IconInfoCircle } from "@tabler/icons-react";
+import {
+  IconSettings,
+  IconClock,
+  IconInfoCircle,
+  IconFile,
+  IconReplace,
+} from "@tabler/icons-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
+import React, { useRef } from "react";
+import { cn } from "@/lib/utils";
 
-// Define interface for the simulation settings passed as props
+// Define SimulationSettings type locally (copied from page.tsx)
 interface SimulationSettings {
   dwellTime: number;
   turnaroundTime: number;
@@ -36,7 +45,7 @@ interface SimulationSettings {
   cruisingSpeed: number;
   maxCapacity: number;
   schemeType: "REGULAR" | "SKIP-STOP";
-  schemePattern: string[]; // Array of station schemes: ["AB", "A", "AB", "B", ...]
+  schemePattern: string[];
   stations: {
     name: string;
     distance: number;
@@ -44,6 +53,7 @@ interface SimulationSettings {
   }[];
 }
 
+// Define interface for the simulation settings passed as props
 interface SimulationSettingsCardProps {
   simulationSettings: SimulationSettings | null;
   isSimulating: boolean;
@@ -52,16 +62,16 @@ interface SimulationSettingsCardProps {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | string,
     field?: string
   ) => void;
-  onStationDistanceChange: (
-    index: number,
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => void;
+  onStationDistanceChange: (index: number, value: number) => void;
   onStationSchemeChange: (index: number, value: "AB" | "A" | "B") => void;
   onSkipStopToggle: (checked: boolean) => void;
-  loadedSimulationId?: number | null;
+  loadedSimulationId: number | null;
   hasSimulationData: boolean;
   simulatePassengers: boolean;
   onSimulatePassengersToggle: (checked: boolean) => void;
+  hasResults: boolean;
+  simulationInputFilename: string | null;
+  handleFileSelect: (file: File | null, backendFilename: string | null) => void;
 }
 
 const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
@@ -72,15 +82,23 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
   onStationDistanceChange,
   onStationSchemeChange,
   onSkipStopToggle,
-  loadedSimulationId = null,
+  loadedSimulationId,
   hasSimulationData,
   simulatePassengers,
   onSimulatePassengersToggle,
+  hasResults,
+  simulationInputFilename,
+  handleFileSelect,
 }: SimulationSettingsCardProps) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   if (!simulationSettings) {
     // Render nothing or a loading indicator if settings are not yet loaded
     return null;
   }
+
+  const { stations, ...trainSettings } = simulationSettings;
+  const isSkipStop = simulationSettings.schemeType === "SKIP-STOP";
 
   return (
     <Card className="mb-4">
@@ -138,6 +156,59 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
           </TooltipProvider>
         </div>
 
+        {/* -- Inserted Selected File Info Card -- */}
+        {hasResults &&
+          simulatePassengers &&
+          simulationInputFilename !== null && (
+            <Card className="border-blue-300 bg-blue-50 dark:bg-blue-950/50 p-3 mb-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <IconFile
+                    size={20}
+                    className="text-blue-600 dark:text-blue-400 flex-shrink-0"
+                  />
+                  <div className="flex flex-col overflow-hidden">
+                    <span
+                      className="text-sm font-medium text-blue-800 dark:text-blue-200"
+                      title={simulationInputFilename}
+                    >
+                      Selected for next run:
+                    </span>
+                    <span className="text-xs font-medium text-blue-800 dark:text-blue-200 truncate">
+                      {simulationInputFilename}
+                    </span>
+                    <span className="text-xs text-blue-600 dark:text-blue-400">
+                      inherited from loaded simulation or previous selection
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  {/* Hidden file input */}
+                  <input
+                    type="file"
+                    accept=".csv"
+                    className="hidden"
+                    ref={fileInputRef}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        handleFileSelect(file, file.name);
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isSimulating}
+                  >
+                    <IconReplace size={14} className="mr-1" /> Change
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
+
         <Tabs defaultValue="train" className="w-full">
           <TabsList className="grid w-full grid-cols-2 mb-4">
             <TabsTrigger value="train" disabled={isSimulating}>
@@ -161,7 +232,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="1"
                     min="0"
-                    value={simulationSettings.dwellTime}
+                    value={trainSettings.dwellTime}
                     onChange={onSettingChange}
                     className="pr-8 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -183,7 +254,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="1"
                     min="0"
-                    value={simulationSettings.turnaroundTime}
+                    value={trainSettings.turnaroundTime}
                     onChange={onSettingChange}
                     className="pr-8 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -209,7 +280,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="0.01"
                     min="0"
-                    value={simulationSettings.acceleration}
+                    value={trainSettings.acceleration}
                     onChange={onSettingChange}
                     className="pr-12 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -228,7 +299,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="0.01"
                     min="0"
-                    value={simulationSettings.deceleration}
+                    value={trainSettings.deceleration}
                     onChange={onSettingChange}
                     className="pr-12 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -247,7 +318,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="1"
                     min="0"
-                    value={simulationSettings.cruisingSpeed}
+                    value={trainSettings.cruisingSpeed}
                     onChange={onSettingChange}
                     className="pr-14 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -270,7 +341,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="1"
                     min="0"
-                    value={simulationSettings.maxCapacity}
+                    value={trainSettings.maxCapacity}
                     onChange={onSettingChange}
                     className="pr-16 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -297,7 +368,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="useSkipStop"
-                  checked={simulationSettings.schemeType === "SKIP-STOP"}
+                  checked={isSkipStop}
                   onCheckedChange={(checked: boolean) =>
                     onSkipStopToggle(checked)
                   }
@@ -321,53 +392,66 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                 <div className="col-span-4">Dist. from Prev (km)</div>
               </div>
               <div className="px-4 pt-2 pb-4 max-h-full flex-grow">
-                {simulationSettings.stations.map((station, index) => (
-                  <div
-                    key={`station-${index}`}
-                    className="grid grid-cols-16 gap-4 items-center mb-2 text-xs"
-                  >
-                    <div className="col-span-1 text-gray-500">{index + 1}</div>
-                    <div className="col-span-5">{station.name}</div>
-                    {/* New scheme selector */}
-                    <div className="col-span-6">
-                      <Select
-                        disabled={
-                          simulationSettings.schemeType !== "SKIP-STOP" ||
-                          isSimulating
-                        }
-                        value={station.scheme || "AB"}
-                        onValueChange={(value) =>
-                          onStationSchemeChange(
-                            index,
-                            value as "AB" | "A" | "B"
-                          )
-                        }
-                      >
-                        {/* Added fixed width w-20 */}
-                        <SelectTrigger className="h-7 text-xs w-20">
-                          <SelectValue placeholder="Select Scheme" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="AB">AB</SelectItem>
-                          <SelectItem value="A">A</SelectItem>
-                          <SelectItem value="B">B</SelectItem>
-                        </SelectContent>
-                      </Select>
+                {stations.map(
+                  (
+                    station: {
+                      name: string;
+                      distance: number;
+                      scheme?: "AB" | "A" | "B";
+                    },
+                    index: number
+                  ) => (
+                    <div
+                      key={`station-${index}`}
+                      className="grid grid-cols-16 gap-4 items-center mb-2 text-xs"
+                    >
+                      <div className="col-span-1 text-gray-500">
+                        {index + 1}
+                      </div>
+                      <div className="col-span-5">{station.name}</div>
+                      {/* New scheme selector */}
+                      <div className="col-span-6">
+                        <Select
+                          disabled={!isSkipStop || isSimulating}
+                          value={station.scheme || "AB"}
+                          onValueChange={(value) =>
+                            onStationSchemeChange(
+                              index,
+                              value as "AB" | "A" | "B"
+                            )
+                          }
+                        >
+                          {/* Added fixed width w-20 */}
+                          <SelectTrigger className="h-7 text-xs w-20">
+                            <SelectValue placeholder="Select Scheme" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="AB">AB</SelectItem>
+                            <SelectItem value="A">A</SelectItem>
+                            <SelectItem value="B">B</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="col-span-4">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={station.distance}
+                          onChange={(e) =>
+                            onStationDistanceChange(
+                              index,
+                              Number(e.target.value)
+                            )
+                          }
+                          // Disable first station and if simulating
+                          disabled={index === 0 || isSimulating}
+                          className="h-7 text-xs"
+                        />
+                      </div>
                     </div>
-                    <div className="col-span-4">
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={station.distance}
-                        onChange={(e) => onStationDistanceChange(index, e)}
-                        // Disable first station and if simulating
-                        disabled={index === 0 || isSimulating}
-                        className="h-7 text-xs"
-                      />
-                    </div>
-                  </div>
-                ))}
+                  )
+                )}
               </div>
             </div>
           </TabsContent>

@@ -298,9 +298,9 @@ export default function Home() {
   const handleFetchHistory = useCallback(
     async (fetchFullHistory: boolean = false) => {
       if (fetchFullHistory) {
-        setIsHistoryLoading(true);
+    setIsHistoryLoading(true);
       }
-      setApiError(null);
+    setApiError(null);
 
       let url = GET_SIMULATION_HISTORY_ENDPOINT;
       let highestKnownId: number | null = null;
@@ -326,11 +326,11 @@ export default function Home() {
 
       try {
         const response = await fetch(url);
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `HTTP error ${response.status}`);
-        }
-        const data: SimulationHistoryEntry[] = await response.json();
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP error ${response.status}`);
+      }
+      const data: SimulationHistoryEntry[] = await response.json();
         console.log("Fetched history data:", data);
 
         // If it was an incremental fetch and new data arrived, briefly show loading
@@ -349,20 +349,20 @@ export default function Home() {
           merged.sort((a, b) => b.SIMULATION_ID - a.SIMULATION_ID);
           return merged;
         });
-      } catch (error: any) {
+    } catch (error: any) {
         // Ensure loading is off even if there was an error
         setIsHistoryLoading(false);
-        console.error("Failed to fetch history:", error);
-        setApiError(`Failed to load simulation history: ${error.message}`);
-        setHistorySimulations([]);
-        toast({
-          title: "Error Loading History",
-          description: `Could not fetch simulation history: ${error.message}`,
-          variant: "destructive",
-        });
-      } finally {
-        setIsHistoryLoading(false);
-      }
+      console.error("Failed to fetch history:", error);
+      setApiError(`Failed to load simulation history: ${error.message}`);
+      setHistorySimulations([]);
+      toast({
+        title: "Error Loading History",
+        description: `Could not fetch simulation history: ${error.message}`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsHistoryLoading(false);
+    }
     },
     [toast, historySimulations]
   );
@@ -533,14 +533,13 @@ export default function Home() {
   );
 
   const handleStationDistanceChange = useCallback(
-    (index: number, event: React.ChangeEvent<HTMLInputElement>) => {
-      const newDistance = parseFloat(event.target.value) || 0;
+    (index: number, value: number) => {
       setSimulationSettings((prev) => {
         if (!prev) return null;
 
         const updatedStations = prev.stations.map((station, i) => {
           if (i === index) {
-            return { ...station, distance: newDistance };
+            return { ...station, distance: value };
           }
           return station;
         });
@@ -777,19 +776,19 @@ export default function Home() {
         },
         body: JSON.stringify({
           filename: payloadFilename,
-          config: {
-            ...otherSettings,
-            stationNames: stationNames,
-            stationDistances: stationDistances,
-            schemePattern:
-              simulationSettings.schemePattern ||
-              (simulationSettings.schemeType === "SKIP-STOP"
-                ? stationSchemes
-                : Array(stationNames.length).fill("AB")),
-            ...(simulationSettings.schemeType === "SKIP-STOP" && {
-              stationSchemes: stationSchemes,
-            }),
-          },
+      config: {
+        ...otherSettings,
+        stationNames: stationNames,
+        stationDistances: stationDistances,
+        schemePattern:
+          simulationSettings.schemePattern ||
+          (simulationSettings.schemeType === "SKIP-STOP"
+            ? stationSchemes
+            : Array(stationNames.length).fill("AB")),
+        ...(simulationSettings.schemeType === "SKIP-STOP" && {
+          stationSchemes: stationSchemes,
+        }),
+      },
         }),
       });
 
@@ -1141,57 +1140,6 @@ export default function Home() {
             </Card>
           )}
 
-        {/* Display SELECTED file info if results are loaded, passengers enabled, AND a file is selected */}
-        {hasResults &&
-          simulatePassengers &&
-          simulationInput.filename !== null && (
-            <Card className="border-blue-300 bg-blue-50 dark:bg-blue-950/50 p-3 my-2">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2 overflow-hidden">
-                  <IconFile
-                    size={20}
-                    className="text-blue-600 dark:text-blue-400 flex-shrink-0"
-                  />
-                  <div className="flex flex-col overflow-hidden">
-                    <span
-                      className="text-sm font-medium text-blue-800 dark:text-blue-200 truncate"
-                      title={simulationInput.filename}
-                    >
-                      Selected for next run: {simulationInput.filename}
-                    </span>
-                    <span className="text-xs text-blue-600 dark:text-blue-400">
-                      {" "}
-                      inherited from loaded simulation or previous selection{" "}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  {/* Hidden file input */}
-                  <input
-                    type="file"
-                    accept=".csv"
-                    className="hidden"
-                    ref={fileInputRef} // Assign ref
-                    onChange={(e) => {
-                      // Use the main handleFileSelect when changing here
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        handleFileSelect(file, file.name); // Trigger upload + state update
-                      }
-                    }}
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()} // Trigger hidden input
-                  >
-                    <IconReplace size={14} className="mr-1" /> Change
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          )}
-
         {/* Map takes remaining space */}
         <div className="mt-2 flex-1 min-h-0">
           <MrtMap
@@ -1493,6 +1441,9 @@ export default function Home() {
                 hasSimulationData={hasResults}
                 simulatePassengers={simulatePassengers}
                 onSimulatePassengersToggle={handleSimulatePassengersToggle}
+                hasResults={hasResults}
+                simulationInputFilename={simulationInput.filename}
+                handleFileSelect={handleFileSelect}
               />
 
               {apiError && !simulationSettings && (
@@ -1557,7 +1508,7 @@ export default function Home() {
 
       <div className="flex-grow h-full flex flex-col overflow-hidden">
         {mainContent}
-      </div>
+          </div>
 
       <SimulationHistoryModal
         isOpen={isHistoryModalOpen}
