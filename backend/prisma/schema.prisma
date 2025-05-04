@@ -190,9 +190,6 @@ model SIMULATION_METRICS {
   TOTAL_PASSENGER_TRAVEL_TIME_SECONDS Int @default(0)
   TOTAL_PASSENGER_WAITING_TIME_SECONDS Int @default(0)
 
-  // Loop time per scheme (in minutes)
-  LOOP_TIME_MINUTES                Int @default(0)
-
   // Relation back to SIMULATIONS
   simulation       SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
 

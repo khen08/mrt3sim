@@ -1748,6 +1748,7 @@ class Simulation:
         for i, period in enumerate(self.service_periods):
             #period["HEADWAY"] = custom_round(loop_time / period["TRAIN_COUNT"])
             period[f"{scheme_type}_HEADWAY"] = custom_round(loop_time / period["TRAIN_COUNT"])
+            period[f"{scheme_type}_LOOP_TIME_MINUTES"] = loop_time
 
             # Schedule service period start event
             start_datetime = datetime.combine(
@@ -1785,11 +1786,11 @@ class Simulation:
         print(indented_df_string)
 
         if scheme_type == "REGULAR":
-            print(f"  [MEM:INIT SERVICE PERIODS] LOOP TIME: {timedelta(minutes=loop_time)}")
+            print(f"\n  [MEM:INIT SERVICE PERIODS] LOOP TIME: {timedelta(minutes=loop_time)}")
         else:
-            print(f"  [MEM:INIT SERVICE PERIODS] LOOP TIME FOR A TRAINS: {timedelta(minutes=loop_time)}")
+            print(f"\n  [MEM:INIT SERVICE PERIODS] LOOP TIME FOR A TRAINS: {timedelta(minutes=loop_time)}")
             test_train.service_type = "B"
-            print(f"  [MEM:INIT SERVICE PERIODS] LOOP TIME FOR B TRAINS: {timedelta(minutes=int(self.calculate_loop_time(test_train) / 60))}")
+            print(f"\n  [MEM:INIT SERVICE PERIODS] LOOP TIME FOR B TRAINS: {timedelta(minutes=int(self.calculate_loop_time(test_train) / 60))}")
 
 
         if not debug :
@@ -2171,8 +2172,7 @@ class Simulation:
                         'SCHEME_TYPE': self.scheme_type,
                         'PASSENGER_COUNT': int(completed_passenger_count),
                         'TOTAL_PASSENGER_TRAVEL_TIME_SECONDS': int(travel_time),
-                        'TOTAL_PASSENGER_WAITING_TIME_SECONDS': int(wait_time),
-                        'LOOP_TIME_MINUTES': self.loop_times[f"{self.scheme_type}_LOOP_TIME"]
+                        'TOTAL_PASSENGER_WAITING_TIME_SECONDS': int(wait_time)
                     }
                 )
                 print(f"  [DB:CREATE SIMULATION_METRICS] SUCCESSFULLY CREATED metrics entry for SIMULATION_ID: {self.simulation_id}, SCHEME: {self.scheme_type}")
