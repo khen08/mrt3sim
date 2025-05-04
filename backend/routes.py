@@ -19,6 +19,7 @@ main_bp = Blueprint('main', __name__)
 
 # --- API Routes (using Blueprint) ---
 
+# Route to upload passenger data CSV file
 @main_bp.route('/upload_csv', methods=['POST'])
 def upload_csv():
     if 'passenger_data_file' not in request.files:
@@ -70,19 +71,20 @@ def upload_csv():
         print("[ROUTE:/UPLOAD_CSV] ERROR: FILE OBJECT IS INVALID DURING /UPLOAD_CSV")
         return jsonify({"error": "Invalid file object received"}), 400
 
-@main_bp.route('/run_simulation', methods=['POST'])
-def run_simulation():
+# Route to create and run a new simulation
+@main_bp.route('/simulations', methods=['POST'])
+def create_simulation():
     try:
         simulation_input_data = request.get_json()
-        print(f"[ROUTE:/RUN_SIMULATION] RECEIVED JSON PAYLOAD:\n{json.dumps(simulation_input_data, indent=2)}")
+        print(f"[ROUTE:/SIMULATIONS POST] RECEIVED JSON PAYLOAD:\n{json.dumps(simulation_input_data, indent=2)}")
     except Exception as e:
-        print(f"[ROUTE:/RUN_SIMULATION] FAILED TO GET JSON DATA: {e}")
+        print(f"[ROUTE:/SIMULATIONS POST] FAILED TO GET JSON DATA: {e}")
         return jsonify({"error": f"Could not parse request JSON: {e}"}), 400
 
     config = simulation_input_data.get('config')
 
     if config is None: # Check for None specifically, as config could be an empty dict {}
-        print("[ROUTE:/RUN_SIMULATION] ERROR: 'config' MISSING IN JSON PAYLOAD")
+        print("[ROUTE:/SIMULATIONS POST] ERROR: 'config' MISSING IN JSON PAYLOAD")
         return jsonify({"error": "'config' is missing in the request JSON"}), 400
 
     filename = simulation_input_data.get('filename')
@@ -95,9 +97,9 @@ def run_simulation():
         file_path = os.path.join(UPLOAD_FOLDER, secure_name)
 
         if not os.path.exists(file_path):
-            print(f"[ROUTE:/RUN_SIMULATION] FILE '{secure_name}' NOT FOUND IN UPLOAD FOLDER '{UPLOAD_FOLDER}'")
+            print(f"[ROUTE:/SIMULATIONS POST] FILE '{secure_name}' NOT FOUND IN UPLOAD FOLDER '{UPLOAD_FOLDER}'")
             if not os.path.exists(UPLOAD_FOLDER):
-                print(f"[ROUTE:/RUN_SIMULATION] UNDERLYING ISSUE: UPLOAD FOLDER '{UPLOAD_FOLDER}' DOES NOT EXIST.")
+                print(f"[ROUTE:/SIMULATIONS POST] UNDERLYING ISSUE: UPLOAD FOLDER '{UPLOAD_FOLDER}' DOES NOT EXIST.")
                 return jsonify({"error": f"Upload folder '{UPLOAD_FOLDER}' is missing. Cannot find file '{secure_name}'."}), 500
             else:
                 return jsonify({"error": f"File '{secure_name}' not found. Please upload the file first."}), 404
@@ -109,7 +111,7 @@ def run_simulation():
         run_duration = sim.run()
 
         if sim.simulation_id:
-            print(f"[ROUTE:/RUN_SIMULATION] SIMULATION RUN COMPLETED SUCCESSFULLY FOR ID: {sim.simulation_id}")
+            print(f"[ROUTE:/SIMULATIONS POST] SIMULATION RUN COMPLETED SUCCESSFULLY FOR ID: {sim.simulation_id}")
             
             return jsonify({
                 "message": "Simulation completed successfully.",
@@ -117,15 +119,16 @@ def run_simulation():
                 "run_duration": run_duration
                 }), 200
         else:
-            print(f"[ROUTE:/RUN_SIMULATION] ERROR: SIMULATION RUN FAILED TO PRODUCE A SIMULATION ID.")
+            print(f"[ROUTE:/SIMULATIONS POST] ERROR: SIMULATION RUN FAILED TO PRODUCE A SIMULATION ID.")
             return jsonify({"error": "Simulation run failed. Check server logs for details."}), 500
 
     except Exception as e:
-        print(f"[ROUTE:/RUN_SIMULATION] ERROR DURING SIMULATION PROCESSING: {e}")
+        print(f"[ROUTE:/SIMULATIONS POST] ERROR DURING SIMULATION PROCESSING: {e}")
         import traceback
         print(traceback.format_exc())
         return jsonify({"error": f"An unexpected error occurred during simulation: {e}"}), 500
 
+# Route to get default simulation settings
 @main_bp.route('/get_default_settings', methods=['GET'])
 def get_default_settings():
     try:
@@ -136,12 +139,16 @@ def get_default_settings():
         print(f"[ROUTE:GET_DEFAULT_SETTINGS] FAILED TO FETCH DEFAULT SETTINGS: {e}")
         return jsonify({"error": f"Could not retrieve default settings: {e}"}), 500
 
-@main_bp.route('/get_timetable/<int:simulation_id>', methods=['GET', 'OPTIONS'])
+# Route to get the timetable for a specific simulation
+@main_bp.route('/simulations/<int:simulation_id>/timetable', methods=['GET', 'OPTIONS'])
 def get_timetable(simulation_id):
-    try:
-        # REMOVED: db.connect()
-        # REMOVED: print("[ROUTE:/GET_TIMETABLE] DATABASE CONNECTION ESTABLISHED")
-            
+    if request.method == 'OPTIONS':
+        # Handle preflight request
+        response = jsonify(success=True)
+        # Add CORS headers if needed, or handle via Flask-CORS extension
+        return response
+        
+    try:           
         try:
             timetable_entries = db.train_movements.find_many(
                 where={'SIMULATION_ID': simulation_id},
@@ -157,43 +164,52 @@ def get_timetable(simulation_id):
                         try:
                             service_periods_data = json.loads(simulation_record.SERVICE_PERIODS)
                         except json.JSONDecodeError as json_err:
-                            print(f"[ROUTE:/GET_TIMETABLE] WARNING: FAILED TO PARSE SERVICE_PERIODS JSON: {json_err}")
+                            print(f"[ROUTE:/SIMULATIONS/<id>/TIMETABLE] WARNING: FAILED TO PARSE SERVICE_PERIODS JSON: {json_err}")
                             service_periods_data = {"error": "Failed to parse service periods data"}
                     elif isinstance(simulation_record.SERVICE_PERIODS, (list, dict)):
                         # If it's already a list or dict, use it directly
                         service_periods_data = simulation_record.SERVICE_PERIODS
                     else:
                         # Handle unexpected type
-                        print(f"[ROUTE:/GET_TIMETABLE] WARNING: Unexpected type for SERVICE_PERIODS: {type(simulation_record.SERVICE_PERIODS)}")
+                        print(f"[ROUTE:/SIMULATIONS/<id>/TIMETABLE] WARNING: Unexpected type for SERVICE_PERIODS: {type(simulation_record.SERVICE_PERIODS)}")
                         service_periods_data = {"error": f"Unexpected data type for service periods: {type(simulation_record.SERVICE_PERIODS)}"}
                 else:
-                    print(f"[ROUTE:/GET_TIMETABLE] WARNING: No simulation record or SERVICE_PERIODS found for included data.")
+                    print(f"[ROUTE:/SIMULATIONS/<id>/TIMETABLE] WARNING: No simulation record or SERVICE_PERIODS found for included data.")
             else:
-                print(f"[ROUTE:/GET_TIMETABLE] No timetable entries found for simulation ID {simulation_id}")
+                print(f"[ROUTE:/SIMULATIONS/<id>/TIMETABLE] No timetable entries found for simulation ID {simulation_id}")
 
             serializable_entries = []
             for entry in timetable_entries:
                 entry_dict = entry.dict()
-                entry_dict['ARRIVAL_TIME'] = entry_dict['ARRIVAL_TIME'].strftime('%H:%M:%S')
-                if entry_dict['DEPARTURE_TIME']:
-                    entry_dict['DEPARTURE_TIME'] = entry_dict['DEPARTURE_TIME'].strftime('%H:%M:%S')
+                # Ensure correct handling of datetime/time objects before formatting
+                arrival_time = entry_dict.get('ARRIVAL_TIME')
+                departure_time = entry_dict.get('DEPARTURE_TIME')
+                entry_dict['ARRIVAL_TIME'] = format_time(arrival_time)
+                entry_dict['DEPARTURE_TIME'] = format_time(departure_time)
+                # Remove potentially non-serializable included data if not needed
+                entry_dict.pop('simulation', None) 
                 serializable_entries.append(entry_dict)
             
-            print(f"[ROUTE:/GET_TIMETABLE] SUCCESSFULLY RETRIEVED {len(serializable_entries)} TIMETABLE ENTRIES FOR SIMULATION ID {simulation_id}")
+            print(f"[ROUTE:/SIMULATIONS/<id>/TIMETABLE] SUCCESSFULLY RETRIEVED {len(serializable_entries)} TIMETABLE ENTRIES FOR SIMULATION ID {simulation_id}")
             return jsonify({
                 'timetable': serializable_entries,
                 'service_periods': service_periods_data 
             })
         except Exception as e:
-            print(f"[ROUTE:/GET_TIMETABLE] FAILED TO FETCH TIMETABLE ENTRIES: {e}")
+            print(f"[ROUTE:/SIMULATIONS/<id>/TIMETABLE] FAILED TO FETCH TIMETABLE ENTRIES: {e}")
+            import traceback
+            print(traceback.format_exc())
             return jsonify({"error": str(e)}), 500
     except Exception as e:
         # This outer except now catches setup errors before the query
-        print(f"[ROUTE:/GET_TIMETABLE] ERROR PROCESSING REQUEST: {e}")
+        print(f"[ROUTE:/SIMULATIONS/<id>/TIMETABLE] ERROR PROCESSING REQUEST: {e}")
+        import traceback
+        print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
-@main_bp.route('/get_history', methods=['GET'])
-def get_history():
+# Route to get the list of past simulations (history)
+@main_bp.route('/simulations', methods=['GET'])
+def get_simulations():
     try:
         # Get the 'since_id' query parameter
         since_id_str = request.args.get('since_id')
@@ -201,131 +217,138 @@ def get_history():
         if since_id_str:
             try:
                 since_id = int(since_id_str)
-                print(f"[ROUTE:/GET_HISTORY] Received since_id: {since_id}")
+                print(f"[ROUTE:/SIMULATIONS GET] Received since_id: {since_id}")
             except ValueError:
-                print(f"[ROUTE:/GET_HISTORY] WARNING: Invalid non-integer since_id received: {since_id_str}")
-                # Optionally return an error or ignore it
-                # return jsonify({"error": "Invalid since_id parameter, must be an integer"}), 400
-
-        # REMOVED: db.connect()
-        # REMOVED: print("[ROUTE:/GET_HISTORY] DATABASE CONNECTION ESTABLISHED")
+                print(f"[ROUTE:/SIMULATIONS GET] WARNING: Invalid non-integer since_id received: {since_id_str}")
 
         try:
-            # Build the query arguments dynamically
             query_args = {
-                # REMOVED: 'order': [{'CREATED_AT': 'desc'}]
+                 'order': [{'CREATED_AT': 'desc'}] # Keep descending order for history
             }
             if since_id is not None:
                 query_args['where'] = {'SIMULATION_ID': {'gt': since_id}}
 
-            # If 'where' key was not added, remove it to avoid sending an empty where clause
-            if 'where' not in query_args and query_args:
-                query_args.pop('where', None) # Safely remove if it exists (shouldn't here, but good practice)
-            elif not query_args: # If query_args became empty after removing order
-                query_args = {} # Ensure it's an empty dict if no conditions apply
-
-            # Check if query_args is empty before passing it
-            if query_args:
-                history_entries = db.simulations.find_many(**query_args)
-            else:
-                history_entries = db.simulations.find_many() # Call without arguments if no conditions
+            history_entries = db.simulations.find_many(**query_args)
 
             # Convert to serializable format
             serializable_entries = []
             for entry in history_entries:
                 entry_dict = entry.dict()
-                entry_dict['CREATED_AT'] = entry_dict['CREATED_AT'].strftime('%Y-%m-%d %H:%M:%S')
-                entry_dict['START_TIME'] = entry_dict['START_TIME'].strftime('%Y-%m-%d %H:%M:%S')
-                entry_dict['END_TIME'] = entry_dict['END_TIME'].strftime('%Y-%m-%d %H:%M:%S')
+                # Safely format dates, handling potential None values
+                entry_dict['CREATED_AT'] = format_time(entry_dict.get('CREATED_AT'), '%Y-%m-%d %H:%M:%S') if entry_dict.get('CREATED_AT') else None
+                entry_dict['START_TIME'] = format_time(entry_dict.get('START_TIME'), '%Y-%m-%d %H:%M:%S') if entry_dict.get('START_TIME') else None
+                entry_dict['END_TIME'] = format_time(entry_dict.get('END_TIME'), '%Y-%m-%d %H:%M:%S') if entry_dict.get('END_TIME') else None
+                
+                # Attempt to parse JSON fields if they are strings
+                for key in ['CONFIG', 'STATION_CAPACITIES', 'SERVICE_PERIODS', 'PERFORMANCE_METRICS']:
+                     if key in entry_dict and isinstance(entry_dict[key], str):
+                        try:
+                            entry_dict[key] = json.loads(entry_dict[key])
+                        except json.JSONDecodeError:
+                             print(f"[ROUTE:/SIMULATIONS GET] WARNING: Could not decode JSON for field {key} in simulation {entry_dict.get('SIMULATION_ID')}")
+                             # Keep the original string or set to an error indicator if preferred
+                
                 serializable_entries.append(entry_dict)
             
-            print(f"[ROUTE:/GET_HISTORY] SUCCESSFULLY RETRIEVED {len(serializable_entries)} HISTORY ENTRIES")
+            print(f"[ROUTE:/SIMULATIONS GET] SUCCESSFULLY RETRIEVED {len(serializable_entries)} HISTORY ENTRIES")
             return jsonify(serializable_entries)
         except Exception as e:
-            print(f"[ROUTE:/GET_HISTORY] FAILED TO FETCH HISTORY ENTRIES: {e}")
+            print(f"[ROUTE:/SIMULATIONS GET] FAILED TO FETCH HISTORY ENTRIES: {e}")
+            import traceback
+            print(traceback.format_exc())
             return jsonify({"error": str(e)}), 500
     except Exception as e:
         # This outer except now catches setup errors before the query
-        print(f"[ROUTE:/GET_HISTORY] ERROR PROCESSING REQUEST: {e}")
+        print(f"[ROUTE:/SIMULATIONS GET] ERROR PROCESSING REQUEST: {e}")
+        import traceback
+        print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
-@main_bp.route('/delete_history', methods=['DELETE'])
-def delete_history():
+# Route to delete specific simulation(s)
+@main_bp.route('/simulations/<int:simulation_id>', methods=['DELETE'])
+def delete_single_simulation(simulation_id):
+    """ Deletes a single simulation entry by its ID. """
+    try:
+        print(f"[ROUTE:/SIMULATIONS/<id> DELETE] ATTEMPTING TO DELETE SIMULATION ID: {simulation_id}")
+        result = db.simulations.delete(
+            where={'SIMULATION_ID': simulation_id}
+        )
+        if result:
+            deleted_count = 1
+            print(f"[ROUTE:/SIMULATIONS/<id> DELETE] SUCCESSFULLY DELETED SIMULATION ID: {simulation_id}")
+            return jsonify({"message": f"Successfully deleted simulation {simulation_id}."}), 200
+        else:
+            deleted_count = 0
+            print(f"[ROUTE:/SIMULATIONS/<id> DELETE] SIMULATION ID {simulation_id} NOT FOUND FOR DELETION.")
+            return jsonify({"error": f"Simulation ID {simulation_id} not found."}), 404
+
+    except Exception as e:
+        print(f"[ROUTE:/SIMULATIONS/<id> DELETE] FAILED TO DELETE SIMULATION {simulation_id}: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({"error": f"Failed to delete simulation {simulation_id}: {str(e)}"}), 500
+
+# Route to delete multiple simulations (bulk delete)
+@main_bp.route('/simulations', methods=['DELETE'])
+def delete_bulk_simulations():
+    """ Deletes multiple simulation entries based on IDs provided in the request body. """
     try:
         request_data = request.get_json()
-        simulation_ids = request_data.get('simulationId')
+        simulation_ids = request_data.get('simulationIds') # Assuming body sends {"simulationIds": [1, 2, 3]}
 
         if simulation_ids is None:
-            print("[ROUTE:/DELETE_HISTORY] ERROR: 'simulationId' MISSING IN JSON PAYLOAD")
-            return jsonify({"error": "'simulationId' is missing in the request JSON"}), 400
+            print("[ROUTE:/SIMULATIONS DELETE] ERROR: 'simulationIds' MISSING IN JSON PAYLOAD")
+            return jsonify({"error": "'simulationIds' is missing in the request JSON"}), 400
 
-        # Validate input type (must be int or list of ints)
-        is_single_int = isinstance(simulation_ids, int)
         is_list_of_ints = isinstance(simulation_ids, list) and all(isinstance(item, int) for item in simulation_ids)
 
-        if not is_single_int and not is_list_of_ints:
-            print(f"[ROUTE:/DELETE_HISTORY] ERROR: INVALID 'simulationId' TYPE. EXPECTED INT OR LIST OF INTS. GOT: {type(simulation_ids)}")
-            return jsonify({"error": "Invalid 'simulationId'. Must be an integer or a list of integers."}), 400
+        if not is_list_of_ints:
+            print(f"[ROUTE:/SIMULATIONS DELETE] ERROR: INVALID 'simulationIds' TYPE. EXPECTED LIST OF INTS. GOT: {type(simulation_ids)}")
+            return jsonify({"error": "Invalid 'simulationIds'. Must be a list of integers."}), 400
         
-        if is_list_of_ints and not simulation_ids:
-            print(f"[ROUTE:/DELETE_HISTORY] WARNING: Received empty list for simulation IDs. No deletion performed.")
+        if not simulation_ids:
+            print(f"[ROUTE:/SIMULATIONS DELETE] WARNING: Received empty list for simulation IDs. No deletion performed.")
             return jsonify({"message": "No simulation IDs provided for deletion."}), 200
 
-        # REMOVED: db.connect()
-        # REMOVED: print("[ROUTE:/DELETE_HISTORY] DATABASE CONNECTION ESTABLISHED")
-
         try:
-            deleted_count = 0
-            if is_single_int:
-                # Delete a single entry
-                print(f"[ROUTE:/DELETE_HISTORY] ATTEMPTING TO DELETE SIMULATION ID: {simulation_ids}")
-                result = db.simulations.delete(
-                    where={'SIMULATION_ID': simulation_ids}
-                )
-                if result:
-                    deleted_count = 1
-                    print(f"[ROUTE:/DELETE_HISTORY] SUCCESSFULLY DELETED SIMULATION ID: {simulation_ids}")
-                else:
-                    print(f"[ROUTE:/DELETE_HISTORY] SIMULATION ID {simulation_ids} NOT FOUND FOR DELETION.")
-
-            elif is_list_of_ints:
-                # Delete multiple entries
-                print(f"[ROUTE:/DELETE_HISTORY] ATTEMPTING TO DELETE SIMULATION IDS: {simulation_ids}")
-                result = db.simulations.delete_many(
-                    where={'SIMULATION_ID': {'in': simulation_ids}}
-                )
-                deleted_count = result if result is not None else 0 # delete_many returns the count
-                print(f"[ROUTE:/DELETE_HISTORY] SUCCESSFULLY DELETED {deleted_count} SIMULATION ENTRIES.")
-
+            print(f"[ROUTE:/SIMULATIONS DELETE] ATTEMPTING TO DELETE SIMULATION IDS: {simulation_ids}")
+            result = db.simulations.delete_many(
+                where={'SIMULATION_ID': {'in': simulation_ids}}
+            )
+            deleted_count = result if result is not None else 0 # delete_many returns the count
+            print(f"[ROUTE:/SIMULATIONS DELETE] SUCCESSFULLY DELETED {deleted_count} SIMULATION ENTRIES.")
             return jsonify({"message": f"Successfully deleted {deleted_count} simulation history entries."}), 200
 
         except Exception as e:
-            print(f"[ROUTE:/DELETE_HISTORY] FAILED TO DELETE HISTORY ENTRIES: {e}")
+            print(f"[ROUTE:/SIMULATIONS DELETE] FAILED TO DELETE HISTORY ENTRIES: {e}")
             import traceback
             print(traceback.format_exc())
             return jsonify({"error": f"Failed to delete history entries: {str(e)}"}), 500
 
     except Exception as e:
-        print(f"[ROUTE:/DELETE_HISTORY] ERROR PROCESSING DELETE REQUEST: {e}")
+        print(f"[ROUTE:/SIMULATIONS DELETE] ERROR PROCESSING BULK DELETE REQUEST: {e}")
+        import traceback
+        print(traceback.format_exc())
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
-def format_time(time_obj):
-    """Safely formats a datetime object to HH:MM:S string, handling None or non-datetime types."""
+# Utility function to format time/datetime objects safely
+def format_time(time_obj, format_string='%H:%M:%S'):
+    """Safely formats a datetime/time object to string, handling None or non-datetime types."""
     if isinstance(time_obj, (datetime.datetime, datetime.time)):
         try:
-            return time_obj.strftime('%H:%M:%S')
+            return time_obj.strftime(format_string)
         except ValueError:
-            # Fallback if strftime fails for some reason
+             # Fallback if strftime fails
             return str(time_obj)
-    # Return None or the original value if it's not a suitable time object
-    return time_obj
+    elif isinstance(time_obj, str): # If it's already a string, return it
+        return time_obj
+    # Return None or an empty string if it's not a suitable time object or None
+    return None # Or return "" if preferred
 
-@main_bp.route('/get_passenger_demand/<int:simulation_id>', methods=['GET'])
+# Route to get passenger demand data for a specific simulation
+@main_bp.route('/simulations/<int:simulation_id>/passenger_demand', methods=['GET'])
 def get_passenger_demand(simulation_id):
     try:
-        # REMOVED: db.connect()
-        # REMOVED: print("[ROUTE:/GET_PASSENGER_DEMAND] DATABASE CONNECTION ESTABLISHED")
-
         try:
             passenger_demand_entries = db.passenger_demand.find_many(
                 where={'SIMULATION_ID': simulation_id}
@@ -348,15 +371,53 @@ def get_passenger_demand(simulation_id):
                 }
                 formatted_entries.append(formatted_entry)
 
-            print(f"[ROUTE:/GET_PASSENGER_DEMAND] SUCCESSFULLY RETRIEVED AND FORMATTED {len(formatted_entries)} PASSENGER DEMAND ENTRIES FOR SIMULATION ID {simulation_id}")
+            print(f"[ROUTE:/SIMULATIONS/<id>/PASSENGER_DEMAND] SUCCESSFULLY RETRIEVED AND FORMATTED {len(formatted_entries)} ENTRIES FOR SIMULATION ID {simulation_id}")
             return jsonify(formatted_entries)
         except Exception as e:
             import traceback
-            print(f"[ROUTE:/GET_PASSENGER_DEMAND] FAILED TO FETCH OR FORMAT PASSENGER DEMAND ENTRIES: {e}\n{traceback.format_exc()}")
+            print(f"[ROUTE:/SIMULATIONS/<id>/PASSENGER_DEMAND] FAILED TO FETCH OR FORMAT ENTRIES: {e}\n{traceback.format_exc()}")
             return jsonify({"error": str(e)}), 500
     except Exception as e:
         # This outer except now catches setup errors before the query
-        print(f"[ROUTE:/GET_PASSENGER_DEMAND] ERROR PROCESSING REQUEST: {e}")
+        print(f"[ROUTE:/SIMULATIONS/<id>/PASSENGER_DEMAND] ERROR PROCESSING REQUEST: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+# Route to get the configuration for a specific simulation
+@main_bp.route('/simulations/<int:simulation_id>/config', methods=['GET'])
+def get_simulation_config(simulation_id):
+    try:
+        simulation = db.simulations.find_unique(
+            where={'SIMULATION_ID': simulation_id}
+        )
+
+        if not simulation:
+            print(f"[ROUTE:/SIMULATIONS/<id>/CONFIG] Simulation ID {simulation_id} not found.")
+            return jsonify({"error": f"Simulation ID {simulation_id} not found."}), 404
+
+        config_data = simulation.CONFIG
+
+        # Assuming CONFIG is stored as a JSON string in the database
+        if isinstance(config_data, str):
+            try:
+                config_data = json.loads(config_data)
+            except json.JSONDecodeError:
+                print(f"[ROUTE:/SIMULATIONS/<id>/CONFIG] WARNING: Failed to parse CONFIG JSON for simulation {simulation_id}.")
+                # Return the raw string or an error, depending on desired behavior
+                return jsonify({"error": "Failed to parse configuration data"}), 500
+        elif not isinstance(config_data, dict): # If it's not a string or a dict
+            print(f"[ROUTE:/SIMULATIONS/<id>/CONFIG] WARNING: Unexpected type for CONFIG field for simulation {simulation_id}: {type(config_data)}")
+            # Decide how to handle this - return as is, or return error
+            return jsonify({"error": f"Unexpected data type for configuration: {type(config_data)}"}), 500
+
+
+        print(f"[ROUTE:/SIMULATIONS/<id>/CONFIG] Successfully retrieved config for simulation ID {simulation_id}")
+        return jsonify(config_data)
+
+    except Exception as e:
+        import traceback
+        print(f"[ROUTE:/SIMULATIONS/<id>/CONFIG] FAILED TO FETCH CONFIG: {e}\n{traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 # Note: The app is run from backend/app.py, not here.

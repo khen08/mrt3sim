@@ -19,6 +19,7 @@ datasource db {
 
 model SIMULATIONS {
   SIMULATION_ID       Int      @id @default(autoincrement())
+  CONFIG              Json     @db.Json // Assumes appropriate JSON structure
   START_TIME          DateTime @db.DateTime
   END_TIME            DateTime @db.DateTime
   DWELL_TIME          Int

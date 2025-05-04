@@ -20,17 +20,23 @@ DEFAULT_STATIONS = [
 
 DEFAULT_SCHEME = ['AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB']
 
-DEFAULT_SETTINGS = {
-    "dwellTime": 60,
-    "turnaroundTime": 300,
+# TODO: Add more train specs
+# CURRENT 3-CAR TRAINSET SPECS
+DEFAULT_TRAIN_SPECS = {
     "acceleration": 0.8,
     "deceleration": 0.8,
     "cruisingSpeed": 60,
     "passthroughSpeed": 20,
     "maxCapacity": 1182,
+}
+
+DEFAULT_SETTINGS = {
+    "dwellTime": 60,
+    "turnaroundTime": 300,
     "schemeType": "REGULAR",
     "schemePattern": DEFAULT_SCHEME,
-    "stations": DEFAULT_STATIONS
+    "stations": DEFAULT_STATIONS,
+    "trainSpecs": DEFAULT_TRAIN_SPECS
 }
 
 DEFAULT_SERVICE_PERIODS = [
