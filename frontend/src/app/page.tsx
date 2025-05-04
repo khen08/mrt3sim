@@ -155,6 +155,8 @@ export default function Home() {
   const [isSimulating, setIsSimulating] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
+  const [hasFetchedInitialHistory, setHasFetchedInitialHistory] =
+    useState(false);
   const { toast } = useToast();
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -249,7 +251,9 @@ export default function Home() {
 
   const handleFetchHistory = useCallback(
     async (fetchFullHistory: boolean = false) => {
-      setIsHistoryLoading(true);
+      if (fetchFullHistory) {
+        setIsHistoryLoading(true);
+      }
       setApiError(null);
 
       let url = GET_SIMULATION_HISTORY_ENDPOINT;
@@ -270,6 +274,8 @@ export default function Home() {
         if (fetchFullHistory) {
           setHistorySimulations([]);
         }
+        // Reset the flag if forcing a full history fetch
+        setHasFetchedInitialHistory(false);
       }
 
       try {
@@ -280,6 +286,11 @@ export default function Home() {
         }
         const data: SimulationHistoryEntry[] = await response.json();
         console.log("Fetched history data:", data);
+
+        // If it was an incremental fetch and new data arrived, briefly show loading
+        if (!fetchFullHistory && data.length > 0) {
+          setIsHistoryLoading(true);
+        }
 
         // Merge new data with existing data
         setHistorySimulations((prevSimulations) => {
@@ -293,6 +304,8 @@ export default function Home() {
           return merged;
         });
       } catch (error: any) {
+        // Ensure loading is off even if there was an error
+        setIsHistoryLoading(false);
         console.error("Failed to fetch history:", error);
         setApiError(`Failed to load simulation history: ${error.message}`);
         setHistorySimulations([]);
@@ -1062,7 +1075,18 @@ export default function Home() {
                   variant="outline"
                   className="w-full justify-start text-left"
                   onClick={() => {
-                    handleFetchHistory();
+                    if (!hasFetchedInitialHistory) {
+                      console.log(
+                        "First history button click: Fetching full history."
+                      );
+                      handleFetchHistory(true);
+                      setHasFetchedInitialHistory(true);
+                    } else {
+                      console.log(
+                        "Subsequent history button click: Fetching incremental history."
+                      );
+                      handleFetchHistory();
+                    }
                     setIsHistoryModalOpen(true);
                   }}
                   title="View past simulation runs"
