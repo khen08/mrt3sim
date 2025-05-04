@@ -1471,37 +1471,22 @@ class Simulation:
             return 1
         
         try:
-            db.connect()
-            
-            try:
-                simulation_entry = db.simulations.create(
-                    data={
-                        "START_TIME": self.start_time,
-                        "END_TIME": self.end_time,
-                        "DWELL_TIME": self.dwell_time,
-                        "TURNAROUND_TIME": self.turnaround_time,
-                        "SERVICE_PERIODS": json.dumps(self.service_periods),
-                        "PASSENGER_DATA_FILE": self.passenger_data_file if self.passenger_data_file else None
-                    }
-                )
-            except Exception as create_error:
-                # Handle creation errors specifically
-                print(f"  [DB:CREATE SIMULATIONS ENTRY] FAILED TO CREATE ENTRY: {create_error}")
-                return None
-                
-        except Exception as connect_error:
-            # Handle connection errors specifically
-            print(f"  [DB:CREATE SIMULATIONS ENTRY] FAILED TO CONNECT TO DB: {connect_error}")
+            simulation_entry = db.simulations.create(
+                data={
+                    "START_TIME": self.start_time,
+                    "END_TIME": self.end_time,
+                    "DWELL_TIME": self.dwell_time,
+                    "TURNAROUND_TIME": self.turnaround_time,
+                    "SERVICE_PERIODS": json.dumps(self.service_periods),
+                    "PASSENGER_DATA_FILE": self.passenger_data_file if self.passenger_data_file else None
+                }
+            )
+            print(f"  [DB:CREATE SIMULATIONS ENTRY] CREATED SIMULATION ENTRY IN DB WITH SIMULATION_ID: {simulation_entry.SIMULATION_ID}")
+            return simulation_entry.SIMULATION_ID
+        except Exception as db_error:
+            # Catch any database operation error
+            print(f"  [DB:CREATE SIMULATIONS ENTRY] FAILED TO CREATE ENTRY: {db_error}")
             return None
-            
-        finally:
-            try:
-                db.disconnect()
-            except Exception as disconnect_error:
-                print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT: {disconnect_error}")
-
-        print(f"  [DB:CREATE SIMULATIONS ENTRY] CREATED SIMULATION ENTRY IN DB WITH SIMULATION_ID: {simulation_entry.SIMULATION_ID}")
-        return simulation_entry.SIMULATION_ID
 
     def _initialize_stations(self, scheme_type):
         print("\n[INITIALIZING STATIONS]")
@@ -1537,26 +1522,10 @@ class Simulation:
             
             if stations_for_db:
                 try:
-                    db.connect()
-                    
-                    try:
-                        # Attempt to create multiple station entries
-                        result_count = db.stations.create_many(data=stations_for_db, skip_duplicates=True)
-                        # Print success message using the count from the result
-                        print(f"  [DB:CREATE STATIONS ENTRIES] SUCCESSFULLY BULK INSERTED STATIONS: {result_count} ROWS CREATED")
-                    except Exception as create_error:
-                        # Handle creation errors specifically
-                        print(f"  [DB:CREATE STATIONS ENTRIES] FAILED TO BULK INSERT STATIONS: {create_error}")
-                        
-                except Exception as connect_error:
-                    # Handle connection errors specifically
-                    print(f"  [DB:CREATE STATIONS ENTRIES] FAILED TO CONNECT TO DB: {connect_error}")
-                    
-                finally:
-                    try:
-                        db.disconnect()
-                    except Exception as disconnect_error:
-                        print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT: {disconnect_error}")
+                    result_count = db.stations.create_many(data=stations_for_db, skip_duplicates=True)
+                    print(f"  [DB:CREATE STATIONS ENTRIES] SUCCESSFULLY BULK INSERTED STATIONS: {result_count} ROWS CREATED")
+                except Exception as db_error:
+                    print(f"  [DB:CREATE STATIONS ENTRIES] FAILED TO BULK INSERT STATIONS: {db_error}")
 
     def _initialize_track_segments(self):
         print("\n[INITIALIZING TRACK SEGMENTS]")
@@ -1612,27 +1581,11 @@ class Simulation:
                 })
             
             if segments_for_db:
-                    try:
-                        db.connect()
-                        
-                        try:
-                            # Attempt to create multiple station entries
-                            result_count = db.track_segments.create_many(data=segments_for_db, skip_duplicates=True)
-                            # Print success message using the count from the result
-                            print(f"  [DB:CREATE TRACK SEGMENTS ENTRIES] SUCCESSFULLY BULK INSERTED TRACK SEGMENTS: {result_count} ROWS CREATED")
-                        except Exception as create_error:
-                            # Handle creation errors specifically
-                            print(f"  [DB:CREATE TRACK SEGMENTS ENTRIES] FAILED TO BULK INSERT TRACK SEGMENTS: {create_error}")
-                            
-                    except Exception as connect_error:
-                        # Handle connection errors specifically
-                        print(f"  [DB:CREATE TRACK SEGMENTS ENTRIES] FAILED TO CONNECT TO DB: {connect_error}")
-                        
-                    finally:
-                        try:
-                            db.disconnect()
-                        except Exception as disconnect_error:
-                            print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT: {disconnect_error}")
+                try:
+                    result_count = db.track_segments.create_many(data=segments_for_db, skip_duplicates=True)
+                    print(f"  [DB:CREATE TRACK SEGMENTS ENTRIES] SUCCESSFULLY BULK INSERTED TRACK SEGMENTS: {result_count} ROWS CREATED")
+                except Exception as db_error:
+                    print(f"  [DB:CREATE TRACK SEGMENTS ENTRIES] FAILED TO BULK INSERT TRACK SEGMENTS: {db_error}")
 
     def _initialize_trains(self, scheme_type):
         print("\n[INITIALIZING TRAINS & TRAIN_SPECS]")
@@ -1665,35 +1618,21 @@ class Simulation:
         if not debug and self.scheme_type == self.schemes[0]:
             train_specs_entry_id = None
             try:
-                db.connect()
-                
-                try:
-                    train_specs_entry = db.train_specs.create(
-                        data={
-                            'SIMULATION_ID': self.simulation_id,
-                            'SPEC_NAME': 'REGULAR TRAIN',
-                            'MAX_CAPACITY': train_specs_obj.max_capacity,
-                            'CRUISING_SPEED': self.config['cruisingSpeed'],
-                            'PASSTHROUGH_SPEED': self.config['passthroughSpeed'],
-                            'ACCEL_RATE': train_specs_obj.accel_rate,
-                            'DECEL_RATE': train_specs_obj.decel_rate,
-                        }
-                    )
-                    train_specs_entry_id = train_specs_entry.SPEC_ID
-                    print(f"  [DB:CREATE TRAIN_SPECS ENTRY] SUCCESSFULLY CREATED TRAIN SPECS ENTRY IN DB WITH SPEC_ID: {train_specs_entry.SPEC_ID}")
-                except Exception as create_error:
-                    # Handle creation errors specifically
-                    print(f"  [DB:CREATE TRAIN_SPECS ENTRY] FAILED TO CREATE ENTRY: {create_error}")
-                
-            except Exception as connect_error:
-                # Handle connection errors specifically
-                print(f"  [DB:CREATE TRAIN_SPECS ENTRY] FAILED TO CONNECT TO DB: {connect_error}")
-                
-            finally:
-                try:
-                    db.disconnect()
-                except Exception as disconnect_error:
-                    print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT: {disconnect_error}")
+                train_specs_entry = db.train_specs.create(
+                    data={
+                        'SIMULATION_ID': self.simulation_id,
+                        'SPEC_NAME': 'REGULAR TRAIN',
+                        'MAX_CAPACITY': train_specs_obj.max_capacity,
+                        'CRUISING_SPEED': self.config['cruisingSpeed'],
+                        'PASSTHROUGH_SPEED': self.config['passthroughSpeed'],
+                        'ACCEL_RATE': train_specs_obj.accel_rate,
+                        'DECEL_RATE': train_specs_obj.decel_rate,
+                    }
+                )
+                train_specs_entry_id = train_specs_entry.SPEC_ID
+                print(f"  [DB:CREATE TRAIN_SPECS ENTRY] SUCCESSFULLY CREATED TRAIN SPECS ENTRY IN DB WITH SPEC_ID: {train_specs_entry.SPEC_ID}")
+            except Exception as db_error:
+                print(f"  [DB:CREATE TRAIN_SPECS ENTRY] FAILED TO CREATE ENTRY: {db_error}")
 
             if train_specs_entry_id: # Proceed only if spec ID was obtained
                 trains_for_db = []
@@ -1707,26 +1646,10 @@ class Simulation:
 
                 if trains_for_db:
                     try:
-                        db.connect()
-                        
-                        try:
-                            # Attempt to create multiple station entries
-                            result_count = db.trains.create_many(data=trains_for_db, skip_duplicates=True)
-                            # Print success message using the count from the result
-                            print(f"  [DB:CREATE TRAINS ENTRIES] SUCCESSFULLY BULK INSERTED TRAINS: {result_count} ROWS CREATED")
-                        except Exception as create_error:
-                            # Handle creation errors specifically
-                            print(f"  [DB:CREATE TRAINS ENTRIES] FAILED TO BULK INSERT TRAINS: {create_error}")
-                            
-                    except Exception as connect_error:
-                        # Handle connection errors specifically
-                        print(f"  [DB:CREATE TRAINS ENTRIES] FAILED TO CONNECT TO DB: {connect_error}")
-                        
-                    finally:
-                        try:
-                            db.disconnect()
-                        except Exception as disconnect_error:
-                            print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT: {disconnect_error}")
+                        result_count = db.trains.create_many(data=trains_for_db, skip_duplicates=True)
+                        print(f"  [DB:CREATE TRAINS ENTRIES] SUCCESSFULLY BULK INSERTED TRAINS: {result_count} ROWS CREATED")
+                    except Exception as db_error:
+                        print(f"  [DB:CREATE TRAINS ENTRIES] FAILED TO BULK INSERT TRAINS: {db_error}")
 
     def _initialize_service_periods(self, scheme_type):
         print("\n[INITIALIZING SERVICE PERIODS]")
@@ -1795,26 +1718,14 @@ class Simulation:
 
         if not debug :
             try:
-                db.connect()
-                
-                try:
-                    updated_service_periods_json = json.dumps(self.service_periods)
-                    db.simulations.update(
-                        where={'SIMULATION_ID': self.simulation_id},
-                        data={'SERVICE_PERIODS': updated_service_periods_json}
-                    )
-                    print(f"  [DB:UPDATE SERVICE_PERIODS] SUCCESSFULLY UPDATED SERVICE_PERIODS IN SIMULATION for SIMULATION_ID: {self.simulation_id}")
-                except Exception as update_error:
-                    print(f"  [DB:UPDATE SERVICE_PERIODS] FAILED TO UPDATE SERVICE_PERIODS IN SIMULATION for SIMULATION_ID: {self.simulation_id}: {update_error}")
-            
-            except Exception as connect_error:
-                print(f"  [DB:UPDATE SERVICE_PERIODS] FAILED TO CONNECT TO DB: {connect_error}")
-                
-            finally:
-                try:
-                    db.disconnect()
-                except Exception as disconnect_error:
-                    print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT : {disconnect_error}")
+                updated_service_periods_json = json.dumps(self.service_periods)
+                db.simulations.update(
+                    where={'SIMULATION_ID': self.simulation_id},
+                    data={'SERVICE_PERIODS': updated_service_periods_json}
+                )
+                print(f"  [DB:UPDATE SERVICE_PERIODS] SUCCESSFULLY UPDATED SERVICE_PERIODS IN SIMULATION for SIMULATION_ID: {self.simulation_id}")
+            except Exception as db_error:
+                print(f"  [DB:UPDATE SERVICE_PERIODS] FAILED TO UPDATE SERVICE_PERIODS IN SIMULATION for SIMULATION_ID: {self.simulation_id}: {db_error}")
 
     def _initialize_passengers_demand(self):
         print("\n[INITIALIZING PASSENGER DEMAND OBJECTS]")
@@ -1981,25 +1892,13 @@ class Simulation:
         if not debug:
             print(f"[SIMULATION.RUN()] UPDATING TOTAL_RUN_TIME_SECONDS FOR SIMULATION_ID: {self.simulation_id}")
             try:
-                db.connect()
-                
-                try:
-                    db.simulations.update(
-                        where={'SIMULATION_ID': self.simulation_id},
-                        data={'TOTAL_RUN_TIME_SECONDS': round(run_duration, 3)}
-                    )
-                    print(f"  [DB:UPDATE SIMULATION] SUCCESSFULLY UPDATED TOTAL_RUN_TIME_SECONDS")
-                except Exception as update_error:
-                    print(f"  [DB:UPDATE SIMULATION] FAILED TO UPDATE TOTAL_RUN_TIME_SECONDS: {update_error}")
-            
-            except Exception as connect_error:
-                print(f"  [DB:UPDATE SIMULATION] FAILED TO CONNECT TO DB: {connect_error}")
-                
-            finally:
-                try:
-                    db.disconnect()
-                except Exception as disconnect_error:
-                    print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT after updating run time: {disconnect_error}")
+                db.simulations.update(
+                    where={'SIMULATION_ID': self.simulation_id},
+                    data={'TOTAL_RUN_TIME_SECONDS': round(run_duration, 3)}
+                )
+                print(f"  [DB:UPDATE SIMULATION] SUCCESSFULLY UPDATED TOTAL_RUN_TIME_SECONDS")
+            except Exception as db_error:
+                print(f"  [DB:UPDATE SIMULATION] FAILED TO UPDATE TOTAL_RUN_TIME_SECONDS: {db_error}")
 
         print(f"\n================[SIMULATION.RUN() COMPLETED]================\n")
         
@@ -2064,24 +1963,12 @@ class Simulation:
             return
 
         try:
-            db.connect()
-            
-            try:
-                result = db.train_movements.create_many(
-                    data=data_to_insert,
-                )
-                print(f"  [DB:INSERT TRAIN_MOVEMENTS] ATTEMPTED TO CREATE {len(data_to_insert)} ENTRIES. SUCCESSFULLY BULK INSERTED: {result} ROWS")
-            except Exception as create_error:
-                print(f"  [DB:INSERT TRAIN_MOVEMENTS] FAILED TO BULK INSERT ENTRIES: {create_error}")
-
-        except Exception as connect_error:
-            print(f"  [DB:INSERT TRAIN_MOVEMENTS] FAILED TO CONNECT TO DB: {connect_error}")
-            
-        finally:
-            try:
-                db.disconnect()
-            except Exception as disconnect_error:
-                print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT after saving train movements: {disconnect_error}")
+            result = db.train_movements.create_many(
+                data=data_to_insert,
+            )
+            print(f"  [DB:INSERT TRAIN_MOVEMENTS] ATTEMPTED TO CREATE {len(data_to_insert)} ENTRIES. SUCCESSFULLY BULK INSERTED: {result} ROWS")
+        except Exception as db_error:
+            print(f"  [DB:INSERT TRAIN_MOVEMENTS] FAILED TO BULK INSERT ENTRIES: {db_error}")
 
     def save_passenger_demand_to_db(self):
         print(f"\n[SAVING PASSENGER DEMAND TO DB]")
@@ -2110,22 +1997,10 @@ class Simulation:
             return
         
         try:
-            db.connect()
-            
-            try:
-                result = db.passenger_demand.create_many(data=passenger_records_for_db)
-                print(f"  [DB:INSERT PASSENGER DEMAND] ATTEMPTED TO CREATE {len(passenger_records_for_db)} ENTRIES. SUCCESSFULLY BULK INSERTED: {result} ROWS")
-            except Exception as create_error:
-                print(f"  [DB:INSERT PASSENGER DEMAND] FAILED TO BULK INSERT ENTRIES: {create_error}")
-                
-        except Exception as connect_error:
-            print(f"  [DB:INSERT PASSENGER DEMAND] FAILED TO CONNECT TO DB: {connect_error}")
-            
-        finally:
-            try:
-                db.disconnect()
-            except Exception as disconnect_error:
-                print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT after saving passenger demand: {disconnect_error}")
+            result = db.passenger_demand.create_many(data=passenger_records_for_db)
+            print(f"  [DB:INSERT PASSENGER DEMAND] ATTEMPTED TO CREATE {len(passenger_records_for_db)} ENTRIES. SUCCESSFULLY BULK INSERTED: {result} ROWS")
+        except Exception as db_error:
+            print(f"  [DB:INSERT PASSENGER DEMAND] FAILED TO BULK INSERT ENTRIES: {db_error}")
 
     def compute_metrics(self):
         """Calculates aggregate metrics for the completed simulation scheme using pandas."""
@@ -2163,30 +2038,18 @@ class Simulation:
         print(f"\n[SAVING METRICS TO DB FOR SCHEME: {self.scheme_type}]")
         
         try:
-            db.connect()
-            
-            try:
-                db.simulation_metrics.create(
-                    data={
-                        'SIMULATION_ID': self.simulation_id,
-                        'SCHEME_TYPE': self.scheme_type,
-                        'PASSENGER_COUNT': int(completed_passenger_count),
-                        'TOTAL_PASSENGER_TRAVEL_TIME_SECONDS': int(travel_time),
-                        'TOTAL_PASSENGER_WAITING_TIME_SECONDS': int(wait_time)
-                    }
-                )
-                print(f"  [DB:CREATE SIMULATION_METRICS] SUCCESSFULLY CREATED metrics entry for SIMULATION_ID: {self.simulation_id}, SCHEME: {self.scheme_type}")
-            except Exception as create_error:
-                print(f"  [DB:CREATE SIMULATION_METRICS] FAILED to create metrics entry in DB: {create_error}")
-
-        except Exception as connect_error:
-            print(f"  [DB:CREATE SIMULATION_METRICS] FAILED TO CONNECT TO DB: {connect_error}")
-            
-        finally:
-            try:
-                db.disconnect()
-            except Exception as disconnect_error:
-                print(f"  [DB:DISCONNECTED] FAILED TO DISCONNECT after saving metrics: {disconnect_error}")
+            db.simulation_metrics.create(
+                data={
+                    'SIMULATION_ID': self.simulation_id,
+                    'SCHEME_TYPE': self.scheme_type,
+                    'PASSENGER_COUNT': int(completed_passenger_count),
+                    'TOTAL_PASSENGER_TRAVEL_TIME_SECONDS': int(travel_time),
+                    'TOTAL_PASSENGER_WAITING_TIME_SECONDS': int(wait_time)
+                }
+            )
+            print(f"  [DB:CREATE SIMULATION_METRICS] SUCCESSFULLY CREATED metrics entry for SIMULATION_ID: {self.simulation_id}, SCHEME: {self.scheme_type}")
+        except Exception as db_error:
+            print(f"  [DB:CREATE SIMULATION_METRICS] FAILED to create metrics entry in DB: {db_error}")
 
     def get_station_by_id(self, station_id):
         """Fast O(1) station lookup by ID."""

@@ -138,9 +138,9 @@ def get_default_settings():
 
 @main_bp.route('/get_timetable/<int:simulation_id>', methods=['GET', 'OPTIONS'])
 def get_timetable(simulation_id):
-    try:       
-        db.connect()
-        print(f"[ROUTE:/GET_TIMETABLE] DATABASE CONNECTION ESTABLISHED")
+    try:
+        # REMOVED: db.connect()
+        # REMOVED: print("[ROUTE:/GET_TIMETABLE] DATABASE CONNECTION ESTABLISHED")
             
         try:
             timetable_entries = db.train_movements.find_many(
@@ -188,14 +188,9 @@ def get_timetable(simulation_id):
             print(f"[ROUTE:/GET_TIMETABLE] FAILED TO FETCH TIMETABLE ENTRIES: {e}")
             return jsonify({"error": str(e)}), 500
     except Exception as e:
-        print(f"[ROUTE:/GET_TIMETABLE] FAILED TO CONNECT TO DATABASE: {e}")
+        # This outer except now catches setup errors before the query
+        print(f"[ROUTE:/GET_TIMETABLE] ERROR PROCESSING REQUEST: {e}")
         return jsonify({"error": str(e)}), 500
-    finally:
-        try:
-            db.disconnect()
-            print(f"[ROUTE:/GET_TIMETABLE] DATABASE DISCONNECTED")
-        except Exception as disconnect_error:
-            print(f"[ROUTE:/GET_TIMETABLE] WARNING: ERROR DISCONNECTING FROM DATABASE: {disconnect_error}")
 
 @main_bp.route('/get_history', methods=['GET'])
 def get_history():
@@ -212,20 +207,28 @@ def get_history():
                 # Optionally return an error or ignore it
                 # return jsonify({"error": "Invalid since_id parameter, must be an integer"}), 400
 
-        db.connect()
-        print(f"[ROUTE:/GET_HISTORY] DATABASE CONNECTION ESTABLISHED")
+        # REMOVED: db.connect()
+        # REMOVED: print("[ROUTE:/GET_HISTORY] DATABASE CONNECTION ESTABLISHED")
 
         try:
             # Build the query arguments dynamically
             query_args = {
-                'order': [{'CREATED_AT': 'desc'}] # Keep existing sort order
+                # REMOVED: 'order': [{'CREATED_AT': 'desc'}]
             }
             if since_id is not None:
                 query_args['where'] = {'SIMULATION_ID': {'gt': since_id}}
 
-            history_entries = db.simulations.find_many(
-                **query_args
-            )
+            # If 'where' key was not added, remove it to avoid sending an empty where clause
+            if 'where' not in query_args and query_args:
+                query_args.pop('where', None) # Safely remove if it exists (shouldn't here, but good practice)
+            elif not query_args: # If query_args became empty after removing order
+                query_args = {} # Ensure it's an empty dict if no conditions apply
+
+            # Check if query_args is empty before passing it
+            if query_args:
+                history_entries = db.simulations.find_many(**query_args)
+            else:
+                history_entries = db.simulations.find_many() # Call without arguments if no conditions
 
             # Convert to serializable format
             serializable_entries = []
@@ -242,14 +245,69 @@ def get_history():
             print(f"[ROUTE:/GET_HISTORY] FAILED TO FETCH HISTORY ENTRIES: {e}")
             return jsonify({"error": str(e)}), 500
     except Exception as e:
-        print(f"[ROUTE:/GET_HISTORY] FAILED TO CONNECT TO DATABASE: {e}")
+        # This outer except now catches setup errors before the query
+        print(f"[ROUTE:/GET_HISTORY] ERROR PROCESSING REQUEST: {e}")
         return jsonify({"error": str(e)}), 500
-    finally:
+
+@main_bp.route('/delete_history', methods=['DELETE'])
+def delete_history():
+    try:
+        request_data = request.get_json()
+        simulation_ids = request_data.get('simulationId')
+
+        if simulation_ids is None:
+            print("[ROUTE:/DELETE_HISTORY] ERROR: 'simulationId' MISSING IN JSON PAYLOAD")
+            return jsonify({"error": "'simulationId' is missing in the request JSON"}), 400
+
+        # Validate input type (must be int or list of ints)
+        is_single_int = isinstance(simulation_ids, int)
+        is_list_of_ints = isinstance(simulation_ids, list) and all(isinstance(item, int) for item in simulation_ids)
+
+        if not is_single_int and not is_list_of_ints:
+            print(f"[ROUTE:/DELETE_HISTORY] ERROR: INVALID 'simulationId' TYPE. EXPECTED INT OR LIST OF INTS. GOT: {type(simulation_ids)}")
+            return jsonify({"error": "Invalid 'simulationId'. Must be an integer or a list of integers."}), 400
+        
+        if is_list_of_ints and not simulation_ids:
+            print(f"[ROUTE:/DELETE_HISTORY] WARNING: Received empty list for simulation IDs. No deletion performed.")
+            return jsonify({"message": "No simulation IDs provided for deletion."}), 200
+
+        # REMOVED: db.connect()
+        # REMOVED: print("[ROUTE:/DELETE_HISTORY] DATABASE CONNECTION ESTABLISHED")
+
         try:
-            db.disconnect()
-            print(f"[ROUTE:/GET_HISTORY] DATABASE DISCONNECTED")
-        except Exception as disconnect_error:
-            print(f"[ROUTE:/GET_HISTORY] WARNING: ERROR DISCONNECTING FROM DATABASE: {disconnect_error}")
+            deleted_count = 0
+            if is_single_int:
+                # Delete a single entry
+                print(f"[ROUTE:/DELETE_HISTORY] ATTEMPTING TO DELETE SIMULATION ID: {simulation_ids}")
+                result = db.simulations.delete(
+                    where={'SIMULATION_ID': simulation_ids}
+                )
+                if result:
+                    deleted_count = 1
+                    print(f"[ROUTE:/DELETE_HISTORY] SUCCESSFULLY DELETED SIMULATION ID: {simulation_ids}")
+                else:
+                    print(f"[ROUTE:/DELETE_HISTORY] SIMULATION ID {simulation_ids} NOT FOUND FOR DELETION.")
+
+            elif is_list_of_ints:
+                # Delete multiple entries
+                print(f"[ROUTE:/DELETE_HISTORY] ATTEMPTING TO DELETE SIMULATION IDS: {simulation_ids}")
+                result = db.simulations.delete_many(
+                    where={'SIMULATION_ID': {'in': simulation_ids}}
+                )
+                deleted_count = result if result is not None else 0 # delete_many returns the count
+                print(f"[ROUTE:/DELETE_HISTORY] SUCCESSFULLY DELETED {deleted_count} SIMULATION ENTRIES.")
+
+            return jsonify({"message": f"Successfully deleted {deleted_count} simulation history entries."}), 200
+
+        except Exception as e:
+            print(f"[ROUTE:/DELETE_HISTORY] FAILED TO DELETE HISTORY ENTRIES: {e}")
+            import traceback
+            print(traceback.format_exc())
+            return jsonify({"error": f"Failed to delete history entries: {str(e)}"}), 500
+
+    except Exception as e:
+        print(f"[ROUTE:/DELETE_HISTORY] ERROR PROCESSING DELETE REQUEST: {e}")
+        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
 def format_time(time_obj):
     """Safely formats a datetime object to HH:MM:S string, handling None or non-datetime types."""
@@ -265,8 +323,8 @@ def format_time(time_obj):
 @main_bp.route('/get_passenger_demand/<int:simulation_id>', methods=['GET'])
 def get_passenger_demand(simulation_id):
     try:
-        db.connect()
-        print(f"[ROUTE:/GET_PASSENGER_DEMAND] DATABASE CONNECTION ESTABLISHED")
+        # REMOVED: db.connect()
+        # REMOVED: print("[ROUTE:/GET_PASSENGER_DEMAND] DATABASE CONNECTION ESTABLISHED")
 
         try:
             passenger_demand_entries = db.passenger_demand.find_many(
@@ -297,13 +355,8 @@ def get_passenger_demand(simulation_id):
             print(f"[ROUTE:/GET_PASSENGER_DEMAND] FAILED TO FETCH OR FORMAT PASSENGER DEMAND ENTRIES: {e}\n{traceback.format_exc()}")
             return jsonify({"error": str(e)}), 500
     except Exception as e:
-        print(f"[ROUTE:/GET_PASSENGER_DEMAND] FAILED TO CONNECT TO DATABASE: {e}")
+        # This outer except now catches setup errors before the query
+        print(f"[ROUTE:/GET_PASSENGER_DEMAND] ERROR PROCESSING REQUEST: {e}")
         return jsonify({"error": str(e)}), 500
-    finally:
-        try:
-            db.disconnect()
-            print(f"[ROUTE:/GET_PASSENGER_DEMAND] DATABASE DISCONNECTED")
-        except Exception as disconnect_error:
-            print(f"[ROUTE:/GET_PASSENGER_DEMAND] WARNING: ERROR DISCONNECTING FROM DATABASE: {disconnect_error}")
 
 # Note: The app is run from backend/app.py, not here.
