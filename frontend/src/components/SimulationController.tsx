@@ -32,64 +32,65 @@ import {
   FULL_DAY_HOURS,
   type PeakPeriod,
   SIMULATION_SPEED_PRESETS,
-} from "@/lib/constants"; // Import constants
+} from "@/lib/constants";
+import { useSimulationRunStore } from "@/store/useSimulationRunStore"; // Import our store
 
 interface SimulationControllerProps {
-  startTime: string; // Now dynamically passed based on view mode
-  endTime: string; // Now dynamically passed based on view mode
-  onTimeUpdate: (time: string) => void;
-  onSimulationStateChange: (isRunning: boolean) => void;
-  onSchemeChange?: (scheme: "REGULAR" | "SKIP-STOP") => void;
-  onToggleFullDayView: () => void;
-  isLoading: boolean;
   hasTimetableData: boolean;
   hasSimulationData: boolean;
-  // New props
-  isFullDayView: boolean;
-  selectedPeak: PeakPeriod; // Receive selected peak from parent
-  onPeakChange: (peak: PeakPeriod) => void; // Add prop for callback
-  showDebugInfo?: boolean; // <-- Add prop to receive state
-  onShowDebugInfoChange?: (show: boolean) => void; // <-- Add handler prop
-  className?: string; // Add className prop
+  className?: string;
 }
 
 type OperationalScheme = "Regular" | "Skip-Stop"; // Type for visual scheme
 
 const SimulationController = ({
-  startTime, // Use passed prop
-  endTime, // Use passed prop
-  onTimeUpdate,
-  onSimulationStateChange,
-  onSchemeChange,
-  onToggleFullDayView,
-  isLoading,
   hasTimetableData,
   hasSimulationData,
-  // New props
-  isFullDayView,
-  selectedPeak,
-  onPeakChange,
-  showDebugInfo = false,
-  onShowDebugInfoChange,
-  className, // Destructure className
+  className,
 }: SimulationControllerProps) => {
-  const [isRunning, setIsRunning] = useState(false);
-  const [visualScheme, setVisualScheme] =
-    useState<OperationalScheme>("Regular"); // State for visual scheme
-  const [currentTime, setCurrentTime] = useState(startTime); // Initialize with passed startTime
+  // Use Zustand store
+  const {
+    isRunning,
+    simulationTime,
+    selectedScheme,
+    selectedPeak,
+    isFullDayView,
+    showDebugInfo,
+    isMapLoading: isLoading,
+    startSimulation,
+    pauseSimulation,
+    setSimulationTime,
+    setSimulationRunning,
+    setSelectedScheme,
+    setSelectedPeak,
+    toggleFullDayView,
+    toggleDebugInfo,
+  } = useSimulationRunStore();
+
+  // Convert backend scheme to UI scheme
+  const visualScheme: OperationalScheme =
+    selectedScheme === "REGULAR" ? "Regular" : "Skip-Stop";
+
+  // Local state for the component
+  const [currentTime, setCurrentTime] = useState(simulationTime);
   const [speed, setSpeed] = useState(1);
-  // State for manual time input
   const [manualTimeInput, setManualTimeInput] = useState(currentTime);
   const [timeInputError, setTimeInputError] = useState<string | null>(null);
 
-  // Ref to hold the latest speed value for the interval
+  // Refs
   const speedRef = useRef(speed);
+
   // Toast Hook
   const { toast } = useToast();
 
-  // Derive view window start/end times based on selected peak
-  const viewStartTime = startTime;
-  const viewEndTime = endTime;
+  // Determine the view window based on current mode
+  const viewStartTime = isFullDayView
+    ? FULL_DAY_HOURS.start
+    : PEAK_HOURS[selectedPeak].start;
+
+  const viewEndTime = isFullDayView
+    ? FULL_DAY_HOURS.end
+    : PEAK_HOURS[selectedPeak].end;
 
   // Convert times to seconds for calculations within the selected view window
   const viewStartTimeSeconds = parseTime(viewStartTime);
@@ -97,13 +98,19 @@ const SimulationController = ({
   const currentTimeSeconds = parseTime(currentTime);
   const totalDuration = viewEndTimeSeconds - viewStartTimeSeconds;
 
-  // Update parent component whenever time changes
+  // Sync local time with store time
   useEffect(() => {
-    onTimeUpdate(currentTime);
+    setCurrentTime(simulationTime);
+    setManualTimeInput(simulationTime);
+  }, [simulationTime]);
+
+  // Update global time when local time changes
+  useEffect(() => {
+    setSimulationTime(currentTime);
     // Also update the manual input field to stay synchronized
     setManualTimeInput(currentTime);
     setTimeInputError(null); // Clear error when time changes externally
-  }, [currentTime, onTimeUpdate]);
+  }, [currentTime, setSimulationTime]);
 
   // Keep speedRef updated
   useEffect(() => {
@@ -122,7 +129,7 @@ const SimulationController = ({
 
           // Stop simulation at the end of the selected view window
           if (newTimeSeconds >= viewEndTimeSeconds) {
-            setIsRunning(false);
+            pauseSimulation();
             // Toast Notification: Reached end of peak period
             toast({
               title: "Simulation Paused",
@@ -152,28 +159,22 @@ const SimulationController = ({
     selectedPeak,
     viewEndTime,
     toast,
+    pauseSimulation,
   ]);
 
-  // Update parent component about simulation state
-  useEffect(() => {
-    onSimulationStateChange(isRunning);
-  }, [isRunning, onSimulationStateChange]);
-
-  // Update visual speed if actual speed changes (e.g., via buttons)
-  useEffect(() => {
-    // This effect seems redundant now, visualSpeed state was removed.
-    // Consider removing if not used elsewhere.
-  }, [speed]);
-
   const togglePlayPause = useCallback(() => {
-    setIsRunning((prev) => !prev);
-  }, []);
+    if (isRunning) {
+      pauseSimulation();
+    } else {
+      startSimulation();
+    }
+  }, [isRunning, pauseSimulation, startSimulation]);
 
   // Reset simulation to the start of the current peak period
   const resetSimulation = useCallback(() => {
-    setIsRunning(false);
+    pauseSimulation();
     setCurrentTime(PEAK_HOURS[selectedPeak].start);
-  }, [selectedPeak]);
+  }, [selectedPeak, pauseSimulation]);
 
   // Skip simulation time back by 30 seconds
   const skipBack = useCallback(() => {
@@ -197,12 +198,12 @@ const SimulationController = ({
 
       // Stop at the end of the peak window if skipping goes past it
       if (newTimeSeconds >= viewEndTimeSeconds) {
-        setIsRunning(false);
+        pauseSimulation();
         return viewEndTime;
       }
       return newTime;
     });
-  }, [viewEndTimeSeconds, viewEndTime]);
+  }, [viewEndTimeSeconds, viewEndTime, pauseSimulation]);
 
   // Update simulation speed
   const handleSpeedChange = useCallback(
@@ -220,35 +221,29 @@ const SimulationController = ({
     (newPeak: PeakPeriod) => {
       if (newPeak !== selectedPeak && !isFullDayView) {
         // Only allow change if not full day
-        // console.log(`Setting peak via controller: ${newPeak} Peak`);
-        // Call parent state setter
-        onPeakChange(newPeak);
+        setSelectedPeak(newPeak);
         // Set current time to the start of the newly selected peak
         setCurrentTime(PEAK_HOURS[newPeak].start);
         // Ensure simulation is paused when changing peak
-        setIsRunning(false);
+        pauseSimulation();
       }
     },
-    [selectedPeak, onPeakChange, isFullDayView] // Add dependencies
+    [selectedPeak, isFullDayView, setSelectedPeak, pauseSimulation]
   );
 
   // Handle selection of a different visual operational scheme
   const handleSchemeChange = useCallback(
     (newScheme: OperationalScheme) => {
-      if (newScheme !== visualScheme) {
-        // console.log(`Switching visual scheme to: ${newScheme}`);
-        setVisualScheme(newScheme);
-
-        // Call the parent component's handler if provided
-        if (onSchemeChange) {
-          // Convert from UI scheme type to backend scheme type
-          const backendScheme =
-            newScheme === "Regular" ? "REGULAR" : "SKIP-STOP";
-          onSchemeChange(backendScheme);
-        }
+      if (
+        (newScheme === "Regular" && selectedScheme !== "REGULAR") ||
+        (newScheme === "Skip-Stop" && selectedScheme !== "SKIP-STOP")
+      ) {
+        // Convert from UI scheme type to backend scheme type
+        const backendScheme = newScheme === "Regular" ? "REGULAR" : "SKIP-STOP";
+        setSelectedScheme(backendScheme);
       }
     },
-    [visualScheme, onSchemeChange]
+    [selectedScheme, setSelectedScheme]
   );
 
   // --- Manual Time Input Handlers --- //
@@ -272,7 +267,7 @@ const SimulationController = ({
 
     // If valid and within range, update the main time state
     setTimeInputError(null);
-    setIsRunning(false); // Pause simulation when manually setting time
+    pauseSimulation(); // Pause simulation when manually setting time
     setCurrentTime(inputTime);
     return true;
   };
@@ -312,15 +307,9 @@ const SimulationController = ({
     ) {
       const newTime = formatTime(newTimeSeconds);
       if (newTime !== currentTime) {
-        setIsRunning(false); // Pause simulation on manual scrub
+        pauseSimulation(); // Pause simulation on manual scrub
         setCurrentTime(newTime);
       }
-    }
-  };
-
-  const handleDebugToggle = (checked: boolean) => {
-    if (onShowDebugInfoChange) {
-      onShowDebugInfoChange(checked);
     }
   };
 
@@ -396,7 +385,7 @@ const SimulationController = ({
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={onToggleFullDayView}
+                  onClick={toggleFullDayView}
                   className="h-7 w-7 text-muted-foreground hover:text-foreground ml-1" // Added ml-1 for spacing
                   disabled={!hasSimulationData}
                 >
@@ -472,7 +461,7 @@ const SimulationController = ({
           <Checkbox
             id="show-debug"
             checked={showDebugInfo}
-            onCheckedChange={handleDebugToggle}
+            onCheckedChange={toggleDebugInfo}
             disabled={!hasTimetableData} // Disable if no data
           />
           <Label

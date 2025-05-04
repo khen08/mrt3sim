@@ -20,6 +20,26 @@ import StationInfo from "@/components/StationInfo";
 import TrainInfo from "@/components/TrainInfo";
 import { cn } from "@/lib/utils";
 import { PeakPeriod, PEAK_HOURS, FULL_DAY_HOURS } from "@/lib/constants";
+import { useSimulationRunStore } from "@/store/useSimulationRunStore";
+import {
+  useSimulationResultStore,
+  TrainMovementEntry,
+} from "@/store/useSimulationResultStore";
+import { useSimulationFileStore } from "@/store/useSimulationFileStore";
+import { useSimulationStore } from "@/store/useSimulationStore";
+
+// Define the timetable entry type for MrtMap
+interface SimulationTimetableEntry {
+  TRAIN_ID: number;
+  STATION_ID: number;
+  DIRECTION: "NORTHBOUND" | "SOUTHBOUND";
+  TRAIN_STATUS: "ACTIVE" | "INACTIVE";
+  ARRIVAL_TIME: string | null;
+  DEPARTURE_TIME: string | null;
+  SCHEME_TYPE?: string;
+  TRAIN_SERVICE_TYPE?: string;
+  [key: string]: any; // Allow any other properties
+}
 
 // LoadingPlaceholder component
 interface LoadingPlaceholderProps {
@@ -38,86 +58,94 @@ const LoadingPlaceholder: React.FC<LoadingPlaceholderProps> = ({
 };
 
 interface MainContentProps {
-  isMapLoading: boolean;
-  hasResults: boolean;
-  simulatePassengers: boolean;
-  loadedSimulationId: number | null;
-  simulationInput: {
-    filename: string | null;
-    config: any | null;
-  };
-  nextRunFilename: string | null;
-  setNextRunFilename: (filename: string | null) => void;
-  setSimulationInput: React.Dispatch<
-    React.SetStateAction<{
-      filename: string | null;
-      config: any | null;
-    }>
-  >;
-  simulationResult: any[] | null;
-  selectedStation: number | null;
-  onStationClick: (stationId: number) => void;
-  selectedTrainId: number | null;
-  onTrainClick: (trainId: number, details: any) => void;
-  simulationTime: string;
-  isSimulationRunning: boolean;
-  onTimeUpdate: (time: string) => void;
-  onSimulationStateChange: (isRunning: boolean) => void;
-  mapRefreshKey: number;
-  activeSimulationSettings: any | null;
-  selectedScheme: "REGULAR" | "SKIP-STOP";
-  onSchemeChange: (scheme: "REGULAR" | "SKIP-STOP") => void;
-  showDebugInfo: boolean;
-  onShowDebugInfoChange: (show: boolean) => void;
-  isFullDayView: boolean;
-  onToggleFullDayView: () => void;
-  selectedPeak: PeakPeriod;
-  onPeakChange: (peak: PeakPeriod) => void;
-  selectedTrainDetails: any | null;
-  loadedServicePeriodsData: any | null;
-  passengerDistributionData: any | null;
   mrtMapRef: React.RefObject<MrtMapHandle | null>;
   stationData: any;
-  isSimulating: boolean;
 }
 
 const MainContent: React.FC<MainContentProps> = ({
-  isMapLoading,
-  hasResults,
-  simulatePassengers,
-  loadedSimulationId,
-  simulationInput,
-  nextRunFilename,
-  setNextRunFilename,
-  setSimulationInput,
-  simulationResult,
-  selectedStation,
-  onStationClick,
-  selectedTrainId,
-  onTrainClick,
-  simulationTime,
-  isSimulationRunning,
-  onTimeUpdate,
-  onSimulationStateChange,
-  mapRefreshKey,
-  activeSimulationSettings,
-  selectedScheme,
-  onSchemeChange,
-  showDebugInfo,
-  onShowDebugInfoChange,
-  isFullDayView,
-  onToggleFullDayView,
-  selectedPeak,
-  onPeakChange,
-  selectedTrainDetails,
-  loadedServicePeriodsData,
-  passengerDistributionData,
   mrtMapRef,
   stationData,
-  isSimulating,
 }) => {
+  // Use Zustand stores
+  const {
+    isMapLoading,
+    isRunning: isSimulationRunning,
+    hasResults,
+    simulationTime,
+    selectedScheme,
+    isFullDayView,
+    showDebugInfo,
+    selectedPeak,
+    mapRefreshKey,
+    isSimulating,
+    setSimulationTime,
+    setSimulationRunning,
+    loadedSimulationId,
+  } = useSimulationRunStore();
+
+  const {
+    simulationResult,
+    selectedStation,
+    selectedTrainId,
+    selectedTrainDetails,
+    servicePeriodsData: loadedServicePeriodsData,
+    passengerDistributionData,
+    setSelectedStation,
+    setSelectedTrainId,
+    setSelectedTrainDetails,
+  } = useSimulationResultStore();
+
+  const {
+    simulationInputFilename,
+    nextRunFilename,
+    simulatePassengers,
+    setNextRunFilename,
+  } = useSimulationFileStore();
+
+  const { activeSettings } = useSimulationStore();
+
+  // Simulation input from current state
+  const simulationInput = {
+    filename: simulationInputFilename,
+    config: null, // This can be enhanced in the future if needed
+  };
+
+  // Event handlers that update Zustand stores
+  const onStationClick = (stationId: number) => {
+    setSelectedStation(stationId);
+  };
+
+  const onTrainClick = (trainId: number, details: any) => {
+    setSelectedTrainId(trainId);
+    setSelectedTrainDetails(details);
+  };
+
+  const onTimeUpdate = (time: string) => {
+    setSimulationTime(time);
+  };
+
+  const onSimulationStateChange = (isRunning: boolean) => {
+    setSimulationRunning(isRunning);
+  };
+
   // Use useState instead of a variable to manage content
   const [contentState, setContentState] = useState<ReactNode>(null);
+
+  // Helper function to convert our TrainMovementEntry to SimulationTimetableEntry for MrtMap
+  const convertSimulationResults = (
+    data: TrainMovementEntry[] | null
+  ): SimulationTimetableEntry[] | null => {
+    if (!data) return null;
+
+    return data.map((entry) => {
+      return {
+        ...entry,
+        TRAIN_STATUS: entry.TRAIN_STATUS as "ACTIVE" | "INACTIVE",
+        SCHEME_TYPE: entry.SCHEME_TYPE,
+        TRAIN_SERVICE_TYPE: entry.SCHEME_TYPE, // Map SCHEME_TYPE to TRAIN_SERVICE_TYPE
+      };
+    });
+  };
 
   // Determine the base content based on current state
   useEffect(() => {
@@ -126,6 +154,9 @@ const MainContent: React.FC<MainContentProps> = ({
     if (isMapLoading) {
       newContent = <LoadingPlaceholder message="Processing simulation..." />;
     } else if (hasResults) {
+      // Convert the simulation results to the correct format
+      const timetableData = convertSimulationResults(simulationResult);
+
       // When we have simulation results, ALWAYS show the map
       // regardless of nextRunFilename state
       newContent = (
@@ -169,17 +200,17 @@ const MainContent: React.FC<MainContentProps> = ({
               onTrainClick={onTrainClick}
               simulationTime={simulationTime}
               isRunning={isSimulationRunning}
-              simulationTimetable={simulationResult?.filter((entry) => {
+              simulationTimetable={timetableData?.filter((entry) => {
                 return (
                   !entry.SCHEME_TYPE ||
                   entry.SCHEME_TYPE === selectedScheme ||
-                  entry.SERVICE_TYPE === selectedScheme
+                  entry.TRAIN_SERVICE_TYPE === selectedScheme
                 );
               })}
-              stationConfigData={activeSimulationSettings?.stations}
-              turnaroundTime={activeSimulationSettings?.turnaroundTime}
-              maxCapacity={activeSimulationSettings?.maxCapacity ?? 0}
-              selectedScheme={activeSimulationSettings?.schemeType ?? "REGULAR"}
+              stationConfigData={activeSettings?.stations}
+              turnaroundTime={activeSettings?.turnaroundTime}
+              maxCapacity={activeSettings?.maxCapacity ?? 0}
+              selectedScheme={activeSettings?.schemeType ?? "REGULAR"}
               uiSelectedScheme={selectedScheme}
               showDebugInfo={showDebugInfo}
               servicePeriodsData={loadedServicePeriodsData}
@@ -195,32 +226,12 @@ const MainContent: React.FC<MainContentProps> = ({
             )}
           >
             <SimulationController
-              startTime={
-                isFullDayView
-                  ? FULL_DAY_HOURS.start
-                  : PEAK_HOURS[selectedPeak].start
-              }
-              endTime={
-                isFullDayView
-                  ? FULL_DAY_HOURS.end
-                  : PEAK_HOURS[selectedPeak].end
-              }
-              onTimeUpdate={onTimeUpdate}
-              onSimulationStateChange={onSimulationStateChange}
-              isLoading={isSimulating}
               hasSimulationData={
                 !!simulationResult && simulationResult.length > 0
               }
               hasTimetableData={
                 !!simulationResult && simulationResult.length > 0
               }
-              onSchemeChange={onSchemeChange}
-              onToggleFullDayView={onToggleFullDayView}
-              isFullDayView={isFullDayView}
-              selectedPeak={selectedPeak}
-              onPeakChange={onPeakChange}
-              showDebugInfo={showDebugInfo}
-              onShowDebugInfoChange={onShowDebugInfoChange}
               className={cn(
                 selectedStation === null &&
                   selectedTrainId === null &&
@@ -387,29 +398,23 @@ const MainContent: React.FC<MainContentProps> = ({
     mrtMapRef,
     mapRefreshKey,
     selectedStation,
-    onStationClick,
     selectedTrainId,
-    onTrainClick,
     simulationTime,
     isSimulationRunning,
     simulationResult,
-    activeSimulationSettings,
+    activeSettings,
     selectedScheme,
     showDebugInfo,
     loadedServicePeriodsData,
     isFullDayView,
     selectedPeak,
-    onTimeUpdate,
-    onSimulationStateChange,
-    isSimulating,
-    onSchemeChange,
-    onToggleFullDayView,
-    onPeakChange,
-    onShowDebugInfoChange,
     selectedTrainDetails,
     passengerDistributionData,
     stationData,
     setNextRunFilename,
+    setSelectedStation,
+    setSelectedTrainId,
+    setSelectedTrainDetails,
   ]);
 
   return (

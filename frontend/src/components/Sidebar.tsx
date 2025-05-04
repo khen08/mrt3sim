@@ -39,13 +39,6 @@ interface SidebarProps {
   setIsHistoryModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
   isSimulating: boolean;
   isFullDayView: boolean;
-  onSettingChange: (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | string,
-    field?: string
-  ) => void;
-  onStationDistanceChange: (index: number, value: number) => void;
-  onStationSchemeChange: (index: number, value: "AB" | "A" | "B") => void;
-  onSkipStopToggle: (checked: boolean) => void;
   loadedSimulationId: number | null;
   hasSimulationData: boolean;
   simulatePassengers: boolean;
@@ -73,10 +66,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   setIsHistoryModalOpen,
   isSimulating,
   isFullDayView,
-  onSettingChange,
-  onStationDistanceChange,
-  onStationSchemeChange,
-  onSkipStopToggle,
   loadedSimulationId,
   hasSimulationData,
   simulatePassengers,
@@ -186,13 +175,8 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             <SimulationSettingsCard
-              simulationSettings={simulationSettings}
               isSimulating={isSimulating || isMapLoading}
               isFullDayView={isFullDayView}
-              onSettingChange={onSettingChange}
-              onStationDistanceChange={onStationDistanceChange}
-              onStationSchemeChange={onStationSchemeChange}
-              onSkipStopToggle={onSkipStopToggle}
               loadedSimulationId={loadedSimulationId}
               hasSimulationData={hasSimulationData}
               simulatePassengers={simulatePassengers}

@@ -37,6 +37,8 @@ import React, { useRef } from "react";
 import { cn } from "@/lib/utils";
 import { uploadCsvFile } from "@/lib/fileUpload";
 import { toast } from "@/components/ui/use-toast";
+import { useSimulationStore } from "@/store/useSimulationStore";
+import { useSimulationFileStore } from "@/store/useSimulationFileStore";
 
 // Define SimulationSettings type locally (copied from page.tsx)
 interface SimulationSettings {
@@ -57,44 +59,41 @@ interface SimulationSettings {
 
 // Define interface for the simulation settings passed as props
 interface SimulationSettingsCardProps {
-  simulationSettings: SimulationSettings | null;
   isSimulating: boolean;
   isFullDayView: boolean;
-  onSettingChange: (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | string,
-    field?: string
-  ) => void;
-  onStationDistanceChange: (index: number, value: number) => void;
-  onStationSchemeChange: (index: number, value: "AB" | "A" | "B") => void;
-  onSkipStopToggle: (checked: boolean) => void;
   loadedSimulationId: number | null;
   hasSimulationData: boolean;
-  simulatePassengers: boolean;
-  onSimulatePassengersToggle: (checked: boolean) => void;
   hasResults: boolean;
-  simulationInputFilename: string | null;
-  nextRunFilename?: string | null;
   handleFileSelect: (file: File | null, backendFilename: string | null) => void;
 }
 
 const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
-  simulationSettings,
   isSimulating,
   isFullDayView,
-  onSettingChange,
-  onStationDistanceChange,
-  onStationSchemeChange,
-  onSkipStopToggle,
   loadedSimulationId,
   hasSimulationData,
-  simulatePassengers,
-  onSimulatePassengersToggle,
   hasResults,
-  simulationInputFilename,
-  nextRunFilename = null,
   handleFileSelect,
 }: SimulationSettingsCardProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Use Zustand stores
+  const {
+    settings: simulationSettings,
+    updateSetting,
+    updateStationDistance,
+    updateStationScheme,
+    toggleSkipStop,
+  } = useSimulationStore();
+
+  // Use file store
+  const {
+    simulationInputFilename,
+    nextRunFilename,
+    simulatePassengers,
+    setSimulatePassengers,
+    setNextRunFilename,
+  } = useSimulationFileStore();
 
   if (!simulationSettings) {
     // Render nothing or a loading indicator if settings are not yet loaded
@@ -103,6 +102,56 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
 
   const { stations, ...trainSettings } = simulationSettings;
   const isSkipStop = simulationSettings.schemeType === "SKIP-STOP";
+
+  // Handle setting changes
+  const onSettingChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | string,
+    field?: string
+  ) => {
+    let name: string | undefined;
+    let value: any;
+
+    if (typeof e === "string" && field) {
+      name = field;
+      value = e;
+    } else if (typeof e === "object" && "target" in e) {
+      name = e.target.name;
+      value =
+        e.target.type === "number"
+          ? parseFloat(e.target.value) || 0
+          : e.target.value;
+      if (["dwellTime", "turnaroundTime", "maxCapacity"].includes(name)) {
+        value = parseInt(e.target.value, 10) || 0;
+      }
+    } else {
+      return;
+    }
+
+    if (name) {
+      updateSetting(name as keyof SimulationSettings, value);
+    }
+  };
+
+  // Handle simulation toggle
+  const onSimulatePassengersToggle = (checked: boolean) => {
+    setSimulatePassengers(checked);
+
+    if (checked) {
+      toast({
+        title: "Passenger Simulation Enabled",
+        description: simulationInputFilename
+          ? `Will use '${simulationInputFilename}' for the next run.`
+          : "Please upload or select a passenger data CSV.",
+        variant: "default",
+      });
+    } else {
+      toast({
+        title: "Passenger Simulation Disabled",
+        description: "Next run will not use passenger data.",
+        variant: "default",
+      });
+    }
+  };
 
   return (
     <Card className="mb-4">
@@ -219,8 +268,8 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                               "Setting nextRunFilename to:",
                               result.filename
                             );
-                            // Call handleFileSelect with ONLY the backend filename
-                            // This will set only nextRunFilename without changing UI
+                            // Update file store and call parent handler
+                            setNextRunFilename(result.filename);
                             handleFileSelect(file, result.filename);
 
                             toast({
@@ -417,7 +466,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   id="useSkipStop"
                   checked={isSkipStop}
                   onCheckedChange={(checked: boolean) =>
-                    onSkipStopToggle(checked)
+                    toggleSkipStop(checked)
                   }
                   disabled={isSimulating}
                 />
@@ -462,7 +511,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                           disabled={!isSkipStop || isSimulating}
                           value={station.scheme || "AB"}
                           onValueChange={(value) =>
-                            onStationSchemeChange(
+                            updateStationScheme(
                               index,
                               value as "AB" | "A" | "B"
                             )
@@ -486,10 +535,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                           min="0"
                           value={station.distance}
                           onChange={(e) =>
-                            onStationDistanceChange(
-                              index,
-                              Number(e.target.value)
-                            )
+                            updateStationDistance(index, Number(e.target.value))
                           }
                           // Disable first station and if simulating
                           disabled={index === 0 || isSimulating}
