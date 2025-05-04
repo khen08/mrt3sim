@@ -28,6 +28,7 @@ interface SimulationHistoryModalProps {
   isLoading?: boolean; // Optional loading state
   loadedSimulationId?: number | null; // Add prop to receive the currently loaded ID
   isSimulating?: boolean; // Add prop to know if a simulation is running
+  onRefreshHistory?: () => void; // Add prop for refresh callback
 }
 
 export function SimulationHistoryModal({
@@ -38,6 +39,7 @@ export function SimulationHistoryModal({
   isLoading = false,
   loadedSimulationId, // Destructure the new prop
   isSimulating = false, // Destructure the new prop with a default
+  onRefreshHistory, // Destructure the new prop
 }: SimulationHistoryModalProps) {
   // State for row selection
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
@@ -124,8 +126,19 @@ export function SimulationHistoryModal({
               </Button>
             )}
           </div>
-          <div>
+          <div className="flex items-center gap-2">
             {" "}
+            {/* Refresh Button */}
+            {onRefreshHistory && (
+              <Button
+                variant="outline"
+                onClick={onRefreshHistory}
+                disabled={isLoading || isSimulating}
+              >
+                <IconLoader className="h-4 w-4" />
+                Refresh History
+              </Button>
+            )}
             {/* Right side for Close button */}
             <DialogClose asChild>
               <Button variant="outline">

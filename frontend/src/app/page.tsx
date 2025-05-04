@@ -247,41 +247,74 @@ export default function Home() {
     setIsLoading(false);
   }, [toast]);
 
-  const handleFetchHistory = useCallback(async () => {
-    setIsHistoryLoading(true);
-    setApiError(null);
-    try {
-      console.log("Fetching simulation history...");
-      const response = await fetch(GET_SIMULATION_HISTORY_ENDPOINT);
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP error ${response.status}`);
+  const handleFetchHistory = useCallback(
+    async (fetchFullHistory: boolean = false) => {
+      setIsHistoryLoading(true);
+      setApiError(null);
+
+      let url = GET_SIMULATION_HISTORY_ENDPOINT;
+      let highestKnownId: number | null = null;
+
+      if (!fetchFullHistory && historySimulations.length > 0) {
+        // Find the highest ID only if not fetching full history and some history exists
+        highestKnownId = Math.max(
+          ...historySimulations.map((sim) => sim.SIMULATION_ID)
+        );
+        url += `?since_id=${highestKnownId}`;
+        console.log(
+          `Fetching simulation history since ID: ${highestKnownId}...`
+        );
+      } else {
+        console.log("Fetching full simulation history...");
+        // If fetching full history, clear existing
+        if (fetchFullHistory) {
+          setHistorySimulations([]);
+        }
       }
-      const data: SimulationHistoryEntry[] = await response.json();
-      console.log("Fetched history:", data);
-      setHistorySimulations(data);
-    } catch (error: any) {
-      console.error("Failed to fetch history:", error);
-      setApiError(`Failed to load simulation history: ${error.message}`);
-      setHistorySimulations([]);
-      toast({
-        title: "Error Loading History",
-        description: `Could not fetch simulation history: ${error.message}`,
-        variant: "destructive",
-      });
-    } finally {
-      setIsHistoryLoading(false);
-    }
-  }, [toast]);
+
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `HTTP error ${response.status}`);
+        }
+        const data: SimulationHistoryEntry[] = await response.json();
+        console.log("Fetched history data:", data);
+
+        // Merge new data with existing data
+        setHistorySimulations((prevSimulations) => {
+          const existingIds = new Set(
+            prevSimulations.map((s) => s.SIMULATION_ID)
+          );
+          const newData = data.filter((s) => !existingIds.has(s.SIMULATION_ID));
+          // Prepend new data (assuming API returns descending order) and sort again just in case
+          const merged = [...newData, ...prevSimulations];
+          merged.sort((a, b) => b.SIMULATION_ID - a.SIMULATION_ID);
+          return merged;
+        });
+      } catch (error: any) {
+        console.error("Failed to fetch history:", error);
+        setApiError(`Failed to load simulation history: ${error.message}`);
+        setHistorySimulations([]);
+        toast({
+          title: "Error Loading History",
+          description: `Could not fetch simulation history: ${error.message}`,
+          variant: "destructive",
+        });
+      } finally {
+        setIsHistoryLoading(false);
+      }
+    },
+    [toast, historySimulations]
+  );
 
   useEffect(() => {
     const loadInitialData = async () => {
       await initializeSettings();
-      await handleFetchHistory();
     };
 
     loadInitialData();
-  }, [initializeSettings, handleFetchHistory]);
+  }, [initializeSettings]);
 
   const stationData = (() => {
     let data = {
@@ -992,11 +1025,12 @@ export default function Home() {
                     <AlertDialogTrigger asChild>
                       <Button
                         variant="outline"
-                        className="w-full justify-start text-left"
+                        className="w-full justify-start text-left bg-transparent border border-destructive/50 text-destructive hover:bg-destructive/10"
                         disabled={isSimulating}
+                        title="Clear current loaded timetable data and reset settings to default. Does not delete history."
                       >
                         <IconReplace className="mr-2 h-4 w-4" />
-                        Clear Current Data & Settings
+                        Clear Current Data
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
@@ -1017,7 +1051,7 @@ export default function Home() {
                           onClick={handleLoadNewData}
                           className="bg-destructive hover:bg-destructive/90"
                         >
-                          Yes, Clear Data
+                          Yes, Clear Current Data
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
@@ -1028,6 +1062,7 @@ export default function Home() {
                   variant="outline"
                   className="w-full justify-start text-left"
                   onClick={() => {
+                    handleFetchHistory();
                     setIsHistoryModalOpen(true);
                   }}
                   title="View past simulation runs"
@@ -1110,9 +1145,9 @@ export default function Home() {
         )}
       </button>
 
-      <div className="flex-grow h-full flex flex-col p-4 overflow-y-auto transition-all duration-300 ease-in-out">
+      <div className="flex-grow h-full flex flex-col overflow-hidden">
         {showInitialState ? (
-          <div className="flex-grow flex items-center justify-center">
+          <div className="flex-grow flex items-center justify-center p-4">
             {simulatePassengers ? (
               <Card className="w-full max-w-lg">
                 <CardHeader>
@@ -1158,81 +1193,48 @@ export default function Home() {
             )}
           </div>
         ) : (
-          <div className="flex-1 flex flex-col space-y-4 overflow-hidden">
-            <div className="flex-1 flex flex-col overflow-hidden space-y-4">
-              <div className="flex-1 min-h-0">
-                <MrtMap
-                  ref={mrtMapRef}
-                  key={mapRefreshKey}
-                  selectedStation={selectedStation}
-                  onStationClick={handleStationClick}
-                  selectedTrainId={selectedTrainId}
-                  onTrainClick={handleTrainClick}
-                  simulationTime={simulationTime}
-                  isRunning={isSimulationRunning}
-                  simulationTimetable={simulationResult?.filter((entry) => {
-                    if (
-                      simulationResult &&
-                      simulationResult.length > 0 &&
-                      !hasLoggedSchemeType
-                    ) {
-                      setHasLoggedSchemeType(true);
-                    }
-
-                    return (
-                      !entry.SCHEME_TYPE ||
-                      entry.SCHEME_TYPE === selectedScheme ||
-                      entry.SERVICE_TYPE === selectedScheme
-                    );
-                  })}
-                  stationConfigData={activeSimulationSettings?.stations}
-                  turnaroundTime={activeSimulationSettings?.turnaroundTime}
-                  maxCapacity={activeSimulationSettings?.maxCapacity ?? 0}
-                  selectedScheme={
-                    activeSimulationSettings?.schemeType ?? "REGULAR"
+          <div className="flex-1 flex flex-col overflow-y-auto p-4 space-y-2">
+            {/* Map takes remaining space */}
+            <div className="flex-1 min-h-0">
+              <MrtMap
+                ref={mrtMapRef}
+                key={mapRefreshKey}
+                selectedStation={selectedStation}
+                onStationClick={handleStationClick}
+                selectedTrainId={selectedTrainId}
+                onTrainClick={handleTrainClick}
+                simulationTime={simulationTime}
+                isRunning={isSimulationRunning}
+                simulationTimetable={simulationResult?.filter((entry) => {
+                  if (
+                    simulationResult &&
+                    simulationResult.length > 0 &&
+                    !hasLoggedSchemeType
+                  ) {
+                    setHasLoggedSchemeType(true);
                   }
-                  uiSelectedScheme={selectedScheme}
-                  showDebugInfo={showDebugInfo}
-                  servicePeriod={loadedServicePeriod}
-                  headway={loadedHeadway}
-                  loopTime={loadedLoopTime}
-                />
-              </div>
 
-              <div
-                className={cn(
-                  "flex-shrink-0 transition-all duration-300 ease-in-out overflow-hidden",
-                  selectedStation !== null
-                    ? "opacity-100 max-h-[500px] mt-4"
-                    : "opacity-0 max-h-0 mt-0 pointer-events-none"
-                )}
-              >
-                {selectedStation !== null && simulationResult && (
-                  <StationInfo {...stationData} />
-                )}
-              </div>
-
-              <div
-                className={cn(
-                  "flex-shrink-0 transition-all duration-300 ease-in-out overflow-hidden",
-                  selectedTrainId !== null && selectedTrainDetails !== null
-                    ? "opacity-100 max-h-[500px] mt-4"
-                    : "opacity-0 max-h-0 mt-0 pointer-events-none"
-                )}
-              >
-                {selectedTrainId !== null && selectedTrainDetails !== null && (
-                  <TrainInfo
-                    {...selectedTrainDetails}
-                    simulationTime={simulationTime}
-                    simulationTimetable={simulationResult}
-                    trainEventPairs={mrtMapRef.current?.getTrainEventPairs()}
-                    trainStates={mrtMapRef.current?.getTrainStates()}
-                    stationsById={mrtMapRef.current?.getStationsById()}
-                  />
-                )}
-              </div>
+                  return (
+                    !entry.SCHEME_TYPE ||
+                    entry.SCHEME_TYPE === selectedScheme ||
+                    entry.SERVICE_TYPE === selectedScheme
+                  );
+                })}
+                stationConfigData={activeSimulationSettings?.stations}
+                turnaroundTime={activeSimulationSettings?.turnaroundTime}
+                maxCapacity={activeSimulationSettings?.maxCapacity ?? 0}
+                selectedScheme={
+                  activeSimulationSettings?.schemeType ?? "REGULAR"
+                }
+                uiSelectedScheme={selectedScheme}
+                showDebugInfo={showDebugInfo}
+                servicePeriod={loadedServicePeriod}
+                headway={loadedHeadway}
+                loopTime={loadedLoopTime}
+              />
             </div>
 
+            {/* Controller is always visible below map */}
             <div className="flex-shrink-0">
               <SimulationController
                 startTime={
@@ -1263,6 +1265,41 @@ export default function Home() {
                 onShowDebugInfoChange={handleShowDebugInfoChange}
               />
             </div>
+
+            {/* Station Info (conditionally pushes controller up) */}
+            <div
+              className={cn(
+                "flex-shrink-0 transition-all duration-300 ease-in-out overflow-hidden",
+                selectedStation !== null
+                  ? "opacity-100 max-h-[500px]" // No margin-top needed here due to space-y-4
+                  : "opacity-0 max-h-0 pointer-events-none"
+              )}
+            >
+              {selectedStation !== null && simulationResult && (
+                <StationInfo {...stationData} />
+              )}
+            </div>
+
+            {/* Train Info (conditionally pushes controller/station up) */}
+            <div
+              className={cn(
+                "flex-shrink-0 transition-all duration-300 ease-in-out overflow-hidden",
+                selectedTrainId !== null && selectedTrainDetails !== null
+                  ? "opacity-100 max-h-[500px]" // No margin-top needed here
+                  : "opacity-0 max-h-0 pointer-events-none"
+              )}
+            >
+              {selectedTrainId !== null && selectedTrainDetails !== null && (
+                <TrainInfo
+                  {...selectedTrainDetails}
+                  simulationTime={simulationTime}
+                  simulationTimetable={simulationResult}
+                  trainEventPairs={mrtMapRef.current?.getTrainEventPairs()}
+                  trainStates={mrtMapRef.current?.getTrainStates()}
+                  stationsById={mrtMapRef.current?.getStationsById()}
+                />
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -1274,6 +1311,7 @@ export default function Home() {
         onLoadSimulation={(id) => {
           handleLoadSimulation(id);
         }}
+        onRefreshHistory={() => handleFetchHistory(true)}
         isLoading={isHistoryLoading}
         loadedSimulationId={loadedSimulationId}
         isSimulating={isSimulating}

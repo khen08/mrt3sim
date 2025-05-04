@@ -200,14 +200,33 @@ def get_timetable(simulation_id):
 @main_bp.route('/get_history', methods=['GET'])
 def get_history():
     try:
+        # Get the 'since_id' query parameter
+        since_id_str = request.args.get('since_id')
+        since_id = None
+        if since_id_str:
+            try:
+                since_id = int(since_id_str)
+                print(f"[ROUTE:/GET_HISTORY] Received since_id: {since_id}")
+            except ValueError:
+                print(f"[ROUTE:/GET_HISTORY] WARNING: Invalid non-integer since_id received: {since_id_str}")
+                # Optionally return an error or ignore it
+                # return jsonify({"error": "Invalid since_id parameter, must be an integer"}), 400
+
         db.connect()
         print(f"[ROUTE:/GET_HISTORY] DATABASE CONNECTION ESTABLISHED")
-        
+
         try:
+            # Build the query arguments dynamically
+            query_args = {
+                'order': [{'CREATED_AT': 'desc'}] # Keep existing sort order
+            }
+            if since_id is not None:
+                query_args['where'] = {'SIMULATION_ID': {'gt': since_id}}
+
             history_entries = db.simulations.find_many(
-                order=[{'START_TIME': 'desc'}]
+                **query_args
             )
-            
+
             # Convert to serializable format
             serializable_entries = []
             for entry in history_entries:

@@ -947,23 +947,75 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
           // --- Calculate State based on eventA, eventB ---
           if (eventA && !eventB) {
             // AT STATION
-            trainState = {
-              id: trainId,
-              x: stationsById[eventA.STATION_ID]?.x ?? 0,
-              y: getTrainYPosition(eventA.DIRECTION),
-              direction: eventA.DIRECTION,
-              isStopped: true,
-              isActive: true,
-              isTurningAround: false,
-              isInDepot: false,
-              isNewlyInserted: false,
-              serviceType: getEffectiveTrainServiceType(trainId), // Uses active scheme
-              rotation: eventA.DIRECTION === "NORTHBOUND" ? 180 : 0,
-              currentStationIndex: stations.findIndex(
-                (s) => s.id === eventA.STATION_ID
-              ),
-              turnaroundProgress: null,
-            };
+
+            // *** START FIX: Check if this 'AT STATION' event is actually the end of the line ***
+            const isLastEventInSchedule =
+              trainSchedule.indexOf(eventA) === trainSchedule.length - 1;
+            if (isLastEventInSchedule) {
+              // If it's the last event and there's no next event (eventB is null),
+              // the train should be considered inactive after its potential departure time.
+              const departureSec = eventA.DEPARTURE_TIME
+                ? timeToSeconds(eventA.DEPARTURE_TIME)
+                : timeToSeconds(eventA.ARRIVAL_TIME!);
+              if (currentSimSeconds >= departureSec) {
+                console.warn(
+                  `Train ${trainId}: At station for last event (${eventA.STATION_ID}) past departure/arrival time ${simulationTime}. Setting to INACTIVE (depot).`
+                );
+                trainState = {
+                  id: trainId,
+                  x: 0, // Position will be updated later
+                  y: DEPOT_CENTER_Y,
+                  direction: eventA.DIRECTION,
+                  isStopped: true,
+                  isActive: true, // Visually inactive
+                  isTurningAround: false,
+                  isInDepot: true, // Mark as in depot
+                  isNewlyInserted: false,
+                  serviceType: getEffectiveTrainServiceType(trainId),
+                  rotation: 0,
+                  currentStationIndex: -1,
+                  turnaroundProgress: null,
+                };
+              } else {
+                // Still dwelling at the last station before inactivity
+                trainState = {
+                  id: trainId,
+                  x: stationsById[eventA.STATION_ID]?.x ?? 0,
+                  y: getTrainYPosition(eventA.DIRECTION),
+                  direction: eventA.DIRECTION,
+                  isStopped: true,
+                  isActive: true,
+                  isTurningAround: false,
+                  isInDepot: false,
+                  isNewlyInserted: false,
+                  serviceType: getEffectiveTrainServiceType(trainId), // Uses active scheme
+                  rotation: eventA.DIRECTION === "NORTHBOUND" ? 180 : 0,
+                  currentStationIndex: stations.findIndex(
+                    (s) => s.id === eventA.STATION_ID
+                  ),
+                  turnaroundProgress: null,
+                };
+              }
+            } else {
+              // Regular 'AT STATION' logic
+              trainState = {
+                id: trainId,
+                x: stationsById[eventA.STATION_ID]?.x ?? 0,
+                y: getTrainYPosition(eventA.DIRECTION),
+                direction: eventA.DIRECTION,
+                isStopped: true,
+                isActive: true,
+                isTurningAround: false,
+                isInDepot: false,
+                isNewlyInserted: false,
+                serviceType: getEffectiveTrainServiceType(trainId), // Uses active scheme
+                rotation: eventA.DIRECTION === "NORTHBOUND" ? 180 : 0,
+                currentStationIndex: stations.findIndex(
+                  (s) => s.id === eventA.STATION_ID
+                ),
+                turnaroundProgress: null,
+              };
+            }
           } else if (eventA && eventB) {
             // IN TRANSIT or TURNING AROUND
             const departureSec = timeToSeconds(eventA.DEPARTURE_TIME!);
@@ -1029,8 +1081,10 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
           } else {
             // Fallback - If inside operational window but no event pair found,
             // it means the train is inactive during this specific time (e.g., midday)
+            // This case should ideally be covered by the isOutsideWindow check or the explicit last event check above.
+            // If reached, it might indicate an unexpected gap in the schedule data.
             console.warn(
-              `Train ${trainId}: Within operational window but no active event found at time ${simulationTime}. Setting to INACTIVE (depot).`
+              `Train ${trainId}: Unexpected state within operational window at ${simulationTime}. No current/next event pair (A/B). Setting to INACTIVE (depot). Event A: ${eventA}, Event B: ${eventB}`
             );
             // Determine fallback inactive direction (use last known from schedule if possible)
             let inactiveDirection: Direction = "SOUTHBOUND"; // Default
@@ -1410,7 +1464,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                 selectedTrainId === train.id ? "train-selected-highlight" : ""
               } ${train.isNewlyInserted ? "train-insertion" : ""} ${
                 selectedTrainId !== null && selectedTrainId !== train.id
-                  ? "opacity-10"
+                  ? "opacity-50"
                   : ""
               } ${willSkipNextStation ? "skipping-station" : ""}`}
             >
