@@ -15,7 +15,7 @@ else:
     import os
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import DEFAULT_SETTINGS, DEFAULT_SERVICE_PERIODS, DEFAULT_ZONE_LENGTH, UPLOAD_FOLDER
+from config import DEFAULT_SERVICE_PERIODS, DEFAULT_ZONE_LENGTH, UPLOAD_FOLDER
 
 # --- Helper Function for Headway Calculation ---
 def custom_round(x):
@@ -113,7 +113,7 @@ class TimetableEntry:
         self.passengers_alighted = passengers_alighted
         self.current_station_passenger_count = current_station_passenger_count
         self.current_passenger_count = current_passenger_count
-        
+    
 class TrainSpec:
     def __init__(self, max_capacity, cruising_speed, passthrough_speed, accel_rate, decel_rate):
         self.max_capacity = max_capacity
@@ -210,7 +210,7 @@ class Passenger_Demand:
                     best_transfer = candidate
         
         return best_transfer.station_id
-        
+
 class Station:
     def __init__(self, station_id, name, zone_length=None,  station_type="AB", is_terminus=False):
         self.station_id = station_id
@@ -219,7 +219,6 @@ class Station:
         self.station_type = station_type
         self.waiting_demand = []
 
-        #undocumented
         self.is_terminus = is_terminus
         # Adjacent tracks towards next station
         self.tracks = {"NORTHBOUND": None, "SOUTHBOUND": None}
@@ -329,7 +328,7 @@ class Station:
 
     def should_stop(self, train):
         """Determine if the train should stop at this station based on service type."""
-        return self.station_type == train.service_type or self.station_type == "AB"
+        return self.station_type == train.service_type or self.station_type == "AB" or train.service_type == "AB"
 
     def get_next_segment(self, direction):
         """Returns None if at terminus or segment missing."""
@@ -384,9 +383,12 @@ class TrackSegment:
             return True
         return False
 
-    def calculate_traversal_time(self, train, next_station_stops, segment_distance):
+    def calculate_traversal_time(self, train, next_station, segment_distance):
             """
             Calculate the traversal time based on the current speed and the action needed for the upcoming stop.
+            Assumes segments are always long enough for the intended trapezoidal profiles.
+            Assumes accel/decel rates and cruise/passthrough speeds are > 0.
+            Entry current_speed is always 0 or passthrough_speed.
             """
             accel_rate = train.accel_rate
             decel_rate = train.decel_rate
@@ -394,57 +396,73 @@ class TrackSegment:
             passthrough_speed = train.passthrough_speed
             current_speed = train.current_speed
 
-            # If we need to stop, calculate decel and stop, then accel and cruise
-            if next_station_stops:
-                # Decelerate to a stop
-                decel_time = (current_speed) / decel_rate
-                decel_distance = 0.5 * decel_rate * decel_time**2
-                
-                # If the deceleration is longer than the segment, then this calculation is wrong
-                if decel_distance > segment_distance:
-                    decel_distance = segment_distance
-                
-                remaining_distance = segment_distance - decel_distance
+            # Check if the train should stop at the next station
+            should_stop = next_station.should_stop(train)
 
-                # Now we know that we are standing still, so start accelerating
-                accel_time = (cruising_speed) / accel_rate
-                accel_distance = 0.5 * accel_rate * accel_time**2
+            # --- STOPPING PROFILE --- 
+            if should_stop:
+                # Profile: Accel (from current) -> Cruise -> Decel (to 0)
 
-                # Cruise at max speed for rest of way or until max speed is reached
-                remaining_distance -= accel_distance
-                if remaining_distance > 0:
-                    cruise_time = remaining_distance / cruising_speed
-                else:
-                    cruise_time = 0
+                # 1. Acceleration Phase (from current_speed to cruising_speed)
+                accel_time = (cruising_speed - current_speed) / accel_rate
+                accel_dist_needed = 0.5 * (cruising_speed**2 - current_speed**2) / accel_rate
+                if accel_time < 0: accel_time = 0 # Handles entry at cruise speed (though unlikely now)
+                if accel_dist_needed < 0: accel_dist_needed = 0
 
-                total_time = decel_time + accel_time + cruise_time
+                # 2. Deceleration Phase (from cruising_speed to 0)
+                decel_time = cruising_speed / decel_rate
+                decel_dist_full = 0.5 * cruising_speed**2 / decel_rate
 
-                # If successful, save the speed
-                train.current_speed = 0 # Since we want to make it standstill.
-                
-            # Otherwise just calculate the pass through math and save the passthrough speed
+                # 3. Cruising Phase
+                cruise_dist = segment_distance - accel_dist_needed - decel_dist_full
+                cruise_time = cruise_dist / cruising_speed
+
+                # 4. Total Time
+                total_time = accel_time + cruise_time + decel_time
+
+                # 5. Final Speed State
+                train.current_speed = 0
+
+            # --- PASSTHROUGH PROFILE --- 
             else:
-                zone_length = 130 #meter
-                decel_time = (current_speed - passthrough_speed) / decel_rate
+                # Profile: Accel (from current) -> Cruise -> Decel (to passthrough) -> Zone Travel
+
+                zone_length = next_station.zone_length
+                if zone_length is None or zone_length <= 0:
+                    # Fallback or error if zone_length is invalid
+                    print(f"Warning: Invalid zone_length ({zone_length}) for station {next_station.station_id}. Using default 130m.")
+                    zone_length = 130 
+
+                # 1. Acceleration Phase (from current_speed to cruising_speed)
+                accel_time = (cruising_speed - current_speed) / accel_rate
+                accel_dist = 0.5 * (cruising_speed**2 - current_speed**2) / accel_rate
+                if accel_time < 0: accel_time = 0
+                if accel_dist < 0: accel_dist = 0
+
+                # 2. Deceleration Phase (from cruising_speed down to passthrough_speed)
+                decel_time = (cruising_speed - passthrough_speed) / decel_rate
+                decel_dist = 0.5 * (cruising_speed**2 - passthrough_speed**2) / decel_rate
+                if decel_time < 0: decel_time = 0
+                if decel_dist < 0: decel_dist = 0
+
+                # 3. Zone Traversal Phase (at constant passthrough_speed)
                 zone_time = zone_length / passthrough_speed
-                accel_time = (cruising_speed - passthrough_speed) / accel_rate
 
-                # Check that the accel_distance is actually possible
-                accel_distance = 0.5 * accel_rate * accel_time**2
-                remaining_distance = segment_distance - accel_distance
+                # 4. Cruising Phase
+                cruise_dist = segment_distance - accel_dist - decel_dist - zone_length
+                cruise_time = cruise_dist / cruising_speed
 
-                # Cruise at max speed for rest of way or until max speed is reached
-                if remaining_distance > 0:
-                    cruise_time = remaining_distance / cruising_speed
-                else:
-                    cruise_time = 0
-                total_time = decel_time + zone_time + accel_time + cruise_time
+                # 5. Total Time
+                total_time = accel_time + cruise_time + decel_time + zone_time
 
+                # 6. Final Speed State
                 train.current_speed = passthrough_speed
-            
+
+            # --- Update Segment Availability Time --- 
             if self.last_entry_time:
                 self.next_available = self.last_entry_time + timedelta(seconds=total_time)
             
+            # Return integer seconds
             return int(total_time)
     
 class Train:
@@ -600,7 +618,7 @@ class EventHandler:
                 train = available_trains[i]  # get train to deploy
                 train.is_active = True  # Explicitly mark train as active
                 active_trains.append(train)  # add train to active list
-                train.current_speed = train.cruising_speed
+                # train.current_speed = train.cruising_speed # Only usable if we compute traversal from entry track to station 1 southbound platform
                 
                 # Schedule the insertion event
                 self.simulation.schedule_event(
@@ -667,6 +685,16 @@ class EventHandler:
         station = event.station
         arrival_time = event.time
         
+        type_assigned_this_arrival = None # Track the type determined for THIS arrival
+
+        # --- Determine/Assign Service Type for Skip-Stop at Stn 1 NB ---
+        if self.simulation.scheme_type != "REGULAR" and station == self.simulation.stations[0] and train.direction == "NORTHBOUND":
+            last_type = self.simulation.last_stn1_nb_arrival_type
+            type_to_assign = "A" if last_type == "B" or last_type is None else "B"
+            train.service_type = type_to_assign 
+            type_assigned_this_arrival = type_to_assign # Remember what we assigned
+            # Optional: print(f"[TYPE ASSIGN] Assigned Type {type_to_assign} to Train {train.train_id} based on last arrival type {last_type}")
+
         # === WITHDRAWAL CHECK (Upon Northbound Arrival at Station 1) === #
         if (self.simulation.trains_to_withdraw_count > 0 and
             station == self.simulation.stations[0] and # Station 1 (North Ave)
@@ -707,17 +735,22 @@ class EventHandler:
                 print(f"WARNING: Train {train.train_id} was targeted for withdrawal upon arrival but not found in active_trains list.")
             
             # DO NOT schedule next event (turnaround/departure) for this train.
+            # DO NOT update state if withdrawn.
             return # Add this return statement
         
         # === END WITHDRAWAL CHECK ===
         
+        # === IF NOT WITHDRAWN: Update the state based on this arrival (only if type assignment logic ran) === #
+        if type_assigned_this_arrival is not None: 
+            self.simulation.last_stn1_nb_arrival_type = type_assigned_this_arrival
+
         # --- Normal Arrival Processing ---
         if self.simulation.scheme_type == "REGULAR":
             # Calculate departure time based on dwell time
             departure_time = arrival_time + timedelta(seconds=self.simulation.dwell_time)
         else:
             # For Skip-stop schemes, we need to check if the train should stop at the station
-            if not station.should_stop(train):
+            if not station.should_stop(train) or train.status == "INSERTION":
                 # Train should not stop, so we can schedule a departure immediately
                 departure_time = arrival_time
             else:
@@ -1217,9 +1250,8 @@ class EventHandler:
 
         if segment.enter(train, event.time):    # Successfully entered segment
             station.platforms[train.direction] = None
-            stops = next_station.should_stop(train)  # can change to passenger exchange logic
-            segment_distance = segment.distance #get distance from each of the available stations
-            traversal_time = segment.calculate_traversal_time(train, stops, segment_distance)
+            segment_distance = segment.distance
+            traversal_time = segment.calculate_traversal_time(train, next_station, segment_distance)
             
             # Update Train Status
             train.current_journey_travel_time = train.current_journey_travel_time + traversal_time
@@ -1623,7 +1655,6 @@ class Simulation:
                 Train(
                     train_id=train_id,
                     train_specs=train_specs_obj, 
-                    service_type="AB" if scheme_type == "REGULAR" else "B" if train_id % 2 == 0 else "A",
                     current_station=self.stations[0] # All trains start at Station 1
                 )
             )
@@ -1668,7 +1699,7 @@ class Simulation:
                     trains_for_db.append({
                         'SIMULATION_ID': self.simulation_id,
                         'TRAIN_ID': train.train_id,
-                        'SERVICE_TYPE': train.service_type,
+                        # 'SERVICE_TYPE': train.service_type, - Deprecated 
                         'SPEC_ID': train_specs_entry_id # Use the ID from the DB entry
                     })
 
@@ -1697,7 +1728,20 @@ class Simulation:
 
     def _initialize_service_periods(self, scheme_type):
         print("\n[INITIALIZING SERVICE PERIODS]")
-        loop_time = int(self.calculate_loop_time(self.trains[0]) / 60)  # Loop Time in minutes
+        test_train = Train(
+                train_id=1,
+                train_specs=TrainSpec(
+                    max_capacity=self.config["maxCapacity"],
+                    cruising_speed=self.config["cruisingSpeed"],
+                    passthrough_speed=self.config["passthroughSpeed"],
+                    accel_rate=self.config["acceleration"],
+                    decel_rate=self.config["deceleration"],
+                ),
+                service_type="AB" if scheme_type == "REGULAR" else "A",
+                current_station=self.stations[0]
+        )
+        
+        loop_time = int(self.calculate_loop_time(test_train) / 60)  # Loop Time in minutes
         
         for i, period in enumerate(self.service_periods):
             #period["HEADWAY"] = custom_round(loop_time / period["TRAIN_COUNT"])
@@ -1742,7 +1786,8 @@ class Simulation:
             print(f"  [MEM:INIT SERVICE PERIODS] LOOP TIME: {timedelta(minutes=loop_time)}")
         else:
             print(f"  [MEM:INIT SERVICE PERIODS] LOOP TIME FOR A TRAINS: {timedelta(minutes=loop_time)}")
-            print(f"  [MEM:INIT SERVICE PERIODS] LOOP TIME FOR B TRAINS: {timedelta(minutes=int(self.calculate_loop_time(self.trains[1]) / 60))}")
+            test_train.service_type = "B"
+            print(f"  [MEM:INIT SERVICE PERIODS] LOOP TIME FOR B TRAINS: {timedelta(minutes=int(self.calculate_loop_time(test_train) / 60))}")
 
 
         if not debug :
@@ -1876,9 +1921,11 @@ class Simulation:
         print(f"\n================[SIMULATION.RUN() STARTED]================\n")
         start_run_time = py_time.perf_counter() # Record start time
         self.schemes = ["SKIP-STOP","REGULAR"]
+        #self.schemes = ["SKIP-STOP"] # Uncomment for testing
         self.simulation_id = self._create_simulation_entry()
 
         for scheme_type in self.schemes:
+            self.last_stn1_nb_arrival_type = None # Ensures alternate service types during train insertion
             try:
                 print(f"\n\t===[RUNNING SIMULATION FOR SCHEME TYPE: {scheme_type}]===")
                 self.current_time = self.start_time
@@ -1943,8 +1990,8 @@ class Simulation:
                     print(f"  [DB:UPDATE SIMULATION] FAILED TO UPDATE TOTAL_RUN_TIME_SECONDS: {update_error}")
             
             except Exception as connect_error:
-                 print(f"  [DB:UPDATE SIMULATION] FAILED TO CONNECT TO DB: {connect_error}")
-                 
+                print(f"  [DB:UPDATE SIMULATION] FAILED TO CONNECT TO DB: {connect_error}")
+                
             finally:
                 try:
                     db.disconnect()
@@ -2087,7 +2134,7 @@ class Simulation:
 
         if not demand_data:
             print("  [COMPUTE:METRICS] No completed passenger demand data to compute metrics from.")
-            return 0, 0
+            return 0, 0, 0
 
         demand_df = pd.DataFrame(demand_data)
 
@@ -2161,9 +2208,6 @@ class Simulation:
         dwell_time = self.dwell_time
         turnaround_time = self.turnaround_time
         
-        # Set initial current speed
-        train.current_speed = train.cruising_speed
-        
         # Check for valid direction
         if direction != "NORTHBOUND" and direction != "SOUTHBOUND":
             raise ValueError("Invalid train direction: must be ""NORTHBOUND"" or ""SOUTHBOUND"".")
@@ -2191,15 +2235,25 @@ class Simulation:
                     return segment
             return None
 
-        def calculate_loop_debug(is_debug=False):
+        def calculate_loop_debug(is_debug=False, is_turnaround=False):
             if is_debug:
-                print(f"\nCurrent Station: {current_station.station_id}-{current_station.station_type}")
-                print(f"Next Station: {next_station.station_id}-{next_station.station_type}")
-                print(f"Segment: {segment.segment_id}")
-                print(f"Stops: {stops}")
-                print(f"Traversal Time: {traversal_time}")
-                print(f"Total Time: {total_time}")
-
+                if is_turnaround:
+                    print("\n--------------------------------")
+                    print(f"Train Service Type: {train.service_type}")
+                    print(f"Turnaround at {current_station.station_id}-{current_station.station_type}")
+                    print(f"New Direction: {direction}")
+                    print(f"Total Time: {total_time}")
+                    print("--------------------------------")
+                else:
+                    print(f"\nTrain Service Type: {train.service_type}")
+                    print(f"Current Station: {current_station.station_id}-{current_station.station_type}")
+                    print(f"Next Station: {next_station.station_id}-{next_station.station_type}")
+                    print(f"Segment: {segment.segment_id}")
+                    print(f"Direction: {direction}")
+                    print(f"Stops: {next_station.should_stop(train)}")
+                    print(f"Traversal Time: {traversal_time}")
+                    print(f"Total Time: {total_time}")
+            
 
         # Traverse to the further point
         while True:
@@ -2218,7 +2272,9 @@ class Simulation:
                 else:
                     direction = "NORTHBOUND"
 
-                break  # Terminus has been hit
+                calculate_loop_debug(is_turnaround=True)
+
+                break
 
             segment = get_segment(current_station, next_station, direction)
 
@@ -2227,9 +2283,9 @@ class Simulation:
                 break  # Exit loop due to missing segment
 
             # Check if need to perform a stop at that segment
-            stops = next_station.should_stop(train)  # can change to passenger exchange logic
+            stops = next_station.should_stop(train)
             segment_distance = segment.distance #get distance from each of the available stations
-            traversal_time = segment.calculate_traversal_time(train, stops, segment_distance)
+            traversal_time = segment.calculate_traversal_time(train, next_station, segment_distance)
             total_time += traversal_time
             total_time += dwell_time if stops else 0
             # DEBUGGING
@@ -2253,7 +2309,7 @@ class Simulation:
                 stops = next_station.should_stop(train)  # can change to passenger exchange logic
 
                 segment_distance = segment.distance #get distance from each of the available stations
-                traversal_time = segment.calculate_traversal_time(train, stops, segment_distance)
+                traversal_time = segment.calculate_traversal_time(train, next_station, segment_distance)
                 total_time += traversal_time + dwell_time
                 # DEBUGGING
                 calculate_loop_debug()
@@ -2270,7 +2326,7 @@ class Simulation:
             # Check if need to perform a stop at that segment
             stops = next_station.should_stop(train)  # can change to passenger exchange logic
             segment_distance = segment.distance #get distance from each of the available stations
-            traversal_time = segment.calculate_traversal_time(train, stops, segment_distance)
+            traversal_time = segment.calculate_traversal_time(train, next_station, segment_distance)
             total_time += traversal_time
             total_time += dwell_time if stops else 0
             # DEBUGGING

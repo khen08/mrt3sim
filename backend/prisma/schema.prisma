@@ -105,7 +105,7 @@ model TRACK_SEGMENTS {
 model TRAINS {
   SIMULATION_ID Int
   TRAIN_ID      Int
-  SERVICE_TYPE  String @db.VarChar(10) // A, B, AB
+  //SERVICE_TYPE  String @db.VarChar(10) // A, B, AB - Deprecated from core.py will instead re-assign service_types based on previous train's service_type
   SPEC_ID       Int // Links to TRAIN_SPECS
   REGULAR_LOOP_COUNT Int @default(0)
   SKIP_STOP_LOOP_COUNT Int @default(0)
