@@ -33,6 +33,7 @@ import {
   type PeakPeriod,
   SIMULATION_SPEED_PRESETS,
 } from "@/lib/constants"; // Import constants
+import { useSimulationStore } from "@/store/simulationStore";
 
 interface SimulationControllerProps {
   startTime: string; // Now dynamically passed based on view mode
@@ -73,14 +74,33 @@ const SimulationController = ({
   onShowDebugInfoChange,
   className, // Destructure className
 }: SimulationControllerProps) => {
-  const [isRunning, setIsRunning] = useState(false);
-  const [visualScheme, setVisualScheme] =
-    useState<OperationalScheme>("Regular"); // State for visual scheme
-  const [currentTime, setCurrentTime] = useState(startTime); // Initialize with passed startTime
+  // Use Zustand store
+  const simulationTime = useSimulationStore((state) => state.simulationTime);
+  const isSimulationRunning = useSimulationStore(
+    (state) => state.isSimulationRunning
+  );
+  const setSimulationTime = useSimulationStore(
+    (state) => state.setSimulationTime
+  );
+  const setIsSimulationRunning = useSimulationStore(
+    (state) => state.setIsSimulationRunning
+  );
+  const selectedScheme = useSimulationStore((state) => state.selectedScheme);
+  const setSelectedScheme = useSimulationStore(
+    (state) => state.setSelectedScheme
+  );
+  const setShowDebugInfo = useSimulationStore(
+    (state) => state.setShowDebugInfo
+  );
+
+  // Local state for UI
   const [speed, setSpeed] = useState(1);
   // State for manual time input
-  const [manualTimeInput, setManualTimeInput] = useState(currentTime);
+  const [manualTimeInput, setManualTimeInput] = useState(simulationTime);
   const [timeInputError, setTimeInputError] = useState<string | null>(null);
+  const [visualScheme, setVisualScheme] = useState<OperationalScheme>(
+    selectedScheme === "REGULAR" ? "Regular" : "Skip-Stop"
+  );
 
   // Ref to hold the latest speed value for the interval
   const speedRef = useRef(speed);
@@ -94,16 +114,21 @@ const SimulationController = ({
   // Convert times to seconds for calculations within the selected view window
   const viewStartTimeSeconds = parseTime(viewStartTime);
   const viewEndTimeSeconds = parseTime(viewEndTime);
-  const currentTimeSeconds = parseTime(currentTime);
+  const currentTimeSeconds = parseTime(simulationTime);
   const totalDuration = viewEndTimeSeconds - viewStartTimeSeconds;
 
   // Update parent component whenever time changes
   useEffect(() => {
-    onTimeUpdate(currentTime);
+    onTimeUpdate(simulationTime);
     // Also update the manual input field to stay synchronized
-    setManualTimeInput(currentTime);
+    setManualTimeInput(simulationTime);
     setTimeInputError(null); // Clear error when time changes externally
-  }, [currentTime, onTimeUpdate]);
+  }, [simulationTime, onTimeUpdate]);
+
+  // Effect to update visualScheme when selectedScheme changes
+  useEffect(() => {
+    setVisualScheme(selectedScheme === "REGULAR" ? "Regular" : "Skip-Stop");
+  }, [selectedScheme]);
 
   // Keep speedRef updated
   useEffect(() => {
@@ -114,31 +139,28 @@ const SimulationController = ({
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
 
-    if (isRunning) {
+    if (isSimulationRunning) {
       intervalId = setInterval(() => {
-        setCurrentTime((prevTime) => {
-          const newTime = addSeconds(prevTime, 1 * speedRef.current);
-          const newTimeSeconds = parseTime(newTime);
+        const newTime = addSeconds(simulationTime, 1 * speedRef.current);
+        const newTimeSeconds = parseTime(newTime);
 
-          // Stop simulation at the end of the selected view window
-          if (newTimeSeconds >= viewEndTimeSeconds) {
-            setIsRunning(false);
-            // Toast Notification: Reached end of peak period
-            toast({
-              title: "Simulation Paused",
-              description: `Reached end of ${selectedPeak} peak period (${viewEndTime}).`,
-              variant: "default",
-            });
-            return viewEndTime;
-          }
-
-          // Prevent time from going below the start of the window
-          if (newTimeSeconds < viewStartTimeSeconds) {
-            return viewStartTime;
-          }
-
-          return newTime;
-        });
+        // Stop simulation at the end of the selected view window
+        if (newTimeSeconds >= viewEndTimeSeconds) {
+          setIsSimulationRunning(false);
+          // Toast Notification: Reached end of peak period
+          toast({
+            title: "Simulation Paused",
+            description: `Reached end of ${selectedPeak} peak period (${viewEndTime}).`,
+            variant: "default",
+          });
+          setSimulationTime(viewEndTime);
+        }
+        // Prevent time from going below the start of the window
+        else if (newTimeSeconds < viewStartTimeSeconds) {
+          setSimulationTime(viewStartTime);
+        } else {
+          setSimulationTime(newTime);
+        }
       }, 500); // Update every 500ms
     }
 
@@ -146,63 +168,65 @@ const SimulationController = ({
       if (intervalId) clearInterval(intervalId);
     };
   }, [
-    isRunning,
+    isSimulationRunning,
+    simulationTime,
     viewEndTimeSeconds,
     viewStartTimeSeconds,
     selectedPeak,
     viewEndTime,
+    viewStartTime,
     toast,
+    setSimulationTime,
+    setIsSimulationRunning,
   ]);
 
   // Update parent component about simulation state
   useEffect(() => {
-    onSimulationStateChange(isRunning);
-  }, [isRunning, onSimulationStateChange]);
-
-  // Update visual speed if actual speed changes (e.g., via buttons)
-  useEffect(() => {
-    // This effect seems redundant now, visualSpeed state was removed.
-    // Consider removing if not used elsewhere.
-  }, [speed]);
+    onSimulationStateChange(isSimulationRunning);
+  }, [isSimulationRunning, onSimulationStateChange]);
 
   const togglePlayPause = useCallback(() => {
-    setIsRunning((prev) => !prev);
-  }, []);
+    setIsSimulationRunning(!isSimulationRunning);
+  }, [isSimulationRunning, setIsSimulationRunning]);
 
   // Reset simulation to the start of the current peak period
   const resetSimulation = useCallback(() => {
-    setIsRunning(false);
-    setCurrentTime(PEAK_HOURS[selectedPeak].start);
-  }, [selectedPeak]);
+    setIsSimulationRunning(false);
+    setSimulationTime(PEAK_HOURS[selectedPeak].start);
+  }, [selectedPeak, setIsSimulationRunning, setSimulationTime]);
 
   // Skip simulation time back by 30 seconds
   const skipBack = useCallback(() => {
-    setCurrentTime((prevTime) => {
-      const newTime = addSeconds(prevTime, -30); // Subtract 30 seconds
-      const newTimeSeconds = parseTime(newTime);
+    const newTime = addSeconds(simulationTime, -30); // Subtract 30 seconds
+    const newTimeSeconds = parseTime(newTime);
 
-      // Prevent going below the start of the peak window
-      if (newTimeSeconds < viewStartTimeSeconds) {
-        return viewStartTime;
-      }
-      return newTime;
-    });
-  }, [viewStartTimeSeconds, viewStartTime]);
+    // Prevent going below the start of the peak window
+    if (newTimeSeconds < viewStartTimeSeconds) {
+      setSimulationTime(viewStartTime);
+    } else {
+      setSimulationTime(newTime);
+    }
+  }, [simulationTime, viewStartTimeSeconds, viewStartTime, setSimulationTime]);
 
   // Skip simulation time ahead by 30 seconds
   const skipAhead = useCallback(() => {
-    setCurrentTime((prevTime) => {
-      const newTime = addSeconds(prevTime, 30);
-      const newTimeSeconds = parseTime(newTime);
+    const newTime = addSeconds(simulationTime, 30);
+    const newTimeSeconds = parseTime(newTime);
 
-      // Stop at the end of the peak window if skipping goes past it
-      if (newTimeSeconds >= viewEndTimeSeconds) {
-        setIsRunning(false);
-        return viewEndTime;
-      }
-      return newTime;
-    });
-  }, [viewEndTimeSeconds, viewEndTime]);
+    // Stop at the end of the peak window if skipping goes past it
+    if (newTimeSeconds >= viewEndTimeSeconds) {
+      setIsSimulationRunning(false);
+      setSimulationTime(viewEndTime);
+    } else {
+      setSimulationTime(newTime);
+    }
+  }, [
+    simulationTime,
+    viewEndTimeSeconds,
+    viewEndTime,
+    setIsSimulationRunning,
+    setSimulationTime,
+  ]);
 
   // Update simulation speed
   const handleSpeedChange = useCallback(
@@ -220,23 +244,26 @@ const SimulationController = ({
     (newPeak: PeakPeriod) => {
       if (newPeak !== selectedPeak && !isFullDayView) {
         // Only allow change if not full day
-        // console.log(`Setting peak via controller: ${newPeak} Peak`);
-        // Call parent state setter
         onPeakChange(newPeak);
         // Set current time to the start of the newly selected peak
-        setCurrentTime(PEAK_HOURS[newPeak].start);
+        setSimulationTime(PEAK_HOURS[newPeak].start);
         // Ensure simulation is paused when changing peak
-        setIsRunning(false);
+        setIsSimulationRunning(false);
       }
     },
-    [selectedPeak, onPeakChange, isFullDayView] // Add dependencies
+    [
+      selectedPeak,
+      onPeakChange,
+      isFullDayView,
+      setSimulationTime,
+      setIsSimulationRunning,
+    ]
   );
 
   // Handle selection of a different visual operational scheme
   const handleSchemeChange = useCallback(
     (newScheme: OperationalScheme) => {
       if (newScheme !== visualScheme) {
-        // console.log(`Switching visual scheme to: ${newScheme}`);
         setVisualScheme(newScheme);
 
         // Call the parent component's handler if provided
@@ -245,10 +272,12 @@ const SimulationController = ({
           const backendScheme =
             newScheme === "Regular" ? "REGULAR" : "SKIP-STOP";
           onSchemeChange(backendScheme);
+          // Update the store
+          setSelectedScheme(backendScheme);
         }
       }
     },
-    [visualScheme, onSchemeChange]
+    [visualScheme, onSchemeChange, setSelectedScheme]
   );
 
   // --- Manual Time Input Handlers --- //
@@ -272,8 +301,8 @@ const SimulationController = ({
 
     // If valid and within range, update the main time state
     setTimeInputError(null);
-    setIsRunning(false); // Pause simulation when manually setting time
-    setCurrentTime(inputTime);
+    setIsSimulationRunning(false); // Pause simulation when manually setting time
+    setSimulationTime(inputTime);
     return true;
   };
 
@@ -311,9 +340,9 @@ const SimulationController = ({
       newTimeSeconds <= viewEndTimeSeconds
     ) {
       const newTime = formatTime(newTimeSeconds);
-      if (newTime !== currentTime) {
-        setIsRunning(false); // Pause simulation on manual scrub
-        setCurrentTime(newTime);
+      if (newTime !== simulationTime) {
+        setIsSimulationRunning(false); // Pause simulation on manual scrub
+        setSimulationTime(newTime);
       }
     }
   };
@@ -322,6 +351,8 @@ const SimulationController = ({
     if (onShowDebugInfoChange) {
       onShowDebugInfoChange(checked);
     }
+    // Also update the store
+    setShowDebugInfo(checked);
   };
 
   return (
@@ -519,7 +550,7 @@ const SimulationController = ({
               <IconRewindBackward30 size={18} />
             </Button>
             <Button
-              variant={isRunning ? "destructive" : "cta"}
+              variant={isSimulationRunning ? "destructive" : "cta"}
               onClick={togglePlayPause}
               disabled={isLoading || !hasTimetableData}
               className="w-28 h-10 font-medium text-base shadow-md hover:shadow-lg transition-all"
@@ -527,7 +558,7 @@ const SimulationController = ({
                 fontWeight: "600",
               }}
             >
-              {isRunning ? (
+              {isSimulationRunning ? (
                 <>
                   <IconPlayerPause size={18} className="mr-2" />
                   Pause
@@ -586,7 +617,7 @@ const SimulationController = ({
             </div>
 
             {/* Manual Time Input - Moved here */}
-            {!isRunning && (
+            {!isSimulationRunning && (
               <div className="flex items-center gap-1 relative">
                 {timeInputError && (
                   <p className="text-xs text-red-600 dark:text-red-500 absolute -top-4 right-0">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, ReactNode } from "react";
+import { useEffect, useRef, ReactNode } from "react";
 import {
   Card,
   CardContent,
@@ -46,10 +46,6 @@ import {
   PEAK_HOURS,
   FULL_DAY_HOURS,
   type PeakPeriod,
-  GET_DEFAULT_SETTINGS_ENDPOINT,
-  RUN_SIMULATION_ENDPOINT,
-  GET_TIMETABLE_ENDPOINT,
-  GET_SIMULATION_HISTORY_ENDPOINT,
   API_BASE_URL,
 } from "@/lib/constants";
 import {
@@ -69,85 +65,17 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useSimulationStore } from "@/store/simulationStore";
+import { useUIStore } from "@/store/uiStore";
+import { useAPIStore } from "@/store/apiStore";
+import { useFileStore } from "@/store/fileStore";
 
-interface PassengerDistribution {
-  hour: string;
-  count: number;
-}
-
-interface RawPassengerData {
-  currentBoarding: number;
-  currentAlighting: number;
-  nextBoarding: number;
-  nextAlighting: number;
-  progress: number;
-}
-
-type PassengerArrivalData = Record<number, Record<number, number>>;
-
-interface SimulationSettings {
-  dwellTime: number;
-  turnaroundTime: number;
-  acceleration: number;
-  deceleration: number;
-  cruisingSpeed: number;
-  maxCapacity: number;
-  schemeType: "REGULAR" | "SKIP-STOP";
-  schemePattern: string[];
-  stations: {
-    name: string;
-    distance: number;
-    scheme?: "AB" | "A" | "B";
-  }[];
-}
-
-interface SimulationInput {
-  filename: string | null;
-  config: SimulationSettings | null;
-}
-
-interface TrainInfoData {
-  id: number;
-  direction: "NORTHBOUND" | "SOUTHBOUND";
-  status: string;
-  load: number;
-  capacity: number;
-  relevantStationName: string | null;
-  scheduledTime: string | null;
-}
-
-interface SimulationHistoryEntry {
-  SIMULATION_ID: number;
-  CREATED_AT: string;
-  PASSENGER_DATA_FILE: string;
-  START_TIME: string;
-  END_TIME: string;
-  TOTAL_RUN_TIME_SECONDS: number;
-}
-
-// Define the interface matching MrtMap.tsx
-interface ServicePeriod {
-  NAME: string;
-  START_HOUR: number;
-  TRAIN_COUNT?: number;
-  REGULAR_HEADWAY: number;
-  SKIP_STOP_HEADWAY: number;
-  REGULAR_LOOP_TIME_MINUTES: number;
-  SKIP_STOP_LOOP_TIME_MINUTES: number;
-}
-
-// Define structure for aggregated passenger demand data for the chart
-interface PassengerDistributionData {
-  hour: string; // e.g., "07:00"
-  count: number;
-}
-
-// Define props for the new LoadingPlaceholder component
+// Define props for the LoadingPlaceholder component
 interface LoadingPlaceholderProps {
   message?: string;
 }
 
-// Define the LoadingPlaceholder component structure (implementation later)
+// Define the LoadingPlaceholder component structure
 const LoadingPlaceholder: React.FC<LoadingPlaceholderProps> = ({
   message = "Loading...",
 }) => {
@@ -160,221 +88,170 @@ const LoadingPlaceholder: React.FC<LoadingPlaceholderProps> = ({
 };
 
 export default function Home() {
-  const [uploadedFileObject, setUploadedFileObject] = useState<File | null>(
-    null
+  // Get state from Zustand stores
+  // Simulation store
+  const simulationSettings = useSimulationStore(
+    (state) => state.simulationSettings
   );
-  const [passengerArrivalData, setPassengerArrivalData] =
-    useState<PassengerArrivalData | null>(null);
-
-  const [simulationInput, setSimulationInput] = useState<SimulationInput>({
-    filename: null,
-    config: null,
-  });
-
-  const [simulationSettings, setSimulationSettings] =
-    useState<SimulationSettings | null>(null);
-  const [activeSimulationSettings, setActiveSimulationSettings] =
-    useState<SimulationSettings | null>(null);
-
-  const [simulationTime, setSimulationTime] = useState(PEAK_HOURS.AM.start);
-  const [isSimulationRunning, setIsSimulationRunning] = useState(false);
-  const [selectedScheme, setSelectedScheme] = useState<"REGULAR" | "SKIP-STOP">(
-    "REGULAR"
+  const activeSimulationSettings = useSimulationStore(
+    (state) => state.activeSimulationSettings
   );
-  const [selectedStation, setSelectedStation] = useState<number | null>(null);
-  const [selectedTrainId, setSelectedTrainId] = useState<number | null>(null);
-  const [selectedTrainDetails, setSelectedTrainDetails] =
-    useState<TrainInfoData | null>(null);
-  const [mapRefreshKey, setMapRefreshKey] = useState(0);
+  const simulationInput = useSimulationStore((state) => state.simulationInput);
+  const simulationTime = useSimulationStore((state) => state.simulationTime);
+  const isSimulationRunning = useSimulationStore(
+    (state) => state.isSimulationRunning
+  );
+  const simulatePassengers = useSimulationStore(
+    (state) => state.simulatePassengers
+  );
+  const selectedScheme = useSimulationStore((state) => state.selectedScheme);
+  const simulationResult = useSimulationStore(
+    (state) => state.simulationResult
+  );
+  const isLoading = useSimulationStore((state) => state.isLoading);
+  const isSimulating = useSimulationStore((state) => state.isSimulating);
+  const isMapLoading = useSimulationStore((state) => state.isMapLoading);
+  const apiError = useSimulationStore((state) => state.apiError);
+  const nextRunFilename = useSimulationStore((state) => state.nextRunFilename);
+  const loadedSimulationId = useSimulationStore(
+    (state) => state.loadedSimulationId
+  );
+  const isFullDayView = useSimulationStore((state) => state.isFullDayView);
+  const selectedPeak = useSimulationStore((state) => state.selectedPeak);
+  const showDebugInfo = useSimulationStore((state) => state.showDebugInfo);
+  const loadedServicePeriodsData = useSimulationStore(
+    (state) => state.loadedServicePeriodsData
+  );
+  const passengerDistributionData = useSimulationStore(
+    (state) => state.passengerDistributionData
+  );
+  const mapRefreshKey = useSimulationStore((state) => state.mapRefreshKey);
 
-  const [simulationResult, setSimulationResult] = useState<any[] | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [apiError, setApiError] = useState<string | null>(null);
+  // UI store
+  const isSidebarCollapsed = useUIStore((state) => state.isSidebarCollapsed);
+  const isHistoryModalOpen = useUIStore((state) => state.isHistoryModalOpen);
+  const isClearConfirmOpen = useUIStore((state) => state.isClearConfirmOpen);
+  const selectedStation = useUIStore((state) => state.selectedStation);
+  const selectedTrainId = useUIStore((state) => state.selectedTrainId);
+  const selectedTrainDetails = useUIStore(
+    (state) => state.selectedTrainDetails
+  );
+  const isHistoryLoading = useUIStore((state) => state.isHistoryLoading);
+  const historySimulations = useUIStore((state) => state.historySimulations);
+  const hasFetchedInitialHistory = useUIStore(
+    (state) => state.hasFetchedInitialHistory
+  );
 
-  const [hasFetchedInitialHistory, setHasFetchedInitialHistory] =
-    useState(false);
-  const [nextRunFilename, setNextRunFilename] = useState<string | null>(null);
+  // File store
+  const uploadedFileObject = useFileStore((state) => state.uploadedFileObject);
+
+  // Get actions from Zustand stores
+  // Simulation store actions
+  const setSimulationSettings = useSimulationStore(
+    (state) => state.setSimulationSettings
+  );
+  const setActiveSimulationSettings = useSimulationStore(
+    (state) => state.setActiveSimulationSettings
+  );
+  const setSimulationInput = useSimulationStore(
+    (state) => state.setSimulationInput
+  );
+  const setSimulationTime = useSimulationStore(
+    (state) => state.setSimulationTime
+  );
+  const setIsSimulationRunning = useSimulationStore(
+    (state) => state.setIsSimulationRunning
+  );
+  const setSimulatePassengers = useSimulationStore(
+    (state) => state.setSimulatePassengers
+  );
+  const setSelectedScheme = useSimulationStore(
+    (state) => state.setSelectedScheme
+  );
+  const setIsFullDayView = useSimulationStore(
+    (state) => state.setIsFullDayView
+  );
+  const setSelectedPeak = useSimulationStore((state) => state.setSelectedPeak);
+  const setShowDebugInfo = useSimulationStore(
+    (state) => state.setShowDebugInfo
+  );
+  const setNextRunFilename = useSimulationStore(
+    (state) => state.setNextRunFilename
+  );
+  const incrementMapRefreshKey = useSimulationStore(
+    (state) => state.incrementMapRefreshKey
+  );
+  const resetSimulation = useSimulationStore((state) => state.resetSimulation);
+
+  // UI store actions
+  const setSidebarCollapsed = useUIStore((state) => state.setSidebarCollapsed);
+  const setHistoryModalOpen = useUIStore((state) => state.setHistoryModalOpen);
+  const setClearConfirmOpen = useUIStore((state) => state.setClearConfirmOpen);
+  const selectStation = useUIStore((state) => state.selectStation);
+  const selectTrain = useUIStore((state) => state.selectTrain);
+  const setHasFetchedInitialHistory = useUIStore(
+    (state) => state.setHasFetchedInitialHistory
+  );
+
+  // File store actions
+  const setUploadedFileObject = useFileStore(
+    (state) => state.setUploadedFileObject
+  );
+
+  // API store actions
+  const fetchDefaultSettings = useAPIStore(
+    (state) => state.fetchDefaultSettings
+  );
+  const fetchSimulationHistory = useAPIStore(
+    (state) => state.fetchSimulationHistory
+  );
+  const runSimulation = useAPIStore((state) => state.runSimulation);
+  const loadSimulation = useAPIStore((state) => state.loadSimulation);
+
   const { toast } = useToast();
-
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-
-  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
-  const [historySimulations, setHistorySimulations] = useState<
-    SimulationHistoryEntry[]
-  >([]);
-  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-  const [loadedSimulationId, setLoadedSimulationId] = useState<number | null>(
-    null
-  );
-
-  const [isFullDayView, setIsFullDayView] = useState(false);
-
-  const [selectedPeak, setSelectedPeak] = useState<PeakPeriod>("AM");
-
-  const [hasLoggedSchemeType, setHasLoggedSchemeType] = useState(false);
-
-  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
-
-  const [simulatePassengers, setSimulatePassengers] = useState<boolean>(true);
-
   const mrtMapRef = useRef<MrtMapHandle>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // State for debug visibility
-  const [showDebugInfo, setShowDebugInfo] = useState(false);
-
-  // State to store the raw service periods data structure
-  const [loadedServicePeriodsData, setLoadedServicePeriodsData] = useState<
-    ServicePeriod[] | null
-  >(null);
-
-  // State for aggregated passenger demand data (for chart)
-  const [passengerDistributionData, setPassengerDistributionData] = useState<
-    PassengerDistributionData[] | null
-  >(null);
-
-  const [isMapLoading, setIsMapLoading] = useState(false); // New state for map loading
-
-  const fileInputRef = useRef<HTMLInputElement>(null); // Add ref for programmatic click
-
-  const fetchDefaultSettings = async (): Promise<SimulationSettings | null> => {
-    try {
-      const response = await fetch(GET_DEFAULT_SETTINGS_ENDPOINT);
-      if (!response.ok) {
-        const errorData = await response
-          .json()
-          .catch(() => ({ error: `HTTP error ${response.status}` }));
-        throw new Error(
-          `API Error (${response.status}): ${
-            errorData?.error || response.statusText
-          }`
-        );
-      }
-      const defaults = await response.json();
-      const defaultSchemePattern = defaults.schemePattern;
-      const stationsWithScheme = defaults.stations.map(
-        (station: any, index: number) => ({
-          ...station,
-          scheme: defaultSchemePattern[index] || "AB",
-        })
-      );
-      return {
-        ...defaults,
-        schemePattern: defaultSchemePattern,
-        stations: stationsWithScheme,
-      };
-    } catch (error: any) {
-      console.error("Failed to fetch default settings:", error);
-      return null;
-    }
-  };
-
-  const initializeSettings = useCallback(async () => {
-    setIsLoading(true);
-    setApiError(null);
-    const defaults = await fetchDefaultSettings();
-    if (defaults) {
-      setSimulationSettings(defaults);
-      setActiveSimulationSettings(defaults);
-      setSimulationInput((prev) => ({
-        ...prev,
-        config: defaults,
-      }));
-    } else {
-      setSimulationSettings(null);
-      setActiveSimulationSettings(null);
-      setSimulationInput((prev) => ({ ...prev, config: null }));
-      setApiError("Failed to load initial default settings.");
-      toast({
-        title: "Error Loading Settings",
-        description:
-          "Failed to load default simulation settings. Please try refreshing.",
-        variant: "destructive",
-      });
-    }
-    setIsLoading(false);
-  }, [toast]);
-
-  const handleFetchHistory = useCallback(
-    async (fetchFullHistory: boolean = false) => {
-      if (fetchFullHistory) {
-    setIsHistoryLoading(true);
-      }
-    setApiError(null);
-
-      let url = GET_SIMULATION_HISTORY_ENDPOINT;
-      let highestKnownId: number | null = null;
-
-      if (!fetchFullHistory && historySimulations.length > 0) {
-        // Find the highest ID only if not fetching full history and some history exists
-        highestKnownId = Math.max(
-          ...historySimulations.map((sim) => sim.SIMULATION_ID)
-        );
-        url += `?since_id=${highestKnownId}`;
-        console.log(
-          `Fetching simulation history since ID: ${highestKnownId}...`
-        );
-      } else {
-        console.log("Fetching full simulation history...");
-        // If fetching full history, clear existing
-        if (fetchFullHistory) {
-          setHistorySimulations([]);
-        }
-        // Reset the flag if forcing a full history fetch
-        setHasFetchedInitialHistory(false);
-      }
-
-      try {
-        const response = await fetch(url);
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP error ${response.status}`);
-      }
-      const data: SimulationHistoryEntry[] = await response.json();
-        console.log("Fetched history data:", data);
-
-        // If it was an incremental fetch and new data arrived, briefly show loading
-        if (!fetchFullHistory && data.length > 0) {
-          setIsHistoryLoading(true);
-        }
-
-        // Merge new data with existing data
-        setHistorySimulations((prevSimulations) => {
-          const existingIds = new Set(
-            prevSimulations.map((s) => s.SIMULATION_ID)
-          );
-          const newData = data.filter((s) => !existingIds.has(s.SIMULATION_ID));
-          // Prepend new data (assuming API returns descending order) and sort again just in case
-          const merged = [...newData, ...prevSimulations];
-          merged.sort((a, b) => b.SIMULATION_ID - a.SIMULATION_ID);
-          return merged;
-        });
-    } catch (error: any) {
-        // Ensure loading is off even if there was an error
-        setIsHistoryLoading(false);
-      console.error("Failed to fetch history:", error);
-      setApiError(`Failed to load simulation history: ${error.message}`);
-      setHistorySimulations([]);
-      toast({
-        title: "Error Loading History",
-        description: `Could not fetch simulation history: ${error.message}`,
-        variant: "destructive",
-      });
-    } finally {
-      setIsHistoryLoading(false);
-    }
-    },
-    [toast, historySimulations]
-  );
-
+  // Initialize settings on component mount
   useEffect(() => {
-    const loadInitialData = async () => {
-      await initializeSettings();
+    const initializeSettings = async () => {
+      useSimulationStore.getState().setIsLoading(true);
+      useSimulationStore.getState().setApiError(null);
+
+      const defaults = await fetchDefaultSettings();
+
+      if (defaults) {
+        setSimulationSettings(defaults);
+        setActiveSimulationSettings(defaults);
+        setSimulationInput({ config: defaults });
+      } else {
+        setSimulationSettings(null);
+        setActiveSimulationSettings(null);
+        setSimulationInput({ config: null });
+        useSimulationStore
+          .getState()
+          .setApiError("Failed to load initial default settings.");
+        toast({
+          title: "Error Loading Settings",
+          description:
+            "Failed to load default simulation settings. Please try refreshing.",
+          variant: "destructive",
+        });
+      }
+
+      useSimulationStore.getState().setIsLoading(false);
     };
 
-    loadInitialData();
-  }, [initializeSettings]);
+    initializeSettings();
+  }, [
+    toast,
+    fetchDefaultSettings,
+    setSimulationSettings,
+    setActiveSimulationSettings,
+    setSimulationInput,
+  ]);
 
+  // Compute station data based on current selection
   const stationData = (() => {
     let data = {
       stationId: selectedStation || 1,
@@ -387,20 +264,15 @@ export default function Home() {
       nextTrainArrivalSB: "--:--:--",
       passengerFlowNB: { boarding: 0, alighting: 0 },
       passengerFlowSB: { boarding: 0, alighting: 0 },
-      passengerDistribution: [] as PassengerDistribution[],
+      passengerDistribution: [] as { hour: string; count: number }[],
       rawData: null as any | null,
     };
 
-    if (passengerArrivalData && selectedStation) {
-      const stationArrivals = passengerArrivalData[selectedStation];
-      if (stationArrivals) {
-        data.passengerDistribution = Object.entries(stationArrivals).map(
-          ([hour, count]) => ({
-            hour: `${String(hour).padStart(2, "0")}:00`,
-            count: count,
-          })
-        );
-        data.passengerDistribution.sort((a, b) => a.hour.localeCompare(b.hour));
+    // If a station is selected and we have passenger data
+    if (selectedStation) {
+      // Set passenger distribution data from the store
+      if (passengerDistributionData && passengerDistributionData.length > 0) {
+        data.passengerDistribution = [...passengerDistributionData];
       }
 
       data.waitingPassengers = 0;
@@ -412,6 +284,7 @@ export default function Home() {
       let nextArrivalNB: number | null = null;
       let nextArrivalSB: number | null = null;
 
+      // Calculate next train arrivals from the simulation result
       if (simulationResult) {
         for (const entry of simulationResult) {
           const stationKey =
@@ -467,639 +340,94 @@ export default function Home() {
     return data;
   })();
 
-  const handleFileSelect = useCallback(
-    (file: File | null, backendFilename: string | null) => {
-      setUploadedFileObject(file);
-      setNextRunFilename(null);
-
-      if (file && backendFilename) {
-        setSimulationInput((prev) => ({ ...prev, filename: backendFilename }));
-        setSimulationResult(null);
-        setSelectedStation(null);
-        setSelectedTrainId(null);
-        setSelectedTrainDetails(null);
-        setSimulationTime(PEAK_HOURS.AM.start);
-        setIsSimulationRunning(false);
-        setApiError(null);
-      } else {
-        setSimulationInput((prev) => ({ ...prev, filename: null }));
-        setSimulationResult(null);
-        setSelectedStation(null);
-        setSelectedTrainId(null);
-        setSelectedTrainDetails(null);
-        setIsSimulationRunning(false);
-      }
-    },
-    []
-  );
-
-  const handleSettingChange = useCallback(
-    (
-      e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | string,
-      field?: string
-    ) => {
-      let name: string | undefined;
-      let value: any;
-
-      if (typeof e === "string" && field) {
-        name = field;
-        value = e;
-      } else if (typeof e === "object" && "target" in e) {
-        name = e.target.name;
-        value =
-          e.target.type === "number"
-            ? parseFloat(e.target.value) || 0
-            : e.target.value;
-        if (["dwellTime", "turnaroundTime", "maxCapacity"].includes(name)) {
-          value = parseInt(e.target.value, 10) || 0;
-        }
-      } else {
-        return;
-      }
-
-      if (name) {
-        setSimulationSettings((prev) => {
-          if (!prev) return null;
-          const updatedSettings = { ...prev, [name as string]: value };
-          setSimulationInput((prevInput) => ({
-            ...prevInput,
-            config: updatedSettings,
-          }));
-          return updatedSettings;
-        });
-      }
-    },
-    []
-  );
-
-  const handleStationDistanceChange = useCallback(
-    (index: number, value: number) => {
-      setSimulationSettings((prev) => {
-        if (!prev) return null;
-
-        const updatedStations = prev.stations.map((station, i) => {
-          if (i === index) {
-            return { ...station, distance: value };
-          }
-          return station;
-        });
-
-        const updatedSettings = { ...prev, stations: updatedStations };
-        setSimulationInput((prevInput) => ({
-          ...prevInput,
-          config: updatedSettings,
-        }));
-        return updatedSettings;
-      });
-    },
-    []
-  );
-
-  const handleStationSchemeChange = useCallback(
-    (index: number, value: "AB" | "A" | "B") => {
-      setSimulationSettings((prev) => {
-        if (!prev) return null;
-
-        const updatedStations = prev.stations.map((station, i) => {
-          if (i === index) {
-            return { ...station, scheme: value };
-          }
-          return station;
-        });
-
-        const updatedSchemePattern = updatedStations.map(
-          (station) => station.scheme || "AB"
-        );
-
-        const updatedSettings = {
-          ...prev,
-          stations: updatedStations,
-          schemePattern: updatedSchemePattern,
-        };
-
-        setSimulationInput((prevInput) => ({
-          ...prevInput,
-          config: updatedSettings,
-        }));
-        return updatedSettings;
-      });
-    },
-    []
-  );
-
-  const handleSkipStopToggle = useCallback((checked: boolean) => {
-    setSimulationSettings((prev) => {
-      if (!prev) return null;
-
-      const regularPattern = Array(prev.stations.length).fill("AB");
-
-      const updatedSettings = {
-        ...prev,
-        schemeType: checked ? ("SKIP-STOP" as const) : ("REGULAR" as const),
-        schemePattern: checked
-          ? prev.stations.map((station) => station.scheme || "AB")
-          : regularPattern,
-      };
-
-      setSimulationInput((prevInput) => ({
-        ...prevInput,
-        config: updatedSettings,
-      }));
-      return updatedSettings;
-    });
-  }, []);
-
-  const handleTimeUpdate = useCallback((time: string) => {
-    setSimulationTime((prevTime) => {
-      if (time !== prevTime) {
-        return time;
-      }
-      return prevTime;
-    });
-  }, []);
-
-  const handleSimulationStateChange = useCallback(
-    (isRunning: boolean) => {
-      if (isRunning && (!simulationResult || simulationResult.length === 0)) {
-        console.warn("Start clicked, but simulationResult is null or empty.");
-        toast({
-          title: "Cannot Start Simulation",
-          description:
-            "Please run the simulation first to generate the timetable.",
-          variant: "default",
-        });
-        setIsSimulationRunning(false);
-        return;
-      }
-      if (isRunning && !simulationSettings) {
-        toast({
-          title: "Cannot Start Simulation",
-          description: "Simulation settings are missing.",
-          variant: "destructive",
-        });
-        setIsSimulationRunning(false);
-        return;
-      }
-
-      setIsSimulationRunning(isRunning);
-    },
-    [simulationResult, simulationSettings, toast]
-  );
-
-  const handleStationClick = useCallback((stationId: number) => {
-    setSelectedStation((prevSelected) =>
-      prevSelected === stationId ? null : stationId
-    );
-    setSelectedTrainId(null);
-    setSelectedTrainDetails(null);
-  }, []);
-
-  const handleTrainClick = useCallback(
-    (trainId: number, details: TrainInfoData) => {
-      setSelectedTrainId((prevSelected) =>
-        prevSelected === trainId ? null : trainId
-      );
-      if (selectedTrainId === trainId) {
-        setSelectedTrainDetails(null);
-      } else {
-        setSelectedTrainDetails(details);
-      }
-      setSelectedStation(null);
-    },
-    []
-  );
-
-  const handleSimulatePassengersToggle = useCallback(
-    (checked: boolean) => {
-      setSimulatePassengers(checked);
-      if (checked) {
-        toast({
-          title: "Passenger Simulation Enabled",
-          description: simulationInput.filename
-            ? `Will use '${simulationInput.filename}' for the next run.`
-            : "Please upload or select a passenger data CSV.",
-          variant: "default",
-        });
-      } else {
-        toast({
-          title: "Passenger Simulation Disabled",
-          description: "Next run will not use passenger data.",
-          variant: "default",
-        });
-      }
-    },
-    [toast, simulationInput.filename]
-  );
-
-  const handleRunSimulation = async () => {
-    if (simulatePassengers && !simulationInput.filename && !nextRunFilename) {
-      setApiError(
-        "Passenger simulation is enabled, but no CSV file has been uploaded."
-      );
-      toast({
-        title: "Missing File",
-        description: "Please upload a CSV file when simulating passengers.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (!simulationSettings) {
-      setApiError("Simulation settings are missing or still loading.");
-      toast({
-        title: "Missing Settings",
-        description: "Simulation settings not loaded.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsSimulating(true);
-    setIsMapLoading(true); // Start loading map area
-    setApiError(null);
-
-    if (!simulationSettings) {
-      toast({
-        title: "Error",
-        description: "Settings are missing.",
-        variant: "destructive",
-      });
-      setIsSimulating(false);
-      return;
-    }
-
-    const stationNames = simulationSettings.stations.map(
-      (station) => station.name
-    );
-    const stationDistances = simulationSettings.stations
-      .map((station) => station.distance)
-      .slice(1);
-
-    const stationSchemes =
-      simulationSettings.schemeType === "SKIP-STOP"
-        ? simulationSettings.stations.map((station) => station.scheme || "AB")
-        : [];
-
-    const { stations, ...otherSettings } = simulationSettings;
-
-    let payloadFilename: string | null = null;
-    if (simulatePassengers) {
-      if (
-        loadedSimulationId !== null &&
-        simulationInput.filename === null &&
-        nextRunFilename !== null
-      ) {
-        payloadFilename = nextRunFilename;
-        console.log(
-          `Using explicitly uploaded override file for loaded history run: ${payloadFilename}`
-        );
-      } else {
-        payloadFilename = simulationInput.filename;
-        console.log(
-          `Using standard input filename for run: ${payloadFilename}`
-        );
-      }
-    } else {
-      console.log("Passenger simulation disabled, sending null filename.");
-    }
-
-    toast({
-      title: "Running Simulation",
-      description: "Generating new timetable...",
-      variant: "default",
-    });
-
-    try {
-      const response = await fetch(RUN_SIMULATION_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          filename: payloadFilename,
-      config: {
-        ...otherSettings,
-        stationNames: stationNames,
-        stationDistances: stationDistances,
-        schemePattern:
-          simulationSettings.schemePattern ||
-          (simulationSettings.schemeType === "SKIP-STOP"
-            ? stationSchemes
-            : Array(stationNames.length).fill("AB")),
-        ...(simulationSettings.schemeType === "SKIP-STOP" && {
-          stationSchemes: stationSchemes,
-        }),
-      },
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response
-          .json()
-          .catch(() => ({ error: `HTTP Error: ${response.status}` }));
-        throw new Error(
-          `API Error (${response.status}): ${
-            errorData?.error || response.statusText
-          }`
-        );
-      }
-
-      const resultData = await response.json();
-      const runDuration = resultData?.run_duration;
-      const newSimulationId = resultData?.simulation_id;
-
-      if (!newSimulationId) {
-        throw new Error("API did not return a new simulation ID.");
-      }
-
-      let timetableData = null;
-      let fetchedMetadata = null;
-      const maxRetries = 5;
-      const retryDelay = 1500;
-
-      for (let i = 0; i < maxRetries; i++) {
-        console.log(
-          `Attempt ${i + 1} to fetch timetable for ID ${newSimulationId}...`
-        );
-        try {
-          const timetableResponse = await fetch(
-            GET_TIMETABLE_ENDPOINT(newSimulationId),
-            {
-              method: "GET",
-              headers: { "Content-Type": "application/json" },
-            }
-          );
-
-          if (!timetableResponse.ok) {
-            if (
-              (timetableResponse.status === 404 ||
-                timetableResponse.status >= 500) &&
-              i < maxRetries - 1
-            ) {
-              console.log(
-                `Timetable not ready (Status ${timetableResponse.status}), retrying...`
-              );
-              await new Promise((resolve) =>
-                setTimeout(resolve, retryDelay * (i + 1))
-              );
-              continue;
-            }
-            throw new Error(
-              `Failed to fetch timetable: HTTP ${timetableResponse.status}`
-            );
-          }
-
-          const fetchedResult = await timetableResponse.json();
-
-          if (fetchedResult && Array.isArray(fetchedResult.timetable)) {
-            timetableData = fetchedResult.timetable;
-            fetchedMetadata = fetchedResult;
-            console.log(`Timetable fetched successfully on attempt ${i + 1}.`);
-            break;
-          } else {
-            if (i < maxRetries - 1) {
-              console.log("Timetable data structure invalid, retrying...");
-              await new Promise((resolve) =>
-                setTimeout(resolve, retryDelay * (i + 1))
-              );
-              continue;
-            } else {
-              throw new Error(
-                "Timetable data has invalid structure after multiple retries."
-              );
-            }
-          }
-        } catch (fetchError: any) {
-          console.error(
-            `Error fetching timetable (attempt ${i + 1}):`,
-            fetchError
-          );
-          if (i < maxRetries - 1) {
-            await new Promise((resolve) =>
-              setTimeout(resolve, retryDelay * (i + 1))
-            );
-          } else {
-            throw fetchError;
-          }
-        }
-      }
-
-      if (Array.isArray(timetableData) && fetchedMetadata) {
-        setSimulationResult(timetableData);
-
-        // --- Persist Settings & Update Input State ---
-        const settingsUsedForRun = simulationSettings!; // Not null checked at start
-        setLoadedSimulationId(newSimulationId);
-        setActiveSimulationSettings(settingsUsedForRun);
-        setSimulationSettings(settingsUsedForRun);
-        setSimulationInput({
-          filename: payloadFilename, // Reflect the file actually used
-          config: settingsUsedForRun,
-        });
-        // *Only* set simulatePassengers based on the file used *if* it's different from current state
-        // This prevents overriding the user's toggle if they ran without passengers intentionally
-        if (simulatePassengers !== !!payloadFilename) {
-          setSimulatePassengers(!!payloadFilename);
-        }
-        setNextRunFilename(null); // Clear override filename
-
-        console.log("Fetched Metadata (Run Sim):", fetchedMetadata);
-        // Store the raw service periods array
-        setLoadedServicePeriodsData(fetchedMetadata.service_periods || null);
-
-        // Reset UI state
-        setSimulationTime(PEAK_HOURS.AM.start);
-        setIsSimulationRunning(false);
-        setMapRefreshKey((prev) => prev + 1);
-        setSelectedStation(null);
-        setSelectedTrainId(null);
-        setSelectedTrainDetails(null);
-        setApiError(null);
-
-        toast({
-          title: `Simulation Completed (ID: ${newSimulationId}) ${
-            runDuration !== undefined ? ` in ${runDuration.toFixed(2)}s` : ""
-          }.`,
-          description: `Timetable generated successfully (${timetableData.length} entries)`,
-          variant: "default",
-        });
-
-        handleFetchHistory(); // Refresh history list
-
-        // Fetch passenger demand after simulation run completes
-        if (newSimulationId) {
-          fetchPassengerDemand(newSimulationId, setPassengerDistributionData);
-        }
-      } else {
-        // --- Handle failed timetable fetch after successful run ---
-        console.error("Failed to fetch timetable data after all retries.");
-        setApiError(
-          `Simulation run (ID: ${newSimulationId}) but failed to fetch timetable data.`
-        );
-        // Don't clear simulationResult here, might still want to see old map? Or maybe clear it? Let's clear it.
-        setSimulationResult(null);
-        setLoadedSimulationId(null); // Clear loaded ID as well
-        toast({
-          title: "Simulation Complete (Timetable Failed)",
-          description: `The simulation (ID: ${newSimulationId}) ran but timetable data could not be retrieved after ${maxRetries} attempts.`,
-          variant: "destructive",
-        });
-        handleFetchHistory(); // Still refresh history
-      }
-    } catch (error: any) {
-      // --- Handle errors during simulation run or initial fetch ---
-      console.error("Simulation API or Timetable Fetch Failed:", error);
-      setApiError(
-        error.message || "An unknown error occurred during simulation."
-      );
-      // Clear results on error
-      setSimulationResult(null);
-      setLoadedSimulationId(null);
-      toast({
-        title: "Simulation Error",
-        description: `Simulation failed: ${error.message}`,
-        variant: "destructive",
-      });
-    } finally {
-      setIsSimulating(false);
-      setIsMapLoading(false); // Stop loading map area
-    }
-  };
-
-  const handleLoadNewData = useCallback(() => {
-    handleFileSelect(null, null);
-    setLoadedSimulationId(null);
+  // Handle file selection
+  const handleFileSelect = (
+    file: File | null,
+    backendFilename: string | null
+  ) => {
+    setUploadedFileObject(file);
     setNextRunFilename(null);
-    setIsClearConfirmOpen(false);
-  }, [handleFileSelect]);
 
-  const handleSchemeChange = useCallback(
-    (scheme: "REGULAR" | "SKIP-STOP") => {
-      if (scheme === "SKIP-STOP" && simulationResult) {
-        const skipStopEntries = simulationResult.filter(
-          (entry) =>
-            entry.SCHEME_TYPE === "SKIP-STOP" ||
-            entry.SERVICE_TYPE === "SKIP-STOP"
-        ).length;
-
-        const trainServiceTypes: Record<number, string> = {};
-        simulationResult.forEach((entry) => {
-          if (entry.TRAIN_SERVICE_TYPE) {
-            const trainId = entry.TRAIN_ID;
-            if (!trainServiceTypes[trainId]) {
-              trainServiceTypes[trainId] = entry.TRAIN_SERVICE_TYPE;
-            }
-          }
-        });
-      }
-
-      setSelectedScheme(scheme);
-      setHasLoggedSchemeType(false);
-      setMapRefreshKey((prev) => prev + 1);
-    },
-    [simulationResult]
-  );
-
-  const handleLoadSimulation = async (simulationId: number) => {
-    setIsHistoryLoading(true);
-    setIsMapLoading(true); // Start loading map area
-    setApiError(null);
-    setIsHistoryModalOpen(false);
-
-    toast({
-      title: "Loading Simulation",
-      description: `Fetching timetable for simulation ID ${simulationId}`,
-      variant: "default",
-    });
-
-    try {
-      const historyEntry = historySimulations.find(
-        (sim) => sim.SIMULATION_ID === simulationId
-      );
-      const filename = historyEntry?.PASSENGER_DATA_FILE ?? null;
-
-      const timetableResponse = await fetch(
-        GET_TIMETABLE_ENDPOINT(simulationId)
-      );
-      if (!timetableResponse.ok) {
-        const errorData = await timetableResponse.json().catch(() => ({}));
-        throw new Error(
-          errorData.error ||
-            `Failed to fetch timetable: HTTP ${timetableResponse.status}`
-        );
-      }
-      const timetableData = await timetableResponse.json();
-
-      if (!timetableData || !Array.isArray(timetableData.timetable)) {
-        throw new Error("Invalid timetable data received from server.");
-      }
-
-      const defaultSettings = await fetchDefaultSettings();
-
-      if (defaultSettings && Array.isArray(timetableData.timetable)) {
-        setSimulationResult(timetableData.timetable);
-        setLoadedSimulationId(simulationId);
-        setSimulationSettings(defaultSettings);
-        setActiveSimulationSettings(defaultSettings);
-
-        console.log("Fetched Timetable Data (Load Sim):", timetableData);
-
-        // Store the raw service periods array
-        setLoadedServicePeriodsData(timetableData.service_periods || null);
-
-        setSimulationTime(PEAK_HOURS.AM.start);
-        setIsSimulationRunning(false);
-        setMapRefreshKey((prev) => prev + 1);
-        setSelectedStation(null);
-        setSelectedTrainId(null);
-        setSelectedTrainDetails(null);
-        setApiError(null);
-        setSimulationInput((prev) => ({
-          ...prev,
-          filename: filename,
-          config: defaultSettings,
-        }));
-
-        setSimulatePassengers(!!filename);
-        setNextRunFilename(null);
-
-        toast({
-          title: "Simulation Loaded",
-          description: `Successfully loaded timetable for simulation ID ${simulationId}. Settings reset to defaults. Passenger sim ${
-            filename ? "enabled" : "disabled"
-          }.`,
-          variant: "default",
-        });
-
-        // Fetch passenger demand after simulation load completes
-        fetchPassengerDemand(simulationId, setPassengerDistributionData);
-      } else {
-        throw new Error(
-          "Failed to fetch default settings or timetable data structure was invalid after loading history."
-        );
-      }
-    } catch (error: any) {
-      console.error("Failed to load simulation:", error);
-      setApiError(
-        `Failed to load simulation ${simulationId}: ${error.message}`
-      );
-      setLoadedSimulationId(null);
-      setNextRunFilename(null);
-      setSimulationResult(null);
-      toast({
-        title: "Load Failed",
-        description: `Could not load simulation ${simulationId}: ${error.message}`,
-        variant: "destructive",
-        duration: 7000,
-      });
-    } finally {
-      setIsHistoryLoading(false);
-      setIsMapLoading(false); // Stop loading map area
+    if (file && backendFilename) {
+      setSimulationInput({ filename: backendFilename });
+      useSimulationStore.getState().setSimulationResult(null);
+      selectStation(null);
+      selectTrain(null, null);
+      setSimulationTime(PEAK_HOURS.AM.start);
+      setIsSimulationRunning(false);
+      useSimulationStore.getState().setApiError(null);
+    } else {
+      setSimulationInput({ filename: null });
+      useSimulationStore.getState().setSimulationResult(null);
+      selectStation(null);
+      selectTrain(null, null);
+      setIsSimulationRunning(false);
     }
   };
 
-  // Handler for debug info toggle
+  // Handler for toggling full day view
+  const handleToggleFullDayView = () => {
+    setIsFullDayView(!isFullDayView);
+  };
+
+  // Handler for updating simulation time
+  const handleTimeUpdate = (time: string) => {
+    setSimulationTime(time);
+  };
+
+  // Handler for simulation state change
+  const handleSimulationStateChange = (isRunning: boolean) => {
+    if (isRunning && (!simulationResult || simulationResult.length === 0)) {
+      console.warn("Start clicked, but simulationResult is null or empty.");
+      toast({
+        title: "Cannot Start Simulation",
+        description:
+          "Please run the simulation first to generate the timetable.",
+        variant: "default",
+      });
+      setIsSimulationRunning(false);
+      return;
+    }
+    if (isRunning && !simulationSettings) {
+      toast({
+        title: "Cannot Start Simulation",
+        description: "Simulation settings are missing.",
+        variant: "destructive",
+      });
+      setIsSimulationRunning(false);
+      return;
+    }
+
+    setIsSimulationRunning(isRunning);
+  };
+
+  // Handler for station click
+  const handleStationClick = (stationId: number) => {
+    selectStation(stationId);
+  };
+
+  // Handler for train click
+  const handleTrainClick = (trainId: number, details: any) => {
+    selectTrain(trainId, details);
+  };
+
+  // Handler for scheme change
+  const handleSchemeChange = (scheme: "REGULAR" | "SKIP-STOP") => {
+    setSelectedScheme(scheme);
+    incrementMapRefreshKey();
+  };
+
+  // Handler for showing/hiding debug info
   const handleShowDebugInfoChange = (show: boolean) => {
     setShowDebugInfo(show);
+  };
+
+  // Handler for loading new data
+  const handleLoadNewData = () => {
+    handleFileSelect(null, null);
+    useSimulationStore.getState().setLoadedSimulationId(null);
+    setNextRunFilename(null);
+    setClearConfirmOpen(false);
   };
 
   // Determine what to show in the main content area
@@ -1151,20 +479,12 @@ export default function Home() {
             onTrainClick={handleTrainClick}
             simulationTime={simulationTime}
             isRunning={isSimulationRunning}
-            simulationTimetable={simulationResult?.filter((entry) => {
-              if (
-                simulationResult &&
-                simulationResult.length > 0 &&
-                !hasLoggedSchemeType
-              ) {
-                setHasLoggedSchemeType(true);
-              }
-              return (
+            simulationTimetable={simulationResult?.filter(
+              (entry) =>
                 !entry.SCHEME_TYPE ||
                 entry.SCHEME_TYPE === selectedScheme ||
                 entry.SERVICE_TYPE === selectedScheme
-              );
-            })}
+            )}
             stationConfigData={activeSimulationSettings?.stations}
             turnaroundTime={activeSimulationSettings?.turnaroundTime}
             maxCapacity={activeSimulationSettings?.maxCapacity ?? 0}
@@ -1194,15 +514,11 @@ export default function Home() {
             }
             onTimeUpdate={handleTimeUpdate}
             onSimulationStateChange={handleSimulationStateChange}
-            isLoading={
-              isSimulating /* Controller uses isSimulating, not isMapLoading */
-            }
-            hasSimulationData={
-              !!simulationResult && simulationResult.length > 0
-            }
+            isLoading={isSimulating}
+            hasSimulationData={hasResults}
             hasTimetableData={!!simulationResult && simulationResult.length > 0}
             onSchemeChange={handleSchemeChange}
-            onToggleFullDayView={() => setIsFullDayView(!isFullDayView)}
+            onToggleFullDayView={handleToggleFullDayView}
             isFullDayView={isFullDayView}
             selectedPeak={selectedPeak}
             onPeakChange={setSelectedPeak}
@@ -1289,14 +605,9 @@ export default function Home() {
                   // update both nextRunFilename (for immediate use)
                   // and simulationInput.filename (for persistence if run is clicked)
                   setNextRunFilename(backendFilename);
-                  setSimulationInput((prev) => ({
-                    ...prev,
-                    filename: backendFilename,
-                  }));
+                  setSimulationInput({ filename: backendFilename });
                 }}
-                initialFileName={
-                  nextRunFilename ?? simulationInput.filename /* Fallback */
-                }
+                initialFileName={nextRunFilename ?? simulationInput.filename}
               />
             </CardContent>
           </Card>
@@ -1359,7 +670,7 @@ export default function Home() {
                 {!showInitialState && !isMapLoading && (
                   <AlertDialog
                     open={isClearConfirmOpen}
-                    onOpenChange={setIsClearConfirmOpen}
+                    onOpenChange={setClearConfirmOpen}
                   >
                     <AlertDialogTrigger asChild>
                       <Button
@@ -1411,15 +722,15 @@ export default function Home() {
                       console.log(
                         "First history button click: Fetching full history."
                       );
-                      handleFetchHistory(true);
+                      fetchSimulationHistory(true);
                       setHasFetchedInitialHistory(true);
                     } else {
                       console.log(
                         "Subsequent history button click: Fetching incremental history."
                       );
-                      handleFetchHistory();
+                      fetchSimulationHistory();
                     }
-                    setIsHistoryModalOpen(true);
+                    setHistoryModalOpen(true);
                   }}
                   title="View past simulation runs"
                   disabled={isMapLoading}
@@ -1430,19 +741,10 @@ export default function Home() {
               </div>
 
               <SimulationSettingsCard
-                simulationSettings={simulationSettings}
                 isSimulating={isSimulating || isMapLoading}
                 isFullDayView={isFullDayView}
-                onSettingChange={handleSettingChange}
-                onStationDistanceChange={handleStationDistanceChange}
-                onStationSchemeChange={handleStationSchemeChange}
-                onSkipStopToggle={handleSkipStopToggle}
-                loadedSimulationId={loadedSimulationId}
                 hasSimulationData={hasResults}
-                simulatePassengers={simulatePassengers}
-                onSimulatePassengersToggle={handleSimulatePassengersToggle}
                 hasResults={hasResults}
-                simulationInputFilename={simulationInput.filename}
                 handleFileSelect={handleFileSelect}
               />
 
@@ -1464,7 +766,7 @@ export default function Home() {
                 </Alert>
               )}
               <Button
-                onClick={handleRunSimulation}
+                onClick={runSimulation}
                 disabled={
                   isSimulating ||
                   isMapLoading ||
@@ -1492,7 +794,7 @@ export default function Home() {
       </aside>
 
       <button
-        onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        onClick={() => setSidebarCollapsed(!isSidebarCollapsed)}
         className={cn(
           "absolute top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full bg-gray-800 dark:bg-mrt-blue text-white shadow-lg border-2 border-white dark:border-white transition-all duration-300 ease-in-out hover:bg-black dark:hover:bg-blue-700",
           isSidebarCollapsed ? "left-2" : "left-[490px]"
@@ -1508,14 +810,14 @@ export default function Home() {
 
       <div className="flex-grow h-full flex flex-col overflow-hidden">
         {mainContent}
-          </div>
+      </div>
 
       <SimulationHistoryModal
         isOpen={isHistoryModalOpen}
-        onClose={() => setIsHistoryModalOpen(false)}
+        onClose={() => setHistoryModalOpen(false)}
         simulations={historySimulations}
-        onLoadSimulation={(id) => handleLoadSimulation(id)}
-        onRefreshHistory={() => handleFetchHistory(true)}
+        onLoadSimulation={(id) => loadSimulation(id)}
+        onRefreshHistory={() => fetchSimulationHistory(true)}
         isLoading={isHistoryLoading}
         loadedSimulationId={loadedSimulationId}
         isSimulating={isSimulating || isMapLoading}
@@ -1523,61 +825,3 @@ export default function Home() {
     </main>
   );
 }
-
-// --- NEW: Function to fetch passenger demand data (accepts setter as argument) --- //
-const fetchPassengerDemand = async (
-  simId: number | null,
-  setter: React.Dispatch<
-    React.SetStateAction<PassengerDistributionData[] | null>
-  >
-) => {
-  if (simId === null) {
-    setter(null); // Use the passed setter
-    return;
-  }
-
-  console.log(`Fetching passenger demand data for simulation ID: ${simId}...`);
-  try {
-    const response = await fetch(
-      `${API_BASE_URL}/get_passenger_demand/${simId}`
-    );
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `HTTP error ${response.status}`);
-    }
-    const demandData = await response.json();
-
-    // --- Aggregate demand data for the chart --- //
-    const hourlyTotals: Record<string, number> = {};
-    if (Array.isArray(demandData)) {
-      demandData.forEach((entry) => {
-        const demandTime = entry["Demand Time"]; // HH:MM:SS
-        if (demandTime && typeof demandTime === "string") {
-          const hour = demandTime.substring(0, 2); // Extract HH
-          const passengers = entry.Passengers || 0;
-          if (hour) {
-            hourlyTotals[hour] = (hourlyTotals[hour] || 0) + passengers;
-          }
-        }
-      });
-    }
-
-    const distributionForChart = Object.entries(hourlyTotals)
-      .map(([hour, count]) => ({ hour: `${hour}:00`, count }))
-      .sort((a, b) => a.hour.localeCompare(b.hour));
-
-    setter(distributionForChart);
-    console.log(
-      "Passenger demand distribution data processed:",
-      distributionForChart
-    );
-  } catch (error: any) {
-    console.error(
-      `Failed to fetch or process passenger demand for sim ${simId}:`,
-      error
-    );
-    setter(null); // Use the passed setter
-    // Optional: Show a toast, but might be noisy
-    // toast({ title: "Passenger Demand Error", description: error.message, variant: "warning" });
-  }
-};

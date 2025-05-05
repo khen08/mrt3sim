@@ -9,11 +9,8 @@ import {
   IconLoader2,
 } from "@tabler/icons-react";
 import { toast } from "@/components/ui/use-toast";
-import {
-  UPLOAD_CSV_ENDPOINT,
-  SAMPLE_CSV_PATH,
-  SAMPLE_CSV_FILENAME,
-} from "@/lib/constants";
+import { SAMPLE_CSV_PATH, SAMPLE_CSV_FILENAME } from "@/lib/constants";
+import { useFileStore } from "@/store/fileStore";
 
 interface CsvUploadProps {
   onFileSelect: (file: File | null, backendFilename: string | null) => void;
@@ -24,6 +21,10 @@ const CsvUpload = ({
   onFileSelect,
   initialFileName = null,
 }: CsvUploadProps) => {
+  // State from Zustand store
+  const { uploadFile, uploadedFileObject } = useFileStore();
+
+  // Local UI state
   const [fileName, setFileName] = useState<string | null>(initialFileName);
   const [isFileSelected, setIsFileSelected] = useState<boolean>(
     !!initialFileName
@@ -31,81 +32,43 @@ const CsvUpload = ({
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const uploadFile = useCallback(
+  const handleUploadFile = useCallback(
     async (selectedFile: File) => {
       setIsUploading(true);
       setFileName(selectedFile.name);
       setIsFileSelected(true);
 
-      const formData = new FormData();
-      formData.append("passenger_data_file", selectedFile);
+      const result = await uploadFile(selectedFile);
 
-      // console.log("Uploading file to /upload_csv:", selectedFile.name);
-      toast({
-        title: "Uploading File",
-        description: `Uploading '${selectedFile.name}'. Please wait.`,
-      });
-
-      try {
-        const response = await fetch(UPLOAD_CSV_ENDPOINT, {
-          method: "POST",
-          body: formData,
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-          throw new Error(
-            result.error || `HTTP error! status: ${response.status}`
-          );
-        }
-
-        // console.log("File uploaded successfully:", result);
+      if (result.success && result.filename) {
         setFileName(result.filename);
         setIsFileSelected(true);
         onFileSelect(selectedFile, result.filename);
-
-        toast({
-          title: "Upload Successful",
-          description: `File '${result.filename}' uploaded successfully.`,
-          variant: "default",
-        });
-      } catch (error: any) {
-        console.error("Error uploading file:", error);
+      } else {
         setFileName(null);
         setIsFileSelected(false);
         onFileSelect(null, null);
         if (fileInputRef.current) {
           fileInputRef.current.value = "";
         }
-        toast({
-          title: "Upload Failed",
-          description:
-            error.message || "Could not upload the file. Please try again.",
-          variant: "destructive",
-        });
-      } finally {
-        setIsUploading(false);
       }
+
+      setIsUploading(false);
     },
-    [onFileSelect]
+    [uploadFile, onFileSelect]
   );
 
   const handleFileChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const selectedFile = event.target.files?.[0];
       if (selectedFile) {
-        // console.log("File selected locally:", selectedFile.name);
-        uploadFile(selectedFile);
-      } else {
-        // console.log("File selection cancelled or failed.");
+        handleUploadFile(selectedFile);
       }
     },
-    [uploadFile]
+    [handleUploadFile]
   );
 
   const handleRemoveFile = useCallback(() => {
-    // console.log("Removing file selection in CsvUpload");
     setFileName(null);
     setIsFileSelected(false);
     onFileSelect(null, null);
@@ -114,21 +77,6 @@ const CsvUpload = ({
     }
   }, [onFileSelect]);
 
-  const handleDownloadSample = () => {
-    const link = document.createElement("a");
-    link.href = SAMPLE_CSV_PATH;
-    link.download = SAMPLE_CSV_FILENAME;
-    document.body.appendChild(link);
-    link.click();
-
-    toast({
-      title: "Sample Downloaded",
-      description:
-        "Sample CSV file downloaded. You can use this as a template.",
-      variant: "default",
-    });
-  };
-
   const displayFileName = fileName;
   const showUploadUI = !isFileSelected && !isUploading;
   const showSelectedUI = isFileSelected && !isUploading;
@@ -136,20 +84,6 @@ const CsvUpload = ({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2 mb-4">
-        <Button
-          variant="outline"
-          onClick={handleDownloadSample}
-          className="flex items-center gap-2"
-        >
-          <IconDownload size={16} />
-          <span>Download Sample CSV</span>
-        </Button>
-        <div className="text-sm text-gray-500">
-          Use this sample as a template for your own data
-        </div>
-      </div>
-
       <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center min-h-[200px] flex items-center justify-center">
         <input
           type="file"
