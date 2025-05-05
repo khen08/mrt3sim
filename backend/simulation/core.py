@@ -517,11 +517,6 @@ class Train:
         """Reverse the train's direction."""
         self.direction = "SOUTHBOUND" if self.direction == "NORTHBOUND" else "NORTHBOUND"
 
-    def calculate_load_factor(self):
-        """Calculate the current occupancy percentage."""
-        if self.capacity == 0: return 0 # Avoid division by zero
-        return (self.current_passenger_count / self.capacity * 100)
-
 class Event:
     def __init__(self, time, event_type, period=None, train=None, station=None, segment=None):
         self.time = time
@@ -1214,7 +1209,8 @@ class EventHandler:
         
         # Change train direction
         train.change_direction()
-        #print(f"[TURNAROUND] Changed train direction from {previous_direction} to {train.direction}")
+        if station == self.simulation.stations[0] and train.status == "ACTIVE":
+            train.loop_count += 1
         
         if event.time <= self.simulation.end_time:
             # Calculate turnaround time and new departure time
@@ -1474,6 +1470,7 @@ class Simulation:
         try:
             simulation_entry = db.simulations.create(
                 data={
+                    "CONFIG": json.dumps(self.config),
                     "START_TIME": self.start_time,
                     "END_TIME": self.end_time,
                     "DWELL_TIME": self.dwell_time,
@@ -1669,12 +1666,13 @@ class Simulation:
         
         loop_time = int(self.calculate_loop_time(test_train) / 60)  # Loop Time in minutes
         
+        scheme_type_underscore = scheme_type.replace("-", "_")
+        
         for i, period in enumerate(self.service_periods):
             #period["HEADWAY"] = custom_round(loop_time / period["TRAIN_COUNT"])
-            scheme_type_underscore = scheme_type.replace("-", "_")
             period[f"{scheme_type_underscore}_HEADWAY"] = custom_round(loop_time / period["TRAIN_COUNT"])
             period[f"{scheme_type_underscore}_LOOP_TIME_MINUTES"] = loop_time
-
+            
             # Schedule service period start event
             start_datetime = datetime.combine(
                 self.current_time.date(),
@@ -1915,6 +1913,7 @@ class Simulation:
             self.save_metrics_to_db(travel_time, wait_time, completed_passenger_count)
         
         self.save_timetable_to_db()
+        self.update_train_loop_count()
 
     def save_timetable_to_db(self):
         """Formats timetable entries and bulk inserts them into the TRAIN_MOVEMENTS table."""
@@ -2053,14 +2052,57 @@ class Simulation:
         except Exception as db_error:
             print(f"  [DB:CREATE SIMULATION_METRICS] FAILED to create metrics entry in DB: {db_error}")
 
+    def update_train_loop_count(self):
+        """Updates the train loop count in the database for each train."""
+        print(f"\n[UPDATING TRAIN LOOP COUNT FOR SIMULATION_ID: {self.simulation_id}, SCHEME: {self.scheme_type}]")
+        
+        if not self.trains:
+            print("  [UPDATE:TRAIN LOOP COUNT] No trains found in memory to update.")
+            return
+
+        print(f"  [UPDATE:TRAIN LOOP COUNT] Processing {len(self.trains)} trains for scheme {self.scheme_type}.")
+        
+        updated_count = 0
+        failed_count = 0
+        
+        # Assuming the database 'trains' table has a 'LOOP_COUNT' column
+        for train in self.trains:
+            try:
+                # Perform an individual update for each train
+                result = db.trains.update(
+                    where={
+                        'SIMULATION_ID_TRAIN_ID': { # Assuming a composite unique key
+                            'SIMULATION_ID': self.simulation_id,
+                            'TRAIN_ID': train.train_id
+                        }
+                    },
+                    data={
+                        f"{self.scheme_type.replace('-', '_').upper()}_LOOP_COUNT": train.loop_count
+                    }
+                )
+                if result:
+                    updated_count += 1
+                else:
+                    # This might happen if the train wasn't found in the DB for some reason
+                    print(f"  [DB:UPDATE TRAIN LOOP COUNT] WARNING: Update for Train ID {train.train_id} did not return a result (train might not exist in DB).")
+                    failed_count += 1
+            except Exception as db_error:
+                print(f"  [DB:UPDATE TRAIN LOOP COUNT] FAILED to update loop count for Train ID {train.train_id}: {db_error}")
+                failed_count += 1
+
+        print(f"  [UPDATE:TRAIN LOOP COUNT] Update process completed. Updated: {updated_count}, Failed/Skipped: {failed_count}")
+
     def get_station_by_id(self, station_id):
         """Fast O(1) station lookup by ID."""
+        # Make sure self.stations is indexed or quickly searchable if performance matters
+        # For moderate number of stations, list comprehension is fine.
         return next((s for s in self.stations if s.station_id == station_id), None)
-    
+
     def get_segment_by_id(self, segment_id):
         """Fast O(1) segment lookup by ID."""
+        # Similar note as get_station_by_id regarding search performance
         return next((s for s in self.track_segments if s.segment_id == segment_id), None)
-    
+
     def get_event_by_type(self, event_type, station=None, segment=None):
         return next((
             e for _, e in self.event_queue.queue
