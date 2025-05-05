@@ -3,12 +3,12 @@
 import * as React from "react";
 import {
   ColumnDef,
-  SortingState, // Import SortingState
+  SortingState,
   flexRender,
   getCoreRowModel,
-  getSortedRowModel, // Import sorting model
+  getSortedRowModel,
   useReactTable,
-  RowSelectionState, // Import RowSelectionState
+  RowSelectionState,
 } from "@tanstack/react-table";
 
 import {
@@ -19,49 +19,59 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"; // Use ScrollArea for consistency
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
-  sorting: SortingState; // Add sorting state props
-  setSorting: React.Dispatch<React.SetStateAction<SortingState>>; // Add sorting setter
-  rowSelection: RowSelectionState; // Receive state
-  setRowSelection: React.Dispatch<React.SetStateAction<RowSelectionState>>; // Receive setter
+  sorting: SortingState;
+  setSorting: React.Dispatch<React.SetStateAction<SortingState>>;
+  rowSelection: RowSelectionState;
+  setRowSelection: React.Dispatch<React.SetStateAction<RowSelectionState>>;
+  stickyHeader?: boolean;
 }
 
 export function DataTable<TData, TValue>({
   columns,
   data,
-  sorting, // Use sorting state
-  setSorting, // Use sorting setter
-  rowSelection, // Use received state
-  setRowSelection, // Use received setter
+  sorting,
+  setSorting,
+  rowSelection,
+  setRowSelection,
+  stickyHeader = false,
 }: DataTableProps<TData, TValue>) {
   const table = useReactTable({
     data,
     columns,
     state: {
-      sorting, // Pass sorting state
-      rowSelection, // Control selection state
+      sorting,
+      rowSelection,
     },
-    onSortingChange: setSorting, // Set sorting handler
-    getSortedRowModel: getSortedRowModel(), // Enable sorting model
+    onSortingChange: setSorting,
+    getSortedRowModel: getSortedRowModel(),
     getCoreRowModel: getCoreRowModel(),
-    onRowSelectionChange: setRowSelection, // Set selection handler
-    enableRowSelection: true, // Enable row selection
+    onRowSelectionChange: setRowSelection,
+    enableRowSelection: true,
   });
 
   return (
-    <ScrollArea className="h-[400px] w-full rounded-md border">
-      {" "}
-      {/* Added border */}
-      <Table>
-        <TableHeader>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => {
-                return (
+    <ScrollArea className="border rounded-md w-full flex-1">
+      <style jsx global>{`
+        .sticky-header {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          background-color: hsl(var(--background));
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+      `}</style>
+
+      <div className="max-h-[400px] overflow-auto">
+        <Table>
+          <TableHeader className={stickyHeader ? "sticky-header" : ""}>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
                   <TableHead key={header.id}>
                     {header.isPlaceholder
                       ? null
@@ -70,34 +80,40 @@ export function DataTable<TData, TValue>({
                           header.getContext()
                         )}
                   </TableHead>
-                );
-              })}
-            </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody>
-          {table.getRowModel().rows?.length ? (
-            table.getRowModel().rows.map((row) => (
-              <TableRow
-                key={row.id}
-                data-state={row.getIsSelected() && "selected"}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
                 ))}
               </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center">
-                No results.
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {table.getRowModel().rows?.length ? (
+              table.getRowModel().rows.map((row) => (
+                <TableRow
+                  key={row.id}
+                  data-state={row.getIsSelected() && "selected"}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext()
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell
+                  colSpan={columns.length}
+                  className="h-24 text-center"
+                >
+                  No results.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
       <ScrollBar orientation="horizontal" />
     </ScrollArea>
   );

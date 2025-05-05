@@ -30,6 +30,7 @@ interface UIState {
   setHistorySimulations: (simulations: any[]) => void;
   addHistorySimulations: (simulations: any[]) => void;
   setHasFetchedInitialHistory: (fetched: boolean) => void;
+  resetState: () => void;
 
   // Combined actions
   selectStation: (stationId: number | null) => void;
@@ -76,6 +77,17 @@ export const useUIStore = create<UIState>((set) => ({
     }),
   setHasFetchedInitialHistory: (fetched) =>
     set({ hasFetchedInitialHistory: fetched }),
+
+  // Reset state back to defaults
+  resetState: () =>
+    set({
+      // Only reset selection and modal state, preserve history and sidebar state
+      selectedStation: null,
+      selectedTrainId: null,
+      selectedTrainDetails: null,
+      isHistoryModalOpen: false,
+      isClearConfirmOpen: false,
+    }),
 
   // Combined actions
   selectStation: (stationId) =>

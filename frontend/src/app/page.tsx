@@ -69,6 +69,8 @@ import { useSimulationStore } from "@/store/simulationStore";
 import { useUIStore } from "@/store/uiStore";
 import { useAPIStore } from "@/store/apiStore";
 import { useFileStore } from "@/store/fileStore";
+import { DataViewerButton } from "@/components/DataViewerButton";
+import { DataViewerModal } from "@/components/DataViewerModal";
 
 // Define props for the LoadingPlaceholder component
 interface LoadingPlaceholderProps {
@@ -343,27 +345,72 @@ export default function Home() {
   // Handle file selection
   const handleFileSelect = (
     file: File | null,
-    backendFilename: string | null
+    backendFilename: string | null,
+    inheritedFromSimulation: boolean = false,
+    simulationId: number | undefined = undefined
   ) => {
     setUploadedFileObject(file);
-    setNextRunFilename(null);
+
+    // Update file metadata in the store
+    useFileStore.getState().updateFileMetadata({
+      isInherited: inheritedFromSimulation,
+      simulationId: simulationId,
+      isRequired: simulatePassengers && !backendFilename,
+    });
+
+    // Don't reset nextRunFilename when called from SimulationSettingsCard's change button
+    if (useFileStore.getState().uploadSource !== "settings-change") {
+      setNextRunFilename(null);
+    }
 
     if (file && backendFilename) {
       setSimulationInput({ filename: backendFilename });
-      useSimulationStore.getState().setSimulationResult(null);
-      selectStation(null);
-      selectTrain(null, null);
-      setSimulationTime(PEAK_HOURS.AM.start);
-      setIsSimulationRunning(false);
+
+      // Only reset visual state when NOT called from settings card change button
+      if (useFileStore.getState().uploadSource !== "settings-change") {
+        useSimulationStore.getState().setSimulationResult(null);
+        selectStation(null);
+        selectTrain(null, null);
+        setSimulationTime(PEAK_HOURS.AM.start);
+        setIsSimulationRunning(false);
+      }
+
+      // Always make sure simulatePassengers is true when a file is provided
+      if (!simulatePassengers) {
+        setSimulatePassengers(true);
+      }
+
       useSimulationStore.getState().setApiError(null);
+    }
+    // If passenger simulation is enabled but no file is provided
+    else if (simulatePassengers && !file && !backendFilename) {
+      // Mark that a file is required but not yet selected
+      useFileStore.getState().updateFileMetadata({
+        isRequired: true,
+      });
     } else {
-      setSimulationInput({ filename: null });
-      useSimulationStore.getState().setSimulationResult(null);
-      selectStation(null);
-      selectTrain(null, null);
-      setIsSimulationRunning(false);
+      // This block should only run when not called from settings change button
+      if (useFileStore.getState().uploadSource !== "settings-change") {
+        setSimulationInput({ filename: null });
+        useSimulationStore.getState().setSimulationResult(null);
+        selectStation(null);
+        selectTrain(null, null);
+        setIsSimulationRunning(false);
+      }
     }
   };
+
+  // When loading a simulation, handle the file appropriately
+  useEffect(() => {
+    if (loadedSimulationId && simulationInput.filename) {
+      // Update file metadata to indicate it was inherited from a loaded simulation
+      useFileStore.getState().updateFileMetadata({
+        isInherited: true,
+        simulationId: loadedSimulationId,
+        isRequired: false,
+      });
+    }
+  }, [loadedSimulationId, simulationInput.filename]);
 
   // Handler for toggling full day view
   const handleToggleFullDayView = () => {
@@ -424,15 +471,55 @@ export default function Home() {
 
   // Handler for loading new data
   const handleLoadNewData = () => {
-    handleFileSelect(null, null);
+    // Perform a complete reset of relevant state
+    useFileStore.getState().resetUploadState(); // Reset file store
+    resetSimulation(); // Reset simulation store
+    useUIStore.getState().resetState(); // Reset UI store
+
+    // Explicitly reset key values to ensure they're cleared
+    setSimulationInput({ filename: null });
     useSimulationStore.getState().setLoadedSimulationId(null);
+    useSimulationStore.getState().setSimulationResult(null);
     setNextRunFilename(null);
+    setIsSimulationRunning(false);
+
+    // Reset time to default
+    setSimulationTime(PEAK_HOURS.AM.start);
+
+    // Reset selections
+    selectStation(null);
+    selectTrain(null, null);
+
+    // Refresh the map
+    incrementMapRefreshKey();
+
+    // Close the modal
     setClearConfirmOpen(false);
   };
 
   // Determine what to show in the main content area
   const hasResults = !!simulationResult && simulationResult.length > 0;
   const showInitialState = !isMapLoading && !hasResults;
+
+  // Get upload source from fileStore to prevent showing CsvUpload when source is from settings
+  const uploadSource = useFileStore((state) => state.uploadSource);
+
+  // Only show CsvUpload when explicitly requested and not from settings-change
+  const shouldShowCsvUpload =
+    simulatePassengers &&
+    uploadSource !== "settings-change" &&
+    (!simulationInput.filename ||
+      (uploadSource && uploadSource === "main-upload")) &&
+    !nextRunFilename &&
+    !hasResults; // Don't show in results view, just in initial state
+
+  // Update the conditional for the initial state view (CSV Upload or Passenger Sim Disabled message)
+  const showCsvUploadCard =
+    simulatePassengers &&
+    !hasResults &&
+    !nextRunFilename &&
+    uploadSource !== "settings-change";
+  const showPassengerDisabledCard = !simulatePassengers && !hasResults;
 
   // --- Define content for the main area ---
   let mainContent: ReactNode;
@@ -442,10 +529,12 @@ export default function Home() {
   } else if (hasResults) {
     mainContent = (
       <div className="flex-1 flex flex-col overflow-y-auto px-4">
-        {/* Conditionally show CsvUpload if loading a file-less sim and enabling passengers */}
+        {/* Only show notification card for inherited simulations with passenger sim enabled but missing file */}
         {loadedSimulationId !== null &&
           simulationInput.filename === null &&
-          simulatePassengers && (
+          simulatePassengers &&
+          uploadSource !== "settings-change" &&
+          !nextRunFilename && (
             <Card className="border-dashed border-amber-500 bg-amber-50 dark:bg-amber-950/50">
               <CardHeader>
                 <CardTitle className="text-amber-700 dark:text-amber-300 flex items-center">
@@ -587,7 +676,7 @@ export default function Home() {
     // Initial State (CSV Upload or Passenger Sim Disabled message)
     mainContent = (
       <div className="flex-grow flex items-center justify-center p-4">
-        {simulatePassengers ? (
+        {showCsvUploadCard && (
           <Card className="w-full max-w-lg">
             <CardHeader>
               <CardTitle className="flex items-center">
@@ -611,7 +700,8 @@ export default function Home() {
               />
             </CardContent>
           </Card>
-        ) : (
+        )}
+        {showPassengerDisabledCard && (
           <Card className="w-full max-w-lg bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800">
             <CardHeader>
               <CardTitle className="flex items-center text-amber-800 dark:text-amber-200">
@@ -738,6 +828,8 @@ export default function Home() {
                   <IconHistory className="mr-2 h-4 w-4" />
                   Simulation History
                 </Button>
+
+                <DataViewerButton />
               </div>
 
               <SimulationSettingsCard
@@ -822,6 +914,8 @@ export default function Home() {
         loadedSimulationId={loadedSimulationId}
         isSimulating={isSimulating || isMapLoading}
       />
+
+      <DataViewerModal />
     </main>
   );
 }

@@ -7,10 +7,12 @@ import {
   IconCheck,
   IconDownload,
   IconLoader2,
+  IconAlertCircle,
 } from "@tabler/icons-react";
 import { toast } from "@/components/ui/use-toast";
 import { SAMPLE_CSV_PATH, SAMPLE_CSV_FILENAME } from "@/lib/constants";
 import { useFileStore } from "@/store/fileStore";
+import { useSimulationStore } from "@/store/simulationStore";
 
 interface CsvUploadProps {
   onFileSelect: (file: File | null, backendFilename: string | null) => void;
@@ -22,157 +24,326 @@ const CsvUpload = ({
   initialFileName = null,
 }: CsvUploadProps) => {
   // State from Zustand store
-  const { uploadFile, uploadedFileObject } = useFileStore();
+  const {
+    uploadFile,
+    uploadedFileObject,
+    uploadedFileName,
+    uploadStatus,
+    uploadSource,
+  } = useFileStore();
 
-  // Local UI state
-  const [fileName, setFileName] = useState<string | null>(initialFileName);
-  const [isFileSelected, setIsFileSelected] = useState<boolean>(
-    !!initialFileName
+  // Get relevant state from simulation store to prevent duplicate UI
+  const nextRunFilename = useSimulationStore((state) => state.nextRunFilename);
+  const hasResults = useSimulationStore(
+    (state) =>
+      state.simulationResult !== null && state.simulationResult.length > 0
   );
-  const [isUploading, setIsUploading] = useState<boolean>(false);
+
+  // Local state
+  const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleUploadFile = useCallback(
-    async (selectedFile: File) => {
+  // If this component shouldn't show its UI, return null
+  // Added checks to prevent duplicate upload components when file is handled elsewhere
+  if (
+    uploadSource === "settings-change" || // Don't show when settings card is handling the upload
+    nextRunFilename !== null // Don't show when a file is already selected for next run
+  ) {
+    return null;
+  }
+
+  // Handle file input change
+  const handleFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
       setIsUploading(true);
-      setFileName(selectedFile.name);
-      setIsFileSelected(true);
+      try {
+        const result = await uploadFile(file, "main-upload");
+        if (result.success && result.filename) {
+          onFileSelect(file, result.filename);
 
-      const result = await uploadFile(selectedFile);
+          toast({
+            title: "File Uploaded Successfully",
+            description: `${file.name} is ready for simulation.`,
+            variant: "default",
+          });
+        } else {
+          if (result.errorType === "format_error") {
+            toast({
+              title: "Invalid CSV Format",
+              description:
+                result.error || "The CSV file has an invalid format.",
+              variant: "destructive",
+            });
+          } else {
+            toast({
+              title: "Upload Failed",
+              description: result.error || "An error occurred during upload.",
+              variant: "destructive",
+            });
+          }
+        }
+      } catch (error) {
+        console.error("Error in file upload:", error);
+        toast({
+          title: "Upload Error",
+          description: "An unexpected error occurred during upload.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [onFileSelect, uploadFile]
+  );
 
-      if (result.success && result.filename) {
-        setFileName(result.filename);
-        setIsFileSelected(true);
-        onFileSelect(selectedFile, result.filename);
-      } else {
-        setFileName(null);
-        setIsFileSelected(false);
-        onFileSelect(null, null);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
+  // Handle drag and drop
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    async (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
+
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        const file = files[0];
+
+        // Check if file is csv
+        if (!file.name.toLowerCase().endsWith(".csv")) {
+          toast({
+            title: "Invalid File Type",
+            description: "Please upload a CSV file.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        setIsUploading(true);
+        try {
+          const result = await uploadFile(file, "main-upload");
+          if (result.success && result.filename) {
+            onFileSelect(file, result.filename);
+
+            toast({
+              title: "File Uploaded Successfully",
+              description: `${file.name} is ready for simulation.`,
+              variant: "default",
+            });
+          } else {
+            if (result.errorType === "format_error") {
+              toast({
+                title: "Invalid CSV Format",
+                description:
+                  result.error || "The CSV file has an invalid format.",
+                variant: "destructive",
+              });
+            } else {
+              toast({
+                title: "Upload Failed",
+                description: result.error || "An error occurred during upload.",
+                variant: "destructive",
+              });
+            }
+          }
+        } catch (error) {
+          console.error("Error in file upload:", error);
+          toast({
+            title: "Upload Error",
+            description: "An unexpected error occurred during upload.",
+            variant: "destructive",
+          });
+        } finally {
+          setIsUploading(false);
         }
       }
-
-      setIsUploading(false);
     },
-    [uploadFile, onFileSelect]
+    [onFileSelect, uploadFile]
   );
 
-  const handleFileChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const selectedFile = event.target.files?.[0];
-      if (selectedFile) {
-        handleUploadFile(selectedFile);
-      }
-    },
-    [handleUploadFile]
-  );
-
+  // Handle file removal
   const handleRemoveFile = useCallback(() => {
-    setFileName(null);
-    setIsFileSelected(false);
+    useFileStore.getState().resetUploadState();
     onFileSelect(null, null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+
+    toast({
+      title: "File Removed",
+      description: "The file has been removed.",
+      variant: "default",
+    });
   }, [onFileSelect]);
 
-  const displayFileName = fileName;
-  const showUploadUI = !isFileSelected && !isUploading;
-  const showSelectedUI = isFileSelected && !isUploading;
-  const showUploadingUI = isUploading;
+  // Handle manual file selection click
+  const handleClickUpload = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
 
+  // Handle sample file download
+  const handleSampleDownload = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    try {
+      const response = await fetch(SAMPLE_CSV_PATH);
+      if (!response.ok) {
+        throw new Error("Failed to download sample file");
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = SAMPLE_CSV_FILENAME;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Sample Downloaded",
+        description: "Sample CSV file downloaded successfully.",
+        variant: "default",
+      });
+    } catch (error) {
+      console.error("Error downloading sample file:", error);
+      toast({
+        title: "Download Failed",
+        description: "Failed to download the sample file.",
+        variant: "destructive",
+      });
+    }
+  }, []);
+
+  // Determine UI states
+  const isFileSelected = !!uploadedFileObject;
+
+  // Render the upload UI
   return (
-    <div className="space-y-6">
-      <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center min-h-[200px] flex items-center justify-center">
-        <input
-          type="file"
-          accept=".csv"
-          className="hidden"
-          ref={fileInputRef}
-          onChange={handleFileChange}
-          disabled={isUploading}
-        />
-        {showUploadingUI && (
-          <div className="space-y-4 text-center">
-            <IconLoader2
-              size={48}
-              className="text-gray-400 mx-auto animate-spin"
-            />
-            <p className="text-lg font-medium">
-              Uploading {displayFileName}...
-            </p>
-            <p className="text-sm text-gray-500 mt-1">Please wait</p>
-          </div>
-        )}
-        {showUploadUI && (
-          <div className="space-y-4">
-            <div className="flex justify-center">
-              <IconUpload size={48} className="text-gray-400" />
-            </div>
+    <div className="w-full">
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept=".csv"
+        className="hidden"
+      />
+
+      {/* Upload area when no file is selected */}
+      {!isFileSelected && (
+        <div
+          className={`border-2 border-dashed rounded-lg p-6 transition-colors ${
+            isDragging
+              ? "border-primary bg-primary/5"
+              : "border-muted-foreground/20"
+          }`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onClick={handleClickUpload}
+        >
+          <div className="flex flex-col items-center justify-center space-y-4 text-center">
+            <IconUpload size={36} className="text-muted-foreground/60" />
             <div>
-              <p className="text-lg font-medium">Upload CSV file</p>
-              <p className="text-sm text-gray-500 mt-1">
-                Drag and drop or click to browse
+              <p className="text-sm font-medium">
+                <span className="text-primary font-semibold hover:underline cursor-pointer">
+                  Click to upload
+                </span>{" "}
+                or drag and drop
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                CSV file with passenger flow data
               </p>
             </div>
             <Button
               variant="outline"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading}
+              size="sm"
+              className="mt-2"
+              onClick={handleSampleDownload}
             >
-              Browse Files
+              <IconDownload size={14} className="mr-1" /> Download Sample CSV
             </Button>
           </div>
-        )}
-        {showSelectedUI && displayFileName && (
-          <div className="space-y-4">
-            <div className="flex justify-center">
-              <IconFile size={48} className="text-mrt-blue" />
+        </div>
+      )}
+
+      {/* Uploaded file info */}
+      {isFileSelected && (
+        <div className="border rounded-lg p-4 bg-muted/30">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <IconFile size={24} className="text-primary" />
+              <div>
+                <p className="text-sm font-medium">{uploadedFileName}</p>
+                <p className="text-xs text-muted-foreground">
+                  Ready for simulation
+                </p>
+              </div>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRemoveFile}
+              className="h-8 px-2"
+            >
+              <IconX size={16} />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Upload status */}
+      {uploadStatus && (
+        <div
+          className={`mt-4 p-3 rounded-md ${
+            uploadStatus.success
+              ? "bg-green-50 text-green-700 border border-green-200"
+              : "bg-red-50 text-red-700 border border-red-200"
+          }`}
+        >
+          <div className="flex items-start space-x-2">
+            {uploadStatus.success ? (
+              <IconCheck size={18} className="flex-shrink-0" />
+            ) : (
+              <IconAlertCircle size={18} className="flex-shrink-0" />
+            )}
             <div>
-              <p className="text-lg font-medium">{displayFileName}</p>
-              <p className="text-sm text-green-600 font-medium">
-                Successfully Uploaded
-              </p>
-            </div>
-            <div className="flex justify-center gap-3">
-              <Button
-                variant="outline"
-                onClick={handleRemoveFile}
-                className="flex items-center gap-1"
-                disabled={isUploading}
-              >
-                <IconX size={16} />
-                <span>Remove</span>
-              </Button>
-              <Button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1"
-                disabled={isUploading}
-              >
-                <IconUpload size={16} />
-                <span>Change File</span>
-              </Button>
+              <p className="text-sm font-medium">{uploadStatus.message}</p>
+              {uploadStatus.details && uploadStatus.details.length > 0 && (
+                <ul className="mt-1 text-xs list-disc list-inside">
+                  {uploadStatus.details.map((detail, idx) => (
+                    <li key={idx}>{detail}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="text-sm text-gray-500">
-        <p className="font-medium mb-2">Required Format:</p>
-        <ul className="list-disc pl-5 space-y-1">
-          <li>CSV file with comma-separated values</li>
-          <li>First column should contain time values (format: HH:MM)</li>
-          <li>
-            Column headers should represent origin-destination pairs (format:
-            fromStation;toStation)
-          </li>
-          <li>
-            Each cell should contain passenger count for that time and OD pair
-          </li>
-        </ul>
-      </div>
+      {/* Loading state */}
+      {isUploading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
+          <div className="flex flex-col items-center space-y-2">
+            <IconLoader2 size={24} className="animate-spin text-primary" />
+            <p className="text-sm font-medium">Uploading...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 import { useSimulationStore } from "@/store/simulationStore";
 import { useFileStore } from "@/store/fileStore";
 import { useAPIStore } from "@/store/apiStore";
+import { toast } from "@/components/ui/use-toast";
 
 // Define SimulationSettings type locally (copied from page.tsx)
 interface SimulationSettings {
@@ -133,8 +134,31 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
         e.target.type === "number"
           ? parseFloat(e.target.value) || 0
           : e.target.value;
-      if (["dwellTime", "turnaroundTime", "maxCapacity"].includes(name)) {
+      if (["dwellTime", "turnaroundTime"].includes(name)) {
         value = parseInt(e.target.value, 10) || 0;
+      }
+
+      // Handle train specs properties
+      if (
+        [
+          "acceleration",
+          "deceleration",
+          "cruisingSpeed",
+          "passthroughSpeed",
+          "maxCapacity",
+        ].includes(name)
+      ) {
+        // Convert maxCapacity to integer
+        if (name === "maxCapacity") {
+          value = parseInt(e.target.value, 10) || 0;
+        }
+
+        // For train specs, update the nested object
+        updateSimulationSetting("trainSpecs", {
+          ...simulationSettings.trainSpecs,
+          [name]: value,
+        });
+        return; // Exit early since we've handled the update
       }
     } else {
       return;
@@ -147,7 +171,21 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
 
   const handleSimulatePassengersToggle = (checked: boolean) => {
     setSimulatePassengers(checked);
+
+    // If enabling passenger simulation but no file is selected
+    if (checked && !simulationInput.filename && !nextRunFilename) {
+      // Provide user feedback with a toast notification
+      toast({
+        title: "Passenger Simulation Enabled",
+        description: "Please select a CSV file for passenger data.",
+        variant: "default",
+      });
+    }
   };
+
+  // Determine if a passenger data file is needed but missing
+  const needsFileUpload =
+    simulatePassengers && !simulationInput.filename && !nextRunFilename;
 
   return (
     <Card className="mb-4">
@@ -232,86 +270,169 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
         </div>
 
         {/* -- Inserted Selected File Info Card -- */}
-        {hasResults &&
-          simulatePassengers &&
-          simulationInput.filename !== null && (
-            <Card className="border-blue-300 bg-blue-50 dark:bg-blue-950/50 p-3 mb-4">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2 overflow-hidden">
-                  <IconFile
-                    size={20}
-                    className="text-blue-600 dark:text-blue-400 flex-shrink-0"
-                  />
-                  <div className="flex flex-col overflow-hidden">
-                    <span
-                      className="text-sm font-medium text-blue-800 dark:text-blue-200"
-                      title={simulationInput.filename}
-                    >
-                      Selected for next run:
-                    </span>
-                    <span className="text-xs font-medium text-blue-800 dark:text-blue-200 truncate">
-                      {simulationInput.filename}
-                    </span>
-                    <span className="text-xs text-blue-600 dark:text-blue-400">
-                      {loadedSimulationId
-                        ? "Inherited from loaded simulation"
-                        : "From previous selection"}
-                    </span>
-                  </div>
+        {hasResults && simulatePassengers && (
+          <Card
+            className={cn(
+              "p-3 mb-4",
+              needsFileUpload
+                ? "border-amber-300 bg-amber-50 dark:bg-amber-950/50"
+                : "border-blue-300 bg-blue-50 dark:bg-blue-950/50"
+            )}
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2 overflow-hidden">
+                <IconFile
+                  size={20}
+                  className={cn(
+                    "flex-shrink-0",
+                    needsFileUpload
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-blue-600 dark:text-blue-400"
+                  )}
+                />
+                <div className="flex flex-col overflow-hidden">
+                  <span
+                    className={cn(
+                      "text-sm font-medium truncate",
+                      needsFileUpload
+                        ? "text-amber-800 dark:text-amber-200"
+                        : "text-blue-800 dark:text-blue-200"
+                    )}
+                  >
+                    {needsFileUpload
+                      ? "Passenger data required"
+                      : "Selected for next run:"}
+                  </span>
+                  <span
+                    className={cn(
+                      "text-xs font-medium truncate",
+                      needsFileUpload
+                        ? "text-amber-800 dark:text-amber-200"
+                        : "text-blue-800 dark:text-blue-200"
+                    )}
+                  >
+                    {needsFileUpload
+                      ? "No file selected yet"
+                      : simulationInput.filename}
+                  </span>
+                  <span
+                    className={cn(
+                      "text-xs",
+                      needsFileUpload
+                        ? "text-amber-600 dark:text-amber-400"
+                        : "text-blue-600 dark:text-blue-400"
+                    )}
+                  >
+                    {needsFileUpload
+                      ? "Please select a file to proceed with passenger simulation"
+                      : loadedSimulationId && nextRunFilename === null
+                      ? "Inherited from loaded simulation"
+                      : nextRunFilename !== null
+                      ? "Newly uploaded file"
+                      : "From previous run"}
+                  </span>
                 </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  {/* Hidden file input */}
-                  <input
-                    type="file"
-                    accept=".csv"
-                    className="hidden"
-                    ref={fileInputRef}
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        // Use the uploadFile function from fileStore
-                        const result = await useFileStore
-                          .getState()
-                          .uploadFile(file);
-                        if (result.success && result.filename) {
-                          handleFileSelect(file, result.filename);
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                {/* Hidden file input */}
+                <input
+                  type="file"
+                  accept=".csv"
+                  className="hidden"
+                  ref={fileInputRef}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      // Use the uploadFile function from fileStore with settings-change source
+                      const result = await useFileStore
+                        .getState()
+                        .uploadFile(file, "settings-change");
+                      if (result.success && result.filename) {
+                        // Set the next run filename directly without changing UI
+                        setNextRunFilename(result.filename);
+
+                        // Make sure to preserve the simulatePassengers state if it was true
+                        if (!simulatePassengers) {
+                          setSimulatePassengers(true);
+                        }
+
+                        // Update the file selection state for the next run (but not the current UI)
+                        handleFileSelect(file, result.filename);
+
+                        // Notify the user with a toast instead of changing the UI
+                        toast({
+                          title: "File Changed Successfully",
+                          description: `New file "${file.name}" will be used for the next simulation run.`,
+                          variant: "default",
+                        });
+
+                        useFileStore.getState().setUploadStatus({
+                          success: true,
+                          message: "File uploaded successfully",
+                        });
+                      } else {
+                        // Handle CSV format errors with more details
+                        if (result.errorType === "format_error") {
                           useFileStore.getState().setUploadStatus({
-                            success: true,
-                            message: "File uploaded successfully",
+                            success: false,
+                            message: result.error || "Invalid file format",
+                            details: result.details || [],
+                            errorType: "format_error",
+                          });
+
+                          // Show toast with detailed error
+                          toast({
+                            title: "CSV Format Error",
+                            description:
+                              result.error ||
+                              "Invalid CSV format. Please check the file format and try again.",
+                            variant: "destructive",
                           });
                         } else {
                           useFileStore.getState().setUploadStatus({
                             success: false,
                             message: result.error || "Upload failed",
+                            errorType:
+                              (result.errorType as
+                                | "server_error"
+                                | "network_error"
+                                | "format_error") || "server_error",
                           });
                         }
                       }
-                    }}
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isSimulating}
-                  >
-                    <IconReplace size={14} className="mr-1" /> Change
-                  </Button>
-                </div>
-              </div>
-              {/* Show upload status if present */}
-              {uploadStatus && (
-                <div
-                  className={`mt-2 text-xs ${
-                    uploadStatus.success
-                      ? "text-green-600 dark:text-green-400"
-                      : "text-red-600 dark:text-red-400"
-                  }`}
+                    }
+                  }}
+                />
+                <Button
+                  variant={needsFileUpload ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isSimulating}
+                  className={
+                    needsFileUpload
+                      ? "bg-amber-600 hover:bg-amber-700 text-white"
+                      : ""
+                  }
                 >
-                  {uploadStatus.message}
-                </div>
-              )}
-            </Card>
-          )}
+                  <IconReplace size={14} className="mr-1" />{" "}
+                  {needsFileUpload ? "Select File" : "Change"}
+                </Button>
+              </div>
+            </div>
+            {/* Show upload status if present */}
+            {uploadStatus && (
+              <div
+                className={`mt-2 text-xs ${
+                  uploadStatus.success
+                    ? "text-green-600 dark:text-green-400"
+                    : "text-red-600 dark:text-red-400"
+                }`}
+              >
+                {uploadStatus.message}
+              </div>
+            )}
+          </Card>
+        )}
 
         <Tabs defaultValue="train" className="w-full">
           <TabsList className="grid w-full grid-cols-2 mb-4">
