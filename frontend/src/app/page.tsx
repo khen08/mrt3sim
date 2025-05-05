@@ -487,7 +487,7 @@ export default function Home() {
             )}
             stationConfigData={activeSimulationSettings?.stations}
             turnaroundTime={activeSimulationSettings?.turnaroundTime}
-            maxCapacity={activeSimulationSettings?.maxCapacity ?? 0}
+            maxCapacity={activeSimulationSettings?.trainSpecs.maxCapacity ?? 0}
             selectedScheme={activeSimulationSettings?.schemeType ?? "REGULAR"}
             uiSelectedScheme={selectedScheme}
             showDebugInfo={showDebugInfo}

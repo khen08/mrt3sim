@@ -20,7 +20,7 @@ import {
 import { DataTable } from "@/components/DataTable"; // Import the DataTable component
 import { RowSelectionState, SortingState } from "@tanstack/react-table"; // Import RowSelectionState and SortingState
 import { useToast } from "@/lib/toast"; // Import custom toast hook
-import { API_BASE_URL } from "@/lib/constants"; // Import base URL
+import { useAPIStore } from "@/store/apiStore"; // Import the API store
 
 interface SimulationHistoryModalProps {
   isOpen: boolean;
@@ -41,16 +41,16 @@ export function SimulationHistoryModal({
   isLoading = false,
   loadedSimulationId, // Destructure the new prop
   isSimulating = false, // Destructure the new prop with a default
-  onRefreshHistory, // Destructure the new prop
+  onRefreshHistory, // Destructure the new prop - *Note: deleteSimulations in apiStore now handles refresh*
 }: SimulationHistoryModalProps) {
   // State for row selection
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
-  // State for sorting
-  const [sorting, setSorting] = React.useState<SortingState>([]);
-  // Add state for delete loading
+  const [sorting, setSorting] = React.useState<SortingState>([
+    { id: "CREATED_AT", desc: true }, // Default sort by creation date descending
+  ]);
   const [isDeleting, setIsDeleting] = React.useState(false);
-  // Use custom toast
   const { toast } = useToast();
+  const { deleteSimulations } = useAPIStore(); // Get the delete action from the store
 
   // Memoize columns definition to prevent re-creation on every render
   // Pass onLoadSimulation, loadedSimulationId, AND isSimulating into the columns definition
@@ -66,11 +66,19 @@ export function SimulationHistoryModal({
     handleDeleteSelectedSimulations();
   };
 
-  // Function to handle the delete API call
+  // Function to handle the delete API call - Refactored to use apiStore
   const handleDeleteSelectedSimulations = async () => {
-    const selectedIds = Object.keys(rowSelection).map(
-      (index) => simulations[parseInt(index)].SIMULATION_ID
-    );
+    const selectedIndices = Object.keys(rowSelection);
+    const selectedIds = selectedIndices.map((index) => {
+      const simIndex = parseInt(index, 10);
+      // Add boundary check
+      if (simIndex >= 0 && simIndex < simulations.length) {
+        return simulations[simIndex].SIMULATION_ID;
+      } else {
+        console.error("Invalid index found in rowSelection:", index);
+        return null; // Or handle error appropriately
+      }
+    }).filter((id): id is number => id !== null); // Filter out nulls and type guard
 
     if (selectedIds.length === 0) {
       toast({
@@ -85,45 +93,29 @@ export function SimulationHistoryModal({
     toast({
       title: "Deleting Simulations...",
       description: `Attempting to delete ${selectedIds.length} selected simulation(s).`,
-      variant: "info",
+      variant: "default", // Use default variant while processing
     });
 
-    try {
-      const response = await fetch(`${API_BASE_URL}/delete_history`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ simulationId: selectedIds }), // Match backend expected key
-      });
+    // Call the action from the apiStore
+    const result = await deleteSimulations(selectedIds);
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || `HTTP Error ${response.status}`);
-      }
-
+    if (result.success) {
       toast({
         title: "Deletion Successful",
-        description:
-          result.message || `${selectedIds.length} simulation(s) deleted.`,
+        description: result.message,
         variant: "success",
       });
-
-      setRowSelection({}); // Clear selection
-      if (onRefreshHistory) {
-        onRefreshHistory(); // Refresh the list in the parent
-      }
-    } catch (error: any) {
-      console.error("Failed to delete simulations:", error);
+      setRowSelection({}); // Clear selection on success
+      // No need to call onRefreshHistory here, apiStore action handles it
+    } else {
       toast({
         title: "Deletion Failed",
-        description: error.message || "Could not delete selected simulations.",
+        description: result.message,
         variant: "destructive",
       });
-    } finally {
-      setIsDeleting(false);
     }
+
+    setIsDeleting(false);
   };
 
   return (

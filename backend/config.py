@@ -30,15 +30,6 @@ DEFAULT_TRAIN_SPECS = {
     "maxCapacity": 1182,
 }
 
-DEFAULT_SETTINGS = {
-    "dwellTime": 60,
-    "turnaroundTime": 300,
-    "schemeType": "REGULAR",
-    "schemePattern": DEFAULT_SCHEME,
-    "stations": DEFAULT_STATIONS,
-    "trainSpecs": DEFAULT_TRAIN_SPECS
-}
-
 DEFAULT_SERVICE_PERIODS = [
     {
         'NAME': 'INITIAL',
@@ -76,6 +67,16 @@ DEFAULT_SERVICE_PERIODS = [
         'START_HOUR': 20
     }
 ]
+
+DEFAULT_SETTINGS = {
+    "dwellTime": 60,
+    "turnaroundTime": 300,
+    "schemeType": "REGULAR",
+    "servicePeriods": DEFAULT_SERVICE_PERIODS,
+    "schemePattern": DEFAULT_SCHEME,
+    "stations": DEFAULT_STATIONS,
+    "trainSpecs": DEFAULT_TRAIN_SPECS
+}
 DEFAULT_ZONE_LENGTH = 130 # in meters
 # --- File Upload Configuration ---
 

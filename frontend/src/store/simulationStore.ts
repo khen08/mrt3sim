@@ -12,10 +12,14 @@ export interface StationConfig {
 export interface SimulationSettings {
   dwellTime: number;
   turnaroundTime: number;
-  acceleration: number;
-  deceleration: number;
-  cruisingSpeed: number;
-  maxCapacity: number;
+  trainSpecs: {
+    acceleration: number;
+    deceleration: number;
+    cruisingSpeed: number;
+    passthroughSpeed: number;
+    maxCapacity: number;
+  };
+  servicePeriods: ServicePeriod[];
   schemeType: "REGULAR" | "SKIP-STOP";
   schemePattern: string[];
   stations: StationConfig[];

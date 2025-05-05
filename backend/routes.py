@@ -338,7 +338,7 @@ def format_time(time_obj, format_string='%H:%M:%S'):
         try:
             return time_obj.strftime(format_string)
         except ValueError:
-             # Fallback if strftime fails
+            # Fallback if strftime fails
             return str(time_obj)
     elif isinstance(time_obj, str): # If it's already a string, return it
         return time_obj

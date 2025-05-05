@@ -13,13 +13,20 @@ export const FULL_DAY_HOURS = {
 export type PeakPeriod = keyof typeof PEAK_HOURS; // 'AM' | 'PM'
 
 // API Endpoints
-export const API_BASE_URL = "http://localhost:5001";
+export const API_BASE_URL = "http://100.66.246.119:5001";
 export const GET_DEFAULT_SETTINGS_ENDPOINT = `${API_BASE_URL}/get_default_settings`;
-export const RUN_SIMULATION_ENDPOINT = `${API_BASE_URL}/run_simulation`;
+export const RUN_SIMULATION_ENDPOINT = `${API_BASE_URL}/simulations`;
 export const UPLOAD_CSV_ENDPOINT = `${API_BASE_URL}/upload_csv`;
 export const GET_TIMETABLE_ENDPOINT = (simId: number | string) =>
-  `${API_BASE_URL}/get_timetable/${simId}`;
-export const GET_SIMULATION_HISTORY_ENDPOINT = `${API_BASE_URL}/get_history`;
+  `${API_BASE_URL}/simulations/${simId}/timetable`;
+export const GET_SIMULATION_HISTORY_ENDPOINT = `${API_BASE_URL}/simulations`;
+export const GET_SIMULATION_CONFIG_ENDPOINT = (simId: number | string) =>
+  `${API_BASE_URL}/simulations/${simId}/config`;
+export const GET_PASSENGER_DEMAND_ENDPOINT = (simId: number | string) =>
+  `${API_BASE_URL}/simulations/${simId}/passenger_demand`;
+export const DELETE_SIMULATION_ENDPOINT = (simId: number | string) =>
+  `${API_BASE_URL}/simulations/${simId}`;
+export const DELETE_BULK_SIMULATIONS_ENDPOINT = `${API_BASE_URL}/simulations`;
 
 // MRT Map Layout Constants
 export const HORIZONTAL_STATION_SPACING = 70;

@@ -1594,11 +1594,11 @@ class Simulation:
             train_count = max(train_count, period['TRAIN_COUNT'])
 
         train_specs_obj = TrainSpec(
-            max_capacity=self.config["maxCapacity"],
-            cruising_speed=self.config["cruisingSpeed"],
-            passthrough_speed=self.config["passthroughSpeed"],
-            accel_rate=self.config["acceleration"],
-            decel_rate=self.config["deceleration"],
+            max_capacity=self.config["trainSpecs"]["maxCapacity"],
+            cruising_speed=self.config["trainSpecs"]["cruisingSpeed"],
+            passthrough_speed=self.config["trainSpecs"]["passthroughSpeed"],
+            accel_rate=self.config["trainSpecs"]["acceleration"],
+            decel_rate=self.config["trainSpecs"]["deceleration"],
         )
 
         print(f"  [MEM:INIT TRAIN_SPECS] INITIALIZING TRAIN SPECS")
@@ -1621,8 +1621,8 @@ class Simulation:
                         'SIMULATION_ID': self.simulation_id,
                         'SPEC_NAME': 'REGULAR TRAIN',
                         'MAX_CAPACITY': train_specs_obj.max_capacity,
-                        'CRUISING_SPEED': self.config['cruisingSpeed'],
-                        'PASSTHROUGH_SPEED': self.config['passthroughSpeed'],
+                        'CRUISING_SPEED': train_specs_obj.cruising_speed,
+                        'PASSTHROUGH_SPEED': train_specs_obj.passthrough_speed,
                         'ACCEL_RATE': train_specs_obj.accel_rate,
                         'DECEL_RATE': train_specs_obj.decel_rate,
                     }
@@ -1654,11 +1654,11 @@ class Simulation:
         test_train = Train(
                 train_id=1,
                 train_specs=TrainSpec(
-                    max_capacity=self.config["maxCapacity"],
-                    cruising_speed=self.config["cruisingSpeed"],
-                    passthrough_speed=self.config["passthroughSpeed"],
-                    accel_rate=self.config["acceleration"],
-                    decel_rate=self.config["deceleration"],
+                    max_capacity=self.config["trainSpecs"]["maxCapacity"],
+                    cruising_speed=self.config["trainSpecs"]["cruisingSpeed"],
+                    passthrough_speed=self.config["trainSpecs"]["passthroughSpeed"],
+                    accel_rate=self.config["trainSpecs"]["acceleration"],
+                    decel_rate=self.config["trainSpecs"]["deceleration"],
                 ),
                 service_type="AB" if scheme_type == "REGULAR" else "A",
                 current_station=self.stations[0]
