@@ -82,6 +82,7 @@ def create_simulation():
         return jsonify({"error": f"Could not parse request JSON: {e}"}), 400
 
     config = simulation_input_data.get('config')
+    name = simulation_input_data.get('name') if simulation_input_data.get('name') else "DEFAULT"####
 
     if config is None: # Check for None specifically, as config could be an empty dict {}
         print("[ROUTE:/SIMULATIONS POST] ERROR: 'config' MISSING IN JSON PAYLOAD")
@@ -106,7 +107,7 @@ def create_simulation():
 
     try:
         # Instantiate the Simulation class
-        sim = Simulation(csv_filename=secure_name, config=config)
+        sim = Simulation(name=name, csv_filename=secure_name, config=config)
 
         run_duration = sim.run()
 

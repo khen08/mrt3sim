@@ -740,18 +740,20 @@ class EventHandler:
         if type_assigned_this_arrival is not None: 
             self.simulation.last_stn1_nb_arrival_type = type_assigned_this_arrival
 
-        # --- Normal Arrival Processing ---
-        if self.simulation.scheme_type == "REGULAR":
-            # Calculate departure time based on dwell time
-            departure_time = arrival_time + timedelta(seconds=self.simulation.dwell_time)
+        # --- Arrival Processing ---
+        if train.status == "INSERTION":
+            departure_time = arrival_time
         else:
-            # For Skip-stop schemes, we need to check if the train should stop at the station
-            if not station.should_stop(train) or train.status == "INSERTION":
-                # Train should not stop, so we can schedule a departure immediately
-                departure_time = arrival_time
-            else:
-                # Train should stop, so we need to schedule a dwell event
+            if self.simulation.scheme_type == "REGULAR":
+                # Calculate departure time based on dwell time
                 departure_time = arrival_time + timedelta(seconds=self.simulation.dwell_time)
+            else:
+                # For Skip-stop schemes, we need to check if the train should stop at the station
+                if station.should_stop(train):
+                    # Train should stop, so we need to schedule a dwell event
+                    departure_time = arrival_time + timedelta(seconds=self.simulation.dwell_time)
+                else:
+                    departure_time = arrival_time
         
         train.current_station = station
         
@@ -1405,8 +1407,9 @@ class EventHandler:
         }
 
 class Simulation:
-    def __init__(self, csv_filename, config):
+    def __init__(self, simulation_name, csv_filename, config):
         self.simulation_id = None
+        self.simulation_name = simulation_name
         self.passenger_data_file = csv_filename
         self.config = config
         self.scheme_type = None
@@ -1458,7 +1461,7 @@ class Simulation:
         base_date = self.get_datetime_from_csv() if self.passenger_data_file else datetime.now()
         if base_date:
             self.start_time = datetime.combine(base_date, time(hour=5, minute=0))
-            self.end_time = datetime.combine(base_date, time(hour=23, minute=0))
+            self.end_time = datetime.combine(base_date, time(hour=22, minute=0))
         else:
             print("  [CSV:GET DATETIME] COULD NOT DETERMINE BASE DATE. ABORTING INITIALIZATION.")
             return None
@@ -1469,6 +1472,7 @@ class Simulation:
         try:
             simulation_entry = db.simulations.create(
                 data={
+                    "NAME": self.simulation_name,
                     "CONFIG": json.dumps(self.config),
                     "START_TIME": self.start_time,
                     "END_TIME": self.end_time,
@@ -1748,12 +1752,12 @@ class Simulation:
 
         # --- Data Processing --- #
         id_vars = []
-        if 'DateTime' in df.columns:
-            id_vars.append('DateTime')
+        if 'DATETIME' in df.columns:
+            id_vars.append('DATETIME')
         od_columns = [col for col in df.columns if ',' in col]
 
         if not id_vars:
-            print("  [CSV:READ] 'DateTime' COLUMN NOT FOUND IN CSV. CANNOT PROCESS PASSENGERS.")
+            print("  [CSV:READ] 'DATETIME' COLUMN NOT FOUND IN CSV. CANNOT PROCESS PASSENGERS.")
             return
         if not od_columns:
             print("  [CSV:READ] NO OD PAIR COLUMNS (e.g., '1,2') FOUND IN CSV. CANNOT PROCESS PASSENGERS.")
@@ -2257,15 +2261,15 @@ class Simulation:
                 print(f"Warning: CSV file '{file_path}' appears to be empty or has no data rows.")
                 return None
 
-            # Check if 'DateTime' column exists
-            if 'DateTime' not in df.columns:
-                print(f"Error: 'DateTime' column not found in '{file_path}'.")
+            # Check if 'DATETIME' column exists
+            if 'DATETIME' not in df.columns:
+                print(f"Error: 'DATETIME' column not found in '{file_path}'.")
                 return None
 
             datetime_str = df.iloc[0]['DATETIME']
 
             if pd.isna(datetime_str):
-                print(f"Error: First row of 'DateTime' column in '{file_path}' is empty.")
+                print(f"Error: First row of 'DATETIME' column in '{file_path}' is empty.")
                 return None
 
             try:
@@ -2275,17 +2279,17 @@ class Simulation:
                 base_date = datetime.combine(parsed_datetime.date(), datetime.min.time())
                 return base_date
             except (ValueError, TypeError) as e:
-                print(f"Error: Could not parse date from DateTime value '{datetime_str}' in '{self.file_path}'. Error: {e}")
+                print(f"Error: Could not parse date from DATETIME value '{datetime_str}' in '{file_path}'. Error: {e}")
                 return None
 
         except FileNotFoundError:
-            print(f"Error: File not found at '{self.file_path}'.")
+            print(f"Error: File not found at '{file_path}'.")
             return None
         except pd.errors.EmptyDataError:
-            print(f"Error: CSV file '{self.file_path}' is empty.")
+            print(f"Error: CSV file '{file_path}' is empty.")
             return None
         except Exception as e:
-            print(f"An unexpected error occurred while reading date from '{self.file_path}': {e}")
+            print(f"An unexpected error occurred while reading date from '{file_path}': {e}")
             return None
         
         
@@ -2424,7 +2428,7 @@ if __name__ == "__main__":
     }
     
     #test_sim = Simulation("4-12-23-SAMPLE-minute-level.csv", sample_config)
-    test_sim = Simulation(None, sample_config)
+    test_sim = Simulation("TEST", None, sample_config)
 
     test_sim.run()
 
