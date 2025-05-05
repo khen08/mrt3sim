@@ -1523,19 +1523,8 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                   : THEME.train.northbound;
             }
           } else {
-            // Regular Scheme Color Logic
-            if (train.isStopped) {
-              if (train.direction === "NORTHBOUND") {
-                fillColor = TRAIN_COLOR_NB_STOPPED_REGULAR;
-              } else {
-                fillColor = TRAIN_COLOR_SB_STOPPED_REGULAR;
-              }
-            } else {
-              fillColorClass =
-                train.direction === "SOUTHBOUND"
-                  ? THEME.train.southbound
-                  : THEME.train.northbound;
-            }
+            // Regular Scheme Color Logic - UPDATED
+            fillColor = train.isStopped ? "#304D71" : "#0066CC"; // Always MRT Blue for regular scheme
           }
           // --- End Restore Fill Color Logic --- //
 
@@ -1915,8 +1904,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                   ></div>
                   {/* Use HTML text theme color */}
                   <span className={THEME.textHtmlPrimary}>
-                    Southbound{" "}
-                    {uiSelectedScheme === "REGULAR" ? "(In transit)" : ""}
+                    Southbound {uiSelectedScheme === "REGULAR"}
                   </span>
                 </div>
                 <div className="flex items-center">
@@ -1926,69 +1914,47 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                   ></div>
                   {/* Use HTML text theme color */}
                   <span className={THEME.textHtmlPrimary}>
-                    Northbound{" "}
-                    {uiSelectedScheme === "REGULAR" ? "(In transit)" : ""}
+                    Northbound {uiSelectedScheme === "REGULAR"}
                   </span>
                 </div>
               </div>
 
               {/* Regular Scheme Stopped Colors Legend */}
               {uiSelectedScheme === "REGULAR" && (
-                <div className="flex flex-col space-y-2">
-                  <div className="text-xs font-medium mb-1">
+                <div className="flex flex-col space-y-2 pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
+                  <div className="text-xs font-medium mb-2">
                     Regular Trains:
                   </div>
-                  {/* In Transit Section */}
-                  <div className="pl-2">
-                    <div className="text-xs mb-1 text-muted-foreground">
-                      In transit:
-                    </div>
-                    <div className="flex space-x-4">
-                      <div className="flex items-center">
-                        <div
-                          className={`w-5 h-5 mr-2 rounded-sm ${THEME.train.southbound}`}
-                          // Apply the theme class directly or use style if needed
-                        ></div>
-                        <span className={THEME.textHtmlPrimary}>
-                          Southbound
-                        </span>
-                      </div>
-                      <div className="flex items-center">
-                        <div
-                          className={`w-5 h-5 mr-2 rounded-sm ${THEME.train.northbound}`}
-                        ></div>
-                        <span className={THEME.textHtmlPrimary}>
-                          Northbound
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  {/* Stopped Section */}
-                  <div className="pl-2 mt-1">
-                    <div className="text-xs mb-1 text-muted-foreground">
-                      Stopped:
-                    </div>
-                    <div className="flex space-x-4">
-                      <div className="flex items-center">
-                        <div
-                          className="w-5 h-5 mr-2 border border-black dark:border-white rounded-sm"
-                          style={{
-                            backgroundColor: TRAIN_COLOR_SB_STOPPED_REGULAR,
-                          }}
-                        ></div>
-                        <span className={THEME.textHtmlPrimary}>
-                          Southbound
-                        </span>
+                  {/* Combined horizontal layout */}
+                  <div className="flex flex-row space-x-6">
+                    {/* In Transit Section */}
+                    <div>
+                      <div className="text-xs mb-1 text-muted-foreground">
+                        In transit:
                       </div>
                       <div className="flex items-center">
                         <div
                           className="w-5 h-5 mr-2 border border-black dark:border-white rounded-sm"
-                          style={{
-                            backgroundColor: TRAIN_COLOR_NB_STOPPED_REGULAR,
-                          }}
+                          style={{ backgroundColor: "#0066CC" }} // MRT Blue for both directions
                         ></div>
                         <span className={THEME.textHtmlPrimary}>
-                          Northbound
+                          All Trains
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Stopped Section */}
+                    <div className="ml-2">
+                      <div className="text-xs mb-1 text-muted-foreground">
+                        Stopped:
+                      </div>
+                      <div className="flex items-center">
+                        <div
+                          className="w-5 h-5 mr-2 border border-black dark:border-white rounded-sm"
+                          style={{ backgroundColor: "#304D71" }} // Darker blue for stopped
+                        ></div>
+                        <span className={THEME.textHtmlPrimary}>
+                          All Trains
                         </span>
                       </div>
                     </div>

@@ -25,6 +25,7 @@ import {
   IconInfoCircle,
   IconFile,
   IconReplace,
+  IconRotateClockwise,
 } from "@tabler/icons-react";
 import {
   Tooltip,
@@ -35,6 +36,9 @@ import {
 import { Switch } from "@/components/ui/switch";
 import React, { useRef } from "react";
 import { cn } from "@/lib/utils";
+import { useSimulationStore } from "@/store/simulationStore";
+import { useFileStore } from "@/store/fileStore";
+import { useAPIStore } from "@/store/apiStore";
 
 // Define SimulationSettings type locally (copied from page.tsx)
 interface SimulationSettings {
@@ -55,41 +59,54 @@ interface SimulationSettings {
 
 // Define interface for the simulation settings passed as props
 interface SimulationSettingsCardProps {
-  simulationSettings: SimulationSettings | null;
   isSimulating: boolean;
   isFullDayView: boolean;
-  onSettingChange: (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | string,
-    field?: string
-  ) => void;
-  onStationDistanceChange: (index: number, value: number) => void;
-  onStationSchemeChange: (index: number, value: "AB" | "A" | "B") => void;
-  onSkipStopToggle: (checked: boolean) => void;
-  loadedSimulationId: number | null;
   hasSimulationData: boolean;
-  simulatePassengers: boolean;
-  onSimulatePassengersToggle: (checked: boolean) => void;
   hasResults: boolean;
-  simulationInputFilename: string | null;
   handleFileSelect: (file: File | null, backendFilename: string | null) => void;
 }
 
 const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
-  simulationSettings,
   isSimulating,
   isFullDayView,
-  onSettingChange,
-  onStationDistanceChange,
-  onStationSchemeChange,
-  onSkipStopToggle,
-  loadedSimulationId,
   hasSimulationData,
-  simulatePassengers,
-  onSimulatePassengersToggle,
   hasResults,
-  simulationInputFilename,
   handleFileSelect,
 }: SimulationSettingsCardProps) => {
+  // Get state from Zustand store
+  const simulationSettings = useSimulationStore(
+    (state) => state.simulationSettings
+  );
+  const loadedSimulationId = useSimulationStore(
+    (state) => state.loadedSimulationId
+  );
+  const simulatePassengers = useSimulationStore(
+    (state) => state.simulatePassengers
+  );
+  const simulationInput = useSimulationStore((state) => state.simulationInput);
+  const nextRunFilename = useSimulationStore((state) => state.nextRunFilename);
+
+  // Get actions from Zustand store
+  const updateSimulationSetting = useSimulationStore(
+    (state) => state.updateSimulationSetting
+  );
+  const updateStationDistance = useSimulationStore(
+    (state) => state.updateStationDistance
+  );
+  const updateStationScheme = useSimulationStore(
+    (state) => state.updateStationScheme
+  );
+  const toggleSkipStop = useSimulationStore((state) => state.toggleSkipStop);
+  const setSimulatePassengers = useSimulationStore(
+    (state) => state.setSimulatePassengers
+  );
+  const setNextRunFilename = useSimulationStore(
+    (state) => state.setNextRunFilename
+  );
+
+  // Get upload status from fileStore
+  const uploadStatus = useFileStore((state) => state.uploadStatus);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!simulationSettings) {
@@ -97,8 +114,40 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
     return null;
   }
 
-  const { stations, ...trainSettings } = simulationSettings;
+  const { stations } = simulationSettings;
   const isSkipStop = simulationSettings.schemeType === "SKIP-STOP";
+
+  const handleSettingChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | string,
+    field?: string
+  ) => {
+    let name: string | undefined;
+    let value: any;
+
+    if (typeof e === "string" && field) {
+      name = field;
+      value = e;
+    } else if (typeof e === "object" && "target" in e) {
+      name = e.target.name;
+      value =
+        e.target.type === "number"
+          ? parseFloat(e.target.value) || 0
+          : e.target.value;
+      if (["dwellTime", "turnaroundTime", "maxCapacity"].includes(name)) {
+        value = parseInt(e.target.value, 10) || 0;
+      }
+    } else {
+      return;
+    }
+
+    if (name) {
+      updateSimulationSetting(name, value);
+    }
+  };
+
+  const handleSimulatePassengersToggle = (checked: boolean) => {
+    setSimulatePassengers(checked);
+  };
 
   return (
     <Card className="mb-4">
@@ -109,6 +158,32 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
             <IconSettings className="mr-2 inline-block h-5 w-5" />
             Simulation Settings
           </CardTitle>
+          {/* Add Reset Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              // Call fetchDefaultSettings and update current settings
+              useAPIStore
+                .getState()
+                .fetchDefaultSettings()
+                .then((defaults) => {
+                  if (defaults) {
+                    useSimulationStore
+                      .getState()
+                      .setSimulationSettings(defaults);
+                    useSimulationStore
+                      .getState()
+                      .setActiveSimulationSettings(defaults);
+                  }
+                });
+            }}
+            disabled={isSimulating}
+            className="text-xs"
+          >
+            <IconRotateClockwise size={14} className="mr-1" /> Reset to Default
+            Settings
+          </Button>
         </div>
         <CardDescription>
           Configure simulation parameters. Applied when "Run Simulation" is
@@ -128,7 +203,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
           <Checkbox
             id="simulatePassengers"
             checked={simulatePassengers}
-            onCheckedChange={onSimulatePassengersToggle}
+            onCheckedChange={handleSimulatePassengersToggle}
             disabled={isSimulating} // Disable while simulating
           />
           <label
@@ -159,7 +234,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
         {/* -- Inserted Selected File Info Card -- */}
         {hasResults &&
           simulatePassengers &&
-          simulationInputFilename !== null && (
+          simulationInput.filename !== null && (
             <Card className="border-blue-300 bg-blue-50 dark:bg-blue-950/50 p-3 mb-4">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2 overflow-hidden">
@@ -170,15 +245,17 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   <div className="flex flex-col overflow-hidden">
                     <span
                       className="text-sm font-medium text-blue-800 dark:text-blue-200"
-                      title={simulationInputFilename}
+                      title={simulationInput.filename}
                     >
                       Selected for next run:
                     </span>
                     <span className="text-xs font-medium text-blue-800 dark:text-blue-200 truncate">
-                      {simulationInputFilename}
+                      {simulationInput.filename}
                     </span>
                     <span className="text-xs text-blue-600 dark:text-blue-400">
-                      inherited from loaded simulation or previous selection
+                      {loadedSimulationId
+                        ? "Inherited from loaded simulation"
+                        : "From previous selection"}
                     </span>
                   </div>
                 </div>
@@ -189,10 +266,25 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     accept=".csv"
                     className="hidden"
                     ref={fileInputRef}
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (file) {
-                        handleFileSelect(file, file.name);
+                        // Use the uploadFile function from fileStore
+                        const result = await useFileStore
+                          .getState()
+                          .uploadFile(file);
+                        if (result.success && result.filename) {
+                          handleFileSelect(file, result.filename);
+                          useFileStore.getState().setUploadStatus({
+                            success: true,
+                            message: "File uploaded successfully",
+                          });
+                        } else {
+                          useFileStore.getState().setUploadStatus({
+                            success: false,
+                            message: result.error || "Upload failed",
+                          });
+                        }
                       }
                     }}
                   />
@@ -206,6 +298,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   </Button>
                 </div>
               </div>
+              {/* Show upload status if present */}
+              {uploadStatus && (
+                <div
+                  className={`mt-2 text-xs ${
+                    uploadStatus.success
+                      ? "text-green-600 dark:text-green-400"
+                      : "text-red-600 dark:text-red-400"
+                  }`}
+                >
+                  {uploadStatus.message}
+                </div>
+              )}
             </Card>
           )}
 
@@ -232,8 +336,8 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="1"
                     min="0"
-                    value={trainSettings.dwellTime}
-                    onChange={onSettingChange}
+                    value={simulationSettings.dwellTime}
+                    onChange={handleSettingChange}
                     className="pr-8 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
                   />
@@ -254,8 +358,8 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="1"
                     min="0"
-                    value={trainSettings.turnaroundTime}
-                    onChange={onSettingChange}
+                    value={simulationSettings.turnaroundTime}
+                    onChange={handleSettingChange}
                     className="pr-8 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
                   />
@@ -280,8 +384,8 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="0.01"
                     min="0"
-                    value={trainSettings.acceleration}
-                    onChange={onSettingChange}
+                    value={simulationSettings.acceleration}
+                    onChange={handleSettingChange}
                     className="pr-12 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
                   />
@@ -299,8 +403,8 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="0.01"
                     min="0"
-                    value={trainSettings.deceleration}
-                    onChange={onSettingChange}
+                    value={simulationSettings.deceleration}
+                    onChange={handleSettingChange}
                     className="pr-12 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
                   />
@@ -318,8 +422,8 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="1"
                     min="0"
-                    value={trainSettings.cruisingSpeed}
-                    onChange={onSettingChange}
+                    value={simulationSettings.cruisingSpeed}
+                    onChange={handleSettingChange}
                     className="pr-14 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
                   />
@@ -341,8 +445,8 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="1"
                     min="0"
-                    value={trainSettings.maxCapacity}
-                    onChange={onSettingChange}
+                    value={simulationSettings.maxCapacity}
+                    onChange={handleSettingChange}
                     className="pr-16 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
                   />
@@ -370,7 +474,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   id="useSkipStop"
                   checked={isSkipStop}
                   onCheckedChange={(checked: boolean) =>
-                    onSkipStopToggle(checked)
+                    toggleSkipStop(checked)
                   }
                   disabled={isSimulating}
                 />
@@ -415,7 +519,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                           disabled={!isSkipStop || isSimulating}
                           value={station.scheme || "AB"}
                           onValueChange={(value) =>
-                            onStationSchemeChange(
+                            updateStationScheme(
                               index,
                               value as "AB" | "A" | "B"
                             )
@@ -439,10 +543,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                           min="0"
                           value={station.distance}
                           onChange={(e) =>
-                            onStationDistanceChange(
-                              index,
-                              Number(e.target.value)
-                            )
+                            updateStationDistance(index, Number(e.target.value))
                           }
                           // Disable first station and if simulating
                           disabled={index === 0 || isSimulating}
