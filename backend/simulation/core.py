@@ -1419,7 +1419,6 @@ class Simulation:
         
         self.trains = []
         self.stations = []
-        self.scheme_pattern = config["schemePattern"]
 
         self.track_segments = []
         self.passenger_demand = []
@@ -1444,7 +1443,7 @@ class Simulation:
 
         self._initialize_stations(scheme_type)
         self._initialize_track_segments() # Track segments are the same for all schemes
-        self._initialize_trains(scheme_type)
+        self._initialize_trains()
         self._initialize_service_periods(scheme_type)
         
         if self.passenger_data_file:
@@ -1489,9 +1488,9 @@ class Simulation:
     def _initialize_stations(self, scheme_type):
         print("\n[INITIALIZING STATIONS]")
         self.stations.clear()
-        station_names = self.config["stationNames"]
+        station_names = [s["name"] for s in self.config["stations"]]
         num_stations = len(station_names)
-        station_types = self.scheme_pattern
+        station_types = [s["scheme"] for s in self.config["stations"]]
 
         for station_id, (station_name, station_type) in enumerate(zip(station_names, station_types), start=1):
             self.stations.append(
@@ -1527,8 +1526,9 @@ class Simulation:
 
     def _initialize_track_segments(self):
         print("\n[INITIALIZING TRACK SEGMENTS]")
-        station_distances = self.config['stationDistances']
-        station_count = len(self.config['stationNames'])
+        station_distances = [s["distance"] for s in self.config['stations']]
+        del station_distances[0]
+        station_count = len(self.config['stations'])
         self.track_segments = []
         
         # 1. Initialize Track Segments in Memory
@@ -1585,7 +1585,7 @@ class Simulation:
                 except Exception as db_error:
                     print(f"  [DB:CREATE TRACK SEGMENTS ENTRIES] FAILED TO BULK INSERT TRACK SEGMENTS: {db_error}")
 
-    def _initialize_trains(self, scheme_type):
+    def _initialize_trains(self):
         print("\n[INITIALIZING TRAINS & TRAIN_SPECS]")
         self.trains.clear()
         
@@ -2292,18 +2292,139 @@ class Simulation:
 if __name__ == "__main__":
     """ Method to run the simulation as a standalone script"""
     sample_config = {
-        'acceleration': 0.8, 
-        'deceleration': 0.8, 
-        'dwellTime': 60, 
-        'maxCapacity': 1182, 
-        'cruisingSpeed': 60, 
-        'passthroughSpeed': 20,
-        'turnaroundTime': 300, 
-        'stationNames': ['North Avenue', 'Quezon Avenue', 'GMA-Kamuning', 'Cubao', 'Santolan-Annapolis', 'Ortigas', 'Shaw Boulevard', 'Boni Avenue', 'Guadalupe', 'Buendia', 'Ayala', 'Magallanes', 'Taft Avenue'], 
-        'stationDistances': [1.2, 1.1, 1.8, 1.5, 1.4, 0.9, 1, 1.1, 1.3, 1, 1.2, 1.7],
-        'schemePattern': ['AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB']
+        "dwellTime": 60,
+        "turnaroundTime": 300,
+        "schemeType": "REGULAR",
+        "servicePeriods": [
+        {
+            "NAME": "INITIAL",
+            "START_HOUR": 5,
+            "TRAIN_COUNT": 13
+        },
+        {
+            "NAME": "AM PEAK",
+            "START_HOUR": 7,
+            "TRAIN_COUNT": 18
+        },
+        {
+            "NAME": "AM TRANSITION",
+            "START_HOUR": 9,
+            "TRAIN_COUNT": 16
+        },
+        {
+            "NAME": "BASE",
+            "START_HOUR": 10,
+            "TRAIN_COUNT": 14
+        },
+        {
+            "NAME": "PM TRANSITION",
+            "START_HOUR": 16,
+            "TRAIN_COUNT": 16
+        },
+        {
+            "NAME": "PM PEAK",
+            "START_HOUR": 17,
+            "TRAIN_COUNT": 18
+        },
+        {
+            "NAME": "SERVICE END TRANSITION",
+            "START_HOUR": 20,
+            "TRAIN_COUNT": 11
         }
-    test_sim = Simulation("4-12-23-SAMPLE-minute-level.csv", sample_config)
+        ],
+        "schemePattern": [
+        "AB",
+        "A",
+        "AB",
+        "B",
+        "AB",
+        "A",
+        "AB",
+        "B",
+        "AB",
+        "A",
+        "AB",
+        "B",
+        "AB"
+        ],
+        "stations": [
+        {
+            "distance": 0,
+            "name": "North Avenue",
+            "scheme": "AB"
+        },
+        {
+            "distance": 1.2,
+            "name": "Quezon Avenue",
+            "scheme": "A"
+        },
+        {
+            "distance": 1.1,
+            "name": "GMA-Kamuning",
+            "scheme": "AB"
+        },
+        {
+            "distance": 1.8,
+            "name": "Cubao",
+            "scheme": "B"
+        },
+        {
+            "distance": 1.5,
+            "name": "Santolan-Annapolis",
+            "scheme": "AB"
+        },
+        {
+            "distance": 1.4,
+            "name": "Ortigas",
+            "scheme": "A"
+        },
+        {
+            "distance": 0.9,
+            "name": "Shaw Boulevard",
+            "scheme": "AB"
+        },
+        {
+            "distance": 1,
+            "name": "Boni Avenue",
+            "scheme": "B"
+        },
+        {
+            "distance": 1.1,
+            "name": "Guadalupe",
+            "scheme": "AB"
+        },
+        {
+            "distance": 1.3,
+            "name": "Buendia",
+            "scheme": "A"
+        },
+        {
+            "distance": 1,
+            "name": "Ayala",
+            "scheme": "AB"
+        },
+        {
+            "distance": 1.2,
+            "name": "Magallanes",
+            "scheme": "B"
+        },
+        {
+            "distance": 1.7,
+            "name": "Taft Avenue",
+            "scheme": "AB"
+        }
+        ],
+        "trainSpecs": {
+        "acceleration": 0.8,
+        "cruisingSpeed": 60,
+        "deceleration": 0.8,
+        "maxCapacity": 1182,
+        "passthroughSpeed": 20
+        }
+    }
+    
+    #test_sim = Simulation("4-12-23-SAMPLE-minute-level.csv", sample_config)
+    test_sim = Simulation(None, sample_config)
 
     test_sim.run()
 

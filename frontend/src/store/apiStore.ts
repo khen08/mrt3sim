@@ -221,17 +221,15 @@ export const useAPIStore = create<APIState>((set, get) => ({
         body: JSON.stringify({
           filename: payloadFilename,
           config: {
-            ...otherSettings,
-            stationNames: stationNames,
-            stationDistances: stationDistances,
-            schemePattern:
-              simulationSettings.schemePattern ||
-              (simulationSettings.schemeType === "SKIP-STOP"
-                ? stationSchemes
-                : Array(stationNames.length).fill("AB")),
-            ...(simulationSettings.schemeType === "SKIP-STOP" && {
-              stationSchemes: stationSchemes,
-            }),
+            // Explicitly construct the config object matching backend structure
+            dwellTime: simulationSettings.dwellTime,
+            turnaroundTime: simulationSettings.turnaroundTime,
+            schemeType: simulationSettings.schemeType,
+            servicePeriods: simulationSettings.servicePeriods,
+            schemePattern: simulationSettings.schemePattern, // Pass the pattern directly
+            stations: simulationSettings.stations, // Pass the full array of station objects
+            trainSpecs: simulationSettings.trainSpecs,
+            // Remove stationNames, stationDistances, and conditional stationSchemes
           },
         }),
       });

@@ -50,9 +50,9 @@ def upload_csv():
                     return jsonify({"error": f"UPLOAD FOLDER MISSING AND COULD NOT BE CREATED: {UPLOAD_FOLDER}"}), 500
             
             # --- Generate timestamped filename --- 
-            timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-            _, extension = os.path.splitext(file.filename)
-            new_filename = f"{timestamp_str}_passenger_flow{extension if extension else '.csv'}" # Ensure .csv if no ext
+            timestamp_str = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+            secure_name = secure_filename(file.filename)
+            new_filename = f"{timestamp_str}_{secure_name}"
             save_path = os.path.join(UPLOAD_FOLDER, new_filename)
 
             print(f"[ROUTE:/UPLOAD_CSV] GENERATED FILENAME: {new_filename}")
@@ -331,20 +331,6 @@ def delete_bulk_simulations():
         print(traceback.format_exc())
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
-# Utility function to format time/datetime objects safely
-def format_time(time_obj, format_string='%H:%M:%S'):
-    """Safely formats a datetime/time object to string, handling None or non-datetime types."""
-    if isinstance(time_obj, (datetime.datetime, datetime.time)):
-        try:
-            return time_obj.strftime(format_string)
-        except ValueError:
-            # Fallback if strftime fails
-            return str(time_obj)
-    elif isinstance(time_obj, str): # If it's already a string, return it
-        return time_obj
-    # Return None or an empty string if it's not a suitable time object or None
-    return None # Or return "" if preferred
-
 # Route to get passenger demand data for a specific simulation
 @main_bp.route('/simulations/<int:simulation_id>/passenger_demand', methods=['GET'])
 def get_passenger_demand(simulation_id):
@@ -419,5 +405,21 @@ def get_simulation_config(simulation_id):
         import traceback
         print(f"[ROUTE:/SIMULATIONS/<id>/CONFIG] FAILED TO FETCH CONFIG: {e}\n{traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
+
+# --- Helper Functions ---
+
+# Utility function to format time/datetime objects safely
+def format_time(time_obj, format_string='%H:%M:%S'):
+    """Safely formats a datetime/time object to string, handling None or non-datetime types."""
+    if isinstance(time_obj, (datetime.datetime, datetime.time)):
+        try:
+            return time_obj.strftime(format_string)
+        except ValueError:
+            # Fallback if strftime fails
+            return str(time_obj)
+    elif isinstance(time_obj, str): # If it's already a string, return it
+        return time_obj
+    # Return None or an empty string if it's not a suitable time object or None
+    return None # Or return "" if preferred
 
 # Note: The app is run from backend/app.py, not here.
