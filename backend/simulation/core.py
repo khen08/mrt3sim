@@ -1458,7 +1458,7 @@ class Simulation:
         base_date = self.get_datetime_from_csv() if self.passenger_data_file else datetime.now()
         if base_date:
             self.start_time = datetime.combine(base_date, time(hour=5, minute=0))
-            self.end_time = datetime.combine(base_date, time(hour=22, minute=0))
+            self.end_time = datetime.combine(base_date, time(hour=23, minute=0))
         else:
             print("  [CSV:GET DATETIME] COULD NOT DETERMINE BASE DATE. ABORTING INITIALIZATION.")
             return None
@@ -1765,7 +1765,7 @@ class Simulation:
             var_name='OD_PAIR',
             value_name='PASSENGER_COUNT'
         )
-        melted_df['ARRIVAL_TIME_AT_ORIGIN'] = pd.to_datetime(melted_df['DateTime'])
+        melted_df['ARRIVAL_TIME_AT_ORIGIN'] = pd.to_datetime(melted_df['DATETIME'])
         melted_df = melted_df.dropna(subset=['PASSENGER_COUNT'])
         melted_df = melted_df[melted_df['PASSENGER_COUNT'] > 0]
         melted_df['PASSENGER_COUNT'] = melted_df['PASSENGER_COUNT'].astype(int)
@@ -2262,7 +2262,7 @@ class Simulation:
                 print(f"Error: 'DateTime' column not found in '{file_path}'.")
                 return None
 
-            datetime_str = df.iloc[0]['DateTime']
+            datetime_str = df.iloc[0]['DATETIME']
 
             if pd.isna(datetime_str):
                 print(f"Error: First row of 'DateTime' column in '{file_path}' is empty.")
