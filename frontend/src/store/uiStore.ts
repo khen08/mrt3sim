@@ -8,6 +8,7 @@ interface UIState {
   // Modals
   isHistoryModalOpen: boolean;
   isClearConfirmOpen: boolean;
+  isDataViewerModalOpen: boolean;
 
   // Selection
   selectedStation: number | null;
@@ -23,6 +24,7 @@ interface UIState {
   setSidebarCollapsed: (collapsed: boolean) => void;
   setHistoryModalOpen: (open: boolean) => void;
   setClearConfirmOpen: (open: boolean) => void;
+  setDataViewerModalOpen: (open: boolean) => void;
   setSelectedStation: (station: number | null) => void;
   setSelectedTrainId: (id: number | null) => void;
   setSelectedTrainDetails: (details: any | null) => void;
@@ -42,6 +44,7 @@ export const useUIStore = create<UIState>((set) => ({
   isSidebarCollapsed: false,
   isHistoryModalOpen: false,
   isClearConfirmOpen: false,
+  isDataViewerModalOpen: false,
   selectedStation: null,
   selectedTrainId: null,
   selectedTrainDetails: null,
@@ -53,6 +56,7 @@ export const useUIStore = create<UIState>((set) => ({
   setSidebarCollapsed: (collapsed) => set({ isSidebarCollapsed: collapsed }),
   setHistoryModalOpen: (open) => set({ isHistoryModalOpen: open }),
   setClearConfirmOpen: (open) => set({ isClearConfirmOpen: open }),
+  setDataViewerModalOpen: (open) => set({ isDataViewerModalOpen: open }),
   setSelectedStation: (station) => set({ selectedStation: station }),
   setSelectedTrainId: (id) => set({ selectedTrainId: id }),
   setSelectedTrainDetails: (details) => set({ selectedTrainDetails: details }),
@@ -87,6 +91,7 @@ export const useUIStore = create<UIState>((set) => ({
       selectedTrainDetails: null,
       isHistoryModalOpen: false,
       isClearConfirmOpen: false,
+      isDataViewerModalOpen: false,
     }),
 
   // Combined actions

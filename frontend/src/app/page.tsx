@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, ReactNode } from "react";
+import { useEffect, useRef, ReactNode, useState } from "react";
 import {
   Card,
   CardContent,
@@ -27,6 +27,7 @@ import {
   IconClockHour4,
   IconFile,
   IconX,
+  IconTable,
 } from "@tabler/icons-react";
 import CsvUpload from "@/components/CsvUpload";
 import MrtMap, { MrtMapHandle } from "@/components/MrtMap";
@@ -189,6 +190,9 @@ export default function Home() {
   const setSidebarCollapsed = useUIStore((state) => state.setSidebarCollapsed);
   const setHistoryModalOpen = useUIStore((state) => state.setHistoryModalOpen);
   const setClearConfirmOpen = useUIStore((state) => state.setClearConfirmOpen);
+  const setDataViewerModalOpen = useUIStore(
+    (state) => state.setDataViewerModalOpen
+  );
   const selectStation = useUIStore((state) => state.selectStation);
   const selectTrain = useUIStore((state) => state.selectTrain);
   const setHasFetchedInitialHistory = useUIStore(
@@ -915,7 +919,10 @@ export default function Home() {
         isSimulating={isSimulating || isMapLoading}
       />
 
-      <DataViewerModal />
+      <DataViewerModal
+        isOpen={useUIStore((state) => state.isDataViewerModalOpen)}
+        onClose={() => useUIStore.getState().setDataViewerModalOpen(false)}
+      />
     </main>
   );
 }

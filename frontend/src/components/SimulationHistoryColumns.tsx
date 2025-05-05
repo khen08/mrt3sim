@@ -192,7 +192,7 @@ export const columns = (
       return (
         <div className="w-[80px] text-center">
           <Button
-            variant={isCurrentlyLoaded ? "secondary" : "outline"}
+            variant={isCurrentlyLoaded ? "secondary" : "cta"}
             size="sm"
             onClick={() => onLoadSimulation(simulation.SIMULATION_ID)}
             disabled={isCurrentlyLoaded || isSimulating}

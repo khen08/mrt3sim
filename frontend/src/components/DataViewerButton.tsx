@@ -1,20 +1,38 @@
 import { memo } from "react";
 import { Button } from "@/components/ui/button";
 import { IconTable } from "@tabler/icons-react";
-import { useModalStore } from "@/store/modalStore";
+import { useUIStore } from "@/store/uiStore";
+import { useSimulationStore } from "@/store/simulationStore";
+import { cn } from "@/lib/utils";
 
 function DataViewerButtonComponent() {
-  // Only get what's needed to avoid unnecessary re-renders
-  const openModal = useModalStore((state) => state.openModal);
+  // Get the setter from the UI store
+  const setDataViewerModalOpen = useUIStore(
+    (state) => state.setDataViewerModalOpen
+  );
+  const loadedSimulationId = useSimulationStore(
+    (state) => state.loadedSimulationId
+  );
+  const hasResults = !!useSimulationStore((state) => state.simulationResult)
+    ?.length;
+
+  // Check if there's data to view
+  const hasData = hasResults || loadedSimulationId !== null;
+
+  // Don't render anything if no data is available
+  if (!hasData) {
+    return null;
+  }
 
   return (
     <Button
       variant="outline"
-      className="w-full justify-start"
-      onClick={openModal}
+      className="w-full justify-start text-left"
+      onClick={() => setDataViewerModalOpen(true)}
+      title="View detailed simulation data"
     >
       <IconTable className="mr-2 h-4 w-4" />
-      <span>Data Viewer</span>
+      View Simulation Data
     </Button>
   );
 }

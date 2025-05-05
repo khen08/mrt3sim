@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useModalStore, TabId } from "@/store/modalStore";
+import { TabId } from "@/store/modalStore";
 import { useSimulationStore } from "@/store/simulationStore";
 import { DataTable } from "@/components/DataTable";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -277,72 +277,35 @@ const metricsColumns = [
   },
 ];
 
-export function DataViewerModal() {
-  // Use selective state from Zustand stores with selectors
-  const isModalOpen = useModalStore((state) => state.isModalOpen);
-  const closeModal = useModalStore((state) => state.closeModal);
-  const activeTabId = useModalStore((state) => state.activeTabId);
-  const setActiveTab = useModalStore((state) => state.setActiveTab);
-  const searchQuery = useModalStore((state) => state.searchQuery);
-  const handleSearchChange = useModalStore((state) => state.handleSearchChange);
+// Props interface for DataViewerModal
+interface DataViewerModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
 
-  // Current pagination
-  const currentPage = useModalStore(
-    (state) => state.pagination[state.activeTabId].currentPage
-  );
-  const pageSize = useModalStore(
-    (state) => state.pagination[state.activeTabId].pageSize
-  );
-  const totalItems = useModalStore(
-    (state) => state.pagination[state.activeTabId].totalItems
-  );
+export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
+  // Local state management instead of using Zustand
+  const [activeTab, setActiveTab] = useState<TabId>("timetable");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [filteredData, setFilteredData] = useState<any[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
+  const [displayData, setDisplayData] = useState<any[]>([]);
 
-  // Loading state
-  const isLoading = useModalStore(
-    (state) => state.loading[state.activeTabId].isLoading
-  );
-  const error = useModalStore(
-    (state) => state.loading[state.activeTabId].error
-  );
+  // Local table state
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
-  // Data access
-  const cachedData = useModalStore((state) => state.cachedData);
-
-  // Actions
-  const setPage = useModalStore((state) => state.setPage);
-  const setPageSize = useModalStore((state) => state.setPageSize);
-  const setTotalItems = useModalStore((state) => state.setTotalItems);
-  const setLoading = useModalStore((state) => state.setLoading);
-  const setError = useModalStore((state) => state.setError);
-  const setCachedData = useModalStore((state) => state.setCachedData);
-
-  // Simulation data
+  // Get simulation data from store
   const simulationResult = useSimulationStore(
     (state) => state.simulationResult
   );
   const loadedSimulationId = useSimulationStore(
     (state) => state.loadedSimulationId
   );
-
-  // Local state for table
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-
-  // Memoized table columns
-  const memoizedTimetableColumns = useMemo(() => timetableColumns, []);
-
-  // Calculate total pages based on items and page size
-  const totalPages = Math.ceil(totalItems / pageSize);
-
-  // Reset selection and update total items when tab changes or modal opens
-  useEffect(() => {
-    setRowSelection({});
-
-    if (isModalOpen && activeTabId === "timetable" && simulationResult) {
-      // Set total items for timetable tab
-      setTotalItems("timetable", simulationResult.length);
-    }
-  }, [activeTabId, isModalOpen, simulationResult, setTotalItems]);
 
   // Check if we have data to display
   const hasData = useMemo(
@@ -353,103 +316,110 @@ export function DataViewerModal() {
     [loadedSimulationId, simulationResult]
   );
 
-  // Get the current tab data with memoization
-  const getCurrentTabData = useMemo(() => {
-    if (!hasData || isLoading) return [];
-    return cachedData[activeTabId][currentPage] || [];
-  }, [hasData, isLoading, cachedData, activeTabId, currentPage]);
+  // Total pages calculation
+  const totalPages = useMemo(
+    () => Math.ceil(totalItems / pageSize),
+    [totalItems, pageSize]
+  );
 
-  // Add a stable effect handler for loading data
-  const loadTabData = useCallback(() => {
-    // Skip if no data or already loading
-    if (!hasData || isLoading) return;
+  // Handle tab changes
+  const handleTabChange = useCallback((value: string) => {
+    setActiveTab(value as TabId);
+    setCurrentPage(1);
+    setRowSelection({});
+  }, []);
 
-    // Skip if data is already cached
-    if (cachedData[activeTabId][currentPage]?.length > 0) return;
+  // Handle search input changes
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchQuery(value);
+    setCurrentPage(1);
+  }, []);
 
-    // Set loading state
-    setLoading(activeTabId, true);
+  // Filter and paginate data when dependencies change
+  useEffect(() => {
+    if (!hasData || !simulationResult) {
+      setFilteredData([]);
+      setDisplayData([]);
+      setTotalItems(0);
+      return;
+    }
+
+    setIsLoading(true);
 
     try {
-      let filteredData = [];
-      // Get the base data for the current tab
-      switch (activeTabId) {
-        case "timetable":
-          filteredData = simulationResult || [];
-          break;
-        case "passengerDemand":
-        case "metrics":
-          filteredData = []; // Replace with actual data for other tabs
-          break;
-        default:
-          filteredData = [];
+      let dataToFilter: any[] = [];
+
+      // Get data based on active tab
+      if (activeTab === "timetable") {
+        dataToFilter = simulationResult || [];
+      } else if (activeTab === "passengerDemand") {
+        dataToFilter = []; // Would be replaced with actual passenger demand data
+      } else if (activeTab === "metrics") {
+        dataToFilter = []; // Would be replaced with actual metrics data
       }
 
-      // Apply search filtering
+      // Apply search filter
+      let filtered = dataToFilter;
       if (searchQuery.trim()) {
-        filteredData = filteredData.filter((row) => {
+        const lowercaseQuery = searchQuery.toLowerCase();
+        filtered = dataToFilter.filter((row) => {
           return Object.values(row).some((value) => {
             if (value === null || value === undefined) return false;
-            return String(value)
-              .toLowerCase()
-              .includes(searchQuery.toLowerCase());
+            return String(value).toLowerCase().includes(lowercaseQuery);
           });
         });
       }
 
+      // Update filtered data and total count
+      setFilteredData(filtered);
+      setTotalItems(filtered.length);
+
       // Apply pagination
       const startIndex = (currentPage - 1) * pageSize;
-      const endIndex = Math.min(startIndex + pageSize, filteredData.length);
-      const paginatedData = filteredData.slice(startIndex, endIndex);
-
-      // Update state after processing
-      setCachedData(activeTabId, currentPage, paginatedData);
-      setTotalItems(activeTabId, filteredData.length);
-      setLoading(activeTabId, false);
+      const endIndex = Math.min(startIndex + pageSize, filtered.length);
+      setDisplayData(filtered.slice(startIndex, endIndex));
     } catch (err) {
-      setError(activeTabId, String(err));
-      setLoading(activeTabId, false);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLoading(false);
     }
   }, [
     hasData,
-    activeTabId,
+    simulationResult,
+    activeTab,
+    searchQuery,
     currentPage,
     pageSize,
-    searchQuery,
-    simulationResult,
-    cachedData,
-    isLoading,
-    setLoading,
-    setCachedData,
-    setTotalItems,
-    setError,
   ]);
 
-  // Effect to trigger data loading
+  // Reset component when simulation result changes
   useEffect(() => {
-    loadTabData();
-  }, [loadTabData]);
+    if (isOpen && simulationResult) {
+      setActiveTab("timetable");
+      setCurrentPage(1);
+      setSearchQuery("");
+      setRowSelection({});
+    }
+  }, [isOpen, simulationResult]);
 
-  // Callback for changing page - memoized
+  // Handle page change
   const handlePageChange = useCallback(
     (newPage: number) => {
       if (newPage >= 1 && newPage <= totalPages) {
-        setPage(activeTabId, newPage);
+        setCurrentPage(newPage);
       }
     },
-    [activeTabId, totalPages, setPage]
+    [totalPages]
   );
 
-  // Callback for changing page size - memoized
-  const handlePageSizeChange = useCallback(
-    (newSize: number) => {
-      setPageSize(activeTabId, newSize);
-    },
-    [activeTabId, setPageSize]
-  );
+  // Handle page size change
+  const handlePageSizeChange = useCallback((newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(1);
+  }, []);
 
-  // Render loading skeleton for table
-  const renderSkeleton = useCallback(
+  // Memoize components to prevent unnecessary re-renders
+  const renderSkeleton = useMemo(
     () => (
       <div className="space-y-2">
         {Array.from({ length: pageSize > 10 ? 10 : pageSize }).map((_, i) => (
@@ -460,32 +430,24 @@ export function DataViewerModal() {
     [pageSize]
   );
 
-  // Render pagination controls
-  const renderPagination = useCallback(
+  const renderPagination = useMemo(
     () => (
       <div className="flex items-center justify-between py-4">
         <div className="flex items-center space-x-2">
-          <p className="text-sm text-muted-foreground">
-            Showing{" "}
-            {getCurrentTabData.length > 0
-              ? `${(currentPage - 1) * pageSize + 1}-${Math.min(
-                  currentPage * pageSize,
-                  totalItems
-                )}`
-              : "0"}{" "}
-            of {totalItems} items
-          </p>
+          <p className="text-sm text-muted-foreground">Rows per page:</p>
           <Select
-            value={String(pageSize)}
+            value={pageSize.toString()}
             onValueChange={(value) => handlePageSizeChange(Number(value))}
           >
-            <SelectTrigger className="max-w-fit">
-              <SelectValue placeholder="Select size" />
+            <SelectTrigger className="h-8 w-[70px]">
+              <SelectValue placeholder={pageSize.toString()} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="25">25 per page</SelectItem>
-              <SelectItem value="50">50 per page</SelectItem>
-              <SelectItem value="100">100 per page</SelectItem>
+              {[10, 25, 50, 100].map((size) => (
+                <SelectItem key={size} value={size.toString()}>
+                  {size}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -493,26 +455,35 @@ export function DataViewerModal() {
         <div className="flex items-center space-x-2">
           <Button
             variant="outline"
-            size="sm"
+            size="icon"
             onClick={() => handlePageChange(currentPage - 1)}
-            disabled={currentPage === 1 || isLoading}
+            disabled={currentPage <= 1 || isLoading}
           >
             <IconChevronLeft className="h-4 w-4" />
-            <span className="sr-only">Previous Page</span>
           </Button>
 
-          <div className="text-sm">
-            Page {currentPage} of {totalPages || 1}
+          <div className="flex items-center gap-1">
+            <span className="text-sm">
+              {currentPage} of {totalPages || 1}
+            </span>
+            {isLoading ? (
+              <span className="ml-2">
+                <Skeleton className="h-4 w-4 rounded-full" />
+              </span>
+            ) : (
+              <span className="text-sm text-muted-foreground ml-2">
+                ({totalItems} items)
+              </span>
+            )}
           </div>
 
           <Button
             variant="outline"
-            size="sm"
+            size="icon"
             onClick={() => handlePageChange(currentPage + 1)}
             disabled={currentPage >= totalPages || isLoading}
           >
             <IconChevronRight className="h-4 w-4" />
-            <span className="sr-only">Next Page</span>
           </Button>
         </div>
       </div>
@@ -522,20 +493,19 @@ export function DataViewerModal() {
       pageSize,
       totalItems,
       totalPages,
-      getCurrentTabData.length,
       handlePageChange,
       handlePageSizeChange,
       isLoading,
     ]
   );
 
+  // Memoized column definitions
+  const memoizedTimetableColumns = useMemo(() => timetableColumns, []);
+  const passengerDemandColumnsMemo = useMemo(() => passengerDemandColumns, []);
+  const metricsColumnsMemo = useMemo(() => metricsColumns, []);
+
   return (
-    <Dialog
-      open={isModalOpen}
-      onOpenChange={(open) => {
-        if (!open) closeModal();
-      }}
-    >
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="!max-w-fit w-[90vw] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Simulation Data Viewer</DialogTitle>
@@ -554,8 +524,8 @@ export function DataViewerModal() {
         ) : (
           <Tabs
             defaultValue="timetable"
-            value={activeTabId}
-            onValueChange={(value) => setActiveTab(value as TabId)}
+            value={activeTab}
+            onValueChange={handleTabChange}
             className="w-full"
           >
             <TabsList className="grid w-full grid-cols-3">
@@ -595,13 +565,12 @@ export function DataViewerModal() {
               className="pt-2 flex-1 overflow-hidden flex flex-col"
             >
               {isLoading ? (
-                renderSkeleton()
+                renderSkeleton
               ) : error ? (
                 <div className="py-8 text-center text-red-500">
                   Error loading data: {error}
                 </div>
-              ) : getCurrentTabData.length === 0 &&
-                searchQuery.trim() !== "" ? (
+              ) : displayData.length === 0 && searchQuery.trim() !== "" ? (
                 <div className="py-8 text-center text-muted-foreground">
                   No results found for "{searchQuery}"
                 </div>
@@ -609,14 +578,14 @@ export function DataViewerModal() {
                 <div className="flex-1 flex flex-col">
                   <DataTable
                     columns={memoizedTimetableColumns}
-                    data={getCurrentTabData}
+                    data={displayData}
                     sorting={sorting}
                     setSorting={setSorting}
                     rowSelection={rowSelection}
                     setRowSelection={setRowSelection}
                     stickyHeader={true}
                   />
-                  {renderPagination()}
+                  {renderPagination}
                 </div>
               )}
             </TabsContent>
@@ -626,8 +595,8 @@ export function DataViewerModal() {
               className="pt-2 flex-1 flex flex-col"
             >
               <DataTable
-                columns={passengerDemandColumns}
-                data={[]} // This would be replaced with actual passenger demand data
+                columns={passengerDemandColumnsMemo}
+                data={[]} // Empty data for now
                 sorting={sorting}
                 setSorting={setSorting}
                 rowSelection={rowSelection}
@@ -638,8 +607,8 @@ export function DataViewerModal() {
 
             <TabsContent value="metrics" className="pt-2 flex-1 flex flex-col">
               <DataTable
-                columns={metricsColumns}
-                data={[]} // This would be replaced with actual metrics data
+                columns={metricsColumnsMemo}
+                data={[]} // Empty data for now
                 sorting={sorting}
                 setSorting={setSorting}
                 rowSelection={rowSelection}

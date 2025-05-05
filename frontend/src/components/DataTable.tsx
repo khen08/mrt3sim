@@ -20,10 +20,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { useActiveTabId, useCurrentTabData } from "@/store/modalStore";
+
+// Empty array constant to avoid creating new empty array references
+const EMPTY_ARRAY: any[] = [];
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
-  data: TData[];
+  data?: TData[];
   sorting: SortingState;
   setSorting: React.Dispatch<React.SetStateAction<SortingState>>;
   rowSelection: RowSelectionState;
@@ -40,8 +44,19 @@ export function DataTable<TData, TValue>({
   setRowSelection,
   stickyHeader = false,
 }: DataTableProps<TData, TValue>) {
+  // If data is provided via props, use it, otherwise use data from Zustand store
+  const storeData = useCurrentTabData();
+  const activeTabId = useActiveTabId();
+
+  // Use provided data or fall back to store data
+  const tableData = React.useMemo(() => {
+    if (data) return data as TData[];
+    return (storeData || EMPTY_ARRAY) as TData[];
+  }, [data, storeData]);
+
+  // Call useReactTable at the top level
   const table = useReactTable({
-    data,
+    data: tableData,
     columns,
     state: {
       sorting,
@@ -61,14 +76,17 @@ export function DataTable<TData, TValue>({
           position: sticky;
           top: 0;
           z-index: 10;
-          background-color: hsl(var(--background));
           box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
         }
       `}</style>
 
-      <div className="max-h-[400px] overflow-auto">
+      <div className="max-h-[400px] relative overflow-x-hidden">
         <Table>
-          <TableHeader className={stickyHeader ? "sticky-header" : ""}>
+          <TableHeader
+            className={
+              stickyHeader ? "sticky-header bg-white dark:bg-black" : ""
+            }
+          >
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (

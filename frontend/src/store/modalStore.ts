@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { useAPIStore } from "./apiStore";
 
 export type TabId = "timetable" | "passengerDemand" | "metrics";
 
@@ -54,10 +53,10 @@ interface ModalState {
 
 const DEFAULT_PAGE_SIZE = 50;
 
-export const useModalStore = create<ModalState>((set) => ({
+const initialState = {
   // Initial state
   isModalOpen: false,
-  activeTabId: "timetable",
+  activeTabId: "timetable" as TabId,
   searchQuery: "",
 
   // Initialize pagination state for each tab
@@ -84,11 +83,19 @@ export const useModalStore = create<ModalState>((set) => ({
     passengerDemand: {},
     metrics: {},
   },
+};
+
+// Create the store
+export const useModalStore = create<ModalState>((set) => ({
+  ...initialState,
 
   // Actions for modal state
   openModal: () => set({ isModalOpen: true }),
   closeModal: () => set({ isModalOpen: false }),
+
+  // Set active tab
   setActiveTab: (tabId) => set({ activeTabId: tabId }),
+
   setSearchQuery: (query) => set({ searchQuery: query }),
 
   // Actions for pagination
@@ -182,7 +189,7 @@ export const useModalStore = create<ModalState>((set) => ({
       }
     }),
 
-  // Add a new combined action to handle search state changes in one update
+  // Optimized search handler in one atomic update
   handleSearchChange: (query: string) =>
     set((state) => {
       // First create a new cached data object with empty tabs
@@ -205,3 +212,47 @@ export const useModalStore = create<ModalState>((set) => ({
       };
     }),
 }));
+
+// Keep a constant empty array to prevent new references
+const EMPTY_ARRAY: any[] = [];
+
+// Primitive selectors
+export const useModalIsOpen = () => useModalStore((state) => state.isModalOpen);
+export const useActiveTabId = () => useModalStore((state) => state.activeTabId);
+export const useSearchQuery = () => useModalStore((state) => state.searchQuery);
+
+// Memoized object selectors with custom equality by returning the same object references
+export const useCurrentPagination = () =>
+  useModalStore((state) => state.pagination[state.activeTabId]);
+
+export const useCurrentLoading = () =>
+  useModalStore((state) => state.loading[state.activeTabId]);
+
+// Optimize the selector to avoid creating new array references
+export const useCurrentTabData = () =>
+  useModalStore((state) => {
+    const activeTabId = state.activeTabId;
+    const currentPage = state.pagination[activeTabId].currentPage;
+    const data = state.cachedData[activeTabId][currentPage];
+    return data || EMPTY_ARRAY;
+  });
+
+// Export action functions directly to avoid calling getState in components
+export const openModal = () => useModalStore.getState().openModal();
+export const closeModal = () => useModalStore.getState().closeModal();
+export const setActiveTab = (tabId: TabId) =>
+  useModalStore.getState().setActiveTab(tabId);
+export const handleSearchChange = (query: string) =>
+  useModalStore.getState().handleSearchChange(query);
+export const setPage = (tabId: TabId, page: number) =>
+  useModalStore.getState().setPage(tabId, page);
+export const setPageSize = (tabId: TabId, size: number) =>
+  useModalStore.getState().setPageSize(tabId, size);
+export const setTotalItems = (tabId: TabId, total: number) =>
+  useModalStore.getState().setTotalItems(tabId, total);
+export const setLoading = (tabId: TabId, isLoading: boolean) =>
+  useModalStore.getState().setLoading(tabId, isLoading);
+export const setError = (tabId: TabId, error: string | null) =>
+  useModalStore.getState().setError(tabId, error);
+export const setCachedData = (tabId: TabId, page: number, data: any[]) =>
+  useModalStore.getState().setCachedData(tabId, page, data);
