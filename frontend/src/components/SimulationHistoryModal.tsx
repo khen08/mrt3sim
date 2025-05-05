@@ -69,16 +69,18 @@ export function SimulationHistoryModal({
   // Function to handle the delete API call - Refactored to use apiStore
   const handleDeleteSelectedSimulations = async () => {
     const selectedIndices = Object.keys(rowSelection);
-    const selectedIds = selectedIndices.map((index) => {
-      const simIndex = parseInt(index, 10);
-      // Add boundary check
-      if (simIndex >= 0 && simIndex < simulations.length) {
-        return simulations[simIndex].SIMULATION_ID;
-      } else {
-        console.error("Invalid index found in rowSelection:", index);
-        return null; // Or handle error appropriately
-      }
-    }).filter((id): id is number => id !== null); // Filter out nulls and type guard
+    const selectedIds = selectedIndices
+      .map((index) => {
+        const simIndex = parseInt(index, 10);
+        // Add boundary check
+        if (simIndex >= 0 && simIndex < simulations.length) {
+          return simulations[simIndex].SIMULATION_ID;
+        } else {
+          console.error("Invalid index found in rowSelection:", index);
+          return null; // Or handle error appropriately
+        }
+      })
+      .filter((id): id is number => id !== null); // Filter out nulls and type guard
 
     if (selectedIds.length === 0) {
       toast({

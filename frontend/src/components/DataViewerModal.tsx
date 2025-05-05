@@ -278,29 +278,48 @@ const metricsColumns = [
 ];
 
 export function DataViewerModal() {
-  // Get state from Zustand stores
-  const {
-    isModalOpen,
-    closeModal,
-    activeTabId,
-    setActiveTab,
-    searchQuery,
-    setSearchQuery,
-    pagination,
-    setPage,
-    setPageSize,
-    setTotalItems,
-    loading,
-    setLoading,
-    setError,
-    cachedData,
-    setCachedData,
-  } = useModalStore();
+  // Use selective state from Zustand stores with selectors
+  const isModalOpen = useModalStore((state) => state.isModalOpen);
+  const closeModal = useModalStore((state) => state.closeModal);
+  const activeTabId = useModalStore((state) => state.activeTabId);
+  const setActiveTab = useModalStore((state) => state.setActiveTab);
+  const searchQuery = useModalStore((state) => state.searchQuery);
+  const handleSearchChange = useModalStore((state) => state.handleSearchChange);
 
+  // Current pagination
+  const currentPage = useModalStore(
+    (state) => state.pagination[state.activeTabId].currentPage
+  );
+  const pageSize = useModalStore(
+    (state) => state.pagination[state.activeTabId].pageSize
+  );
+  const totalItems = useModalStore(
+    (state) => state.pagination[state.activeTabId].totalItems
+  );
+
+  // Loading state
+  const isLoading = useModalStore(
+    (state) => state.loading[state.activeTabId].isLoading
+  );
+  const error = useModalStore(
+    (state) => state.loading[state.activeTabId].error
+  );
+
+  // Data access
+  const cachedData = useModalStore((state) => state.cachedData);
+
+  // Actions
+  const setPage = useModalStore((state) => state.setPage);
+  const setPageSize = useModalStore((state) => state.setPageSize);
+  const setTotalItems = useModalStore((state) => state.setTotalItems);
+  const setLoading = useModalStore((state) => state.setLoading);
+  const setError = useModalStore((state) => state.setError);
+  const setCachedData = useModalStore((state) => state.setCachedData);
+
+  // Simulation data
   const simulationResult = useSimulationStore(
     (state) => state.simulationResult
   );
-
   const loadedSimulationId = useSimulationStore(
     (state) => state.loadedSimulationId
   );
@@ -309,16 +328,8 @@ export function DataViewerModal() {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
-  // Rename the memoized version to avoid the circular reference
+  // Memoized table columns
   const memoizedTimetableColumns = useMemo(() => timetableColumns, []);
-
-  // Get the current pagination state for the active tab
-  const currentPagination = pagination[activeTabId];
-  const { currentPage, pageSize, totalItems } = currentPagination;
-
-  // Get the current loading state for the active tab
-  const currentLoading = loading[activeTabId];
-  const { isLoading, error } = currentLoading;
 
   // Calculate total pages based on items and page size
   const totalPages = Math.ceil(totalItems / pageSize);
@@ -334,29 +345,29 @@ export function DataViewerModal() {
   }, [activeTabId, isModalOpen, simulationResult, setTotalItems]);
 
   // Check if we have data to display
-  const hasData =
-    loadedSimulationId !== null &&
-    Array.isArray(simulationResult) &&
-    simulationResult.length > 0;
+  const hasData = useMemo(
+    () =>
+      loadedSimulationId !== null &&
+      Array.isArray(simulationResult) &&
+      simulationResult.length > 0,
+    [loadedSimulationId, simulationResult]
+  );
 
-  // Filter and paginate data with memoization
+  // Get the current tab data with memoization
   const getCurrentTabData = useMemo(() => {
     if (!hasData || isLoading) return [];
-
-    // Just check for cached data and return it if available
-    const cachedPageData = cachedData[activeTabId][currentPage];
-    if (cachedPageData) return cachedPageData;
-
-    // Return empty for now, the effect will load the data
-    return [];
+    return cachedData[activeTabId][currentPage] || [];
   }, [hasData, isLoading, cachedData, activeTabId, currentPage]);
 
-  // Add this effect to handle data loading
-  useEffect(() => {
-    // Skip if no data or already loading or data is cached
-    if (!hasData || isLoading || cachedData[activeTabId][currentPage]) return;
+  // Add a stable effect handler for loading data
+  const loadTabData = useCallback(() => {
+    // Skip if no data or already loading
+    if (!hasData || isLoading) return;
 
-    // Now set loading state and process data here
+    // Skip if data is already cached
+    if (cachedData[activeTabId][currentPage]?.length > 0) return;
+
+    // Set loading state
     setLoading(activeTabId, true);
 
     try {
@@ -393,9 +404,7 @@ export function DataViewerModal() {
 
       // Update state after processing
       setCachedData(activeTabId, currentPage, paginatedData);
-      if (searchQuery.trim()) {
-        setTotalItems(activeTabId, filteredData.length);
-      }
+      setTotalItems(activeTabId, filteredData.length);
       setLoading(activeTabId, false);
     } catch (err) {
       setError(activeTabId, String(err));
@@ -410,9 +419,18 @@ export function DataViewerModal() {
     simulationResult,
     cachedData,
     isLoading,
+    setLoading,
+    setCachedData,
+    setTotalItems,
+    setError,
   ]);
 
-  // Callback for changing page
+  // Effect to trigger data loading
+  useEffect(() => {
+    loadTabData();
+  }, [loadTabData]);
+
+  // Callback for changing page - memoized
   const handlePageChange = useCallback(
     (newPage: number) => {
       if (newPage >= 1 && newPage <= totalPages) {
@@ -422,7 +440,7 @@ export function DataViewerModal() {
     [activeTabId, totalPages, setPage]
   );
 
-  // Callback for changing page size
+  // Callback for changing page size - memoized
   const handlePageSizeChange = useCallback(
     (newSize: number) => {
       setPageSize(activeTabId, newSize);
@@ -431,69 +449,84 @@ export function DataViewerModal() {
   );
 
   // Render loading skeleton for table
-  const renderSkeleton = () => (
-    <div className="space-y-2">
-      {Array.from({ length: pageSize > 10 ? 10 : pageSize }).map((_, i) => (
-        <Skeleton key={i} className="h-10 w-full" />
-      ))}
-    </div>
+  const renderSkeleton = useCallback(
+    () => (
+      <div className="space-y-2">
+        {Array.from({ length: pageSize > 10 ? 10 : pageSize }).map((_, i) => (
+          <Skeleton key={i} className="h-10 w-full" />
+        ))}
+      </div>
+    ),
+    [pageSize]
   );
 
   // Render pagination controls
-  const renderPagination = () => (
-    <div className="flex items-center justify-between py-4">
-      <div className="flex items-center space-x-2">
-        <p className="text-sm text-muted-foreground">
-          Showing{" "}
-          {getCurrentTabData.length > 0
-            ? `${(currentPage - 1) * pageSize + 1}-${Math.min(
-                currentPage * pageSize,
-                totalItems
-              )}`
-            : "0"}{" "}
-          of {totalItems} items
-        </p>
-        <Select
-          value={String(pageSize)}
-          onValueChange={(value) => handlePageSizeChange(Number(value))}
-        >
-          <SelectTrigger className="max-w-fit">
-            <SelectValue placeholder="Select size" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="25">25 per page</SelectItem>
-            <SelectItem value="50">50 per page</SelectItem>
-            <SelectItem value="100">100 per page</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex items-center space-x-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handlePageChange(currentPage - 1)}
-          disabled={currentPage === 1 || isLoading}
-        >
-          <IconChevronLeft className="h-4 w-4" />
-          <span className="sr-only">Previous Page</span>
-        </Button>
-
-        <div className="text-sm">
-          Page {currentPage} of {totalPages || 1}
+  const renderPagination = useCallback(
+    () => (
+      <div className="flex items-center justify-between py-4">
+        <div className="flex items-center space-x-2">
+          <p className="text-sm text-muted-foreground">
+            Showing{" "}
+            {getCurrentTabData.length > 0
+              ? `${(currentPage - 1) * pageSize + 1}-${Math.min(
+                  currentPage * pageSize,
+                  totalItems
+                )}`
+              : "0"}{" "}
+            of {totalItems} items
+          </p>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(value) => handlePageSizeChange(Number(value))}
+          >
+            <SelectTrigger className="max-w-fit">
+              <SelectValue placeholder="Select size" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="25">25 per page</SelectItem>
+              <SelectItem value="50">50 per page</SelectItem>
+              <SelectItem value="100">100 per page</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handlePageChange(currentPage + 1)}
-          disabled={currentPage >= totalPages || isLoading}
-        >
-          <IconChevronRight className="h-4 w-4" />
-          <span className="sr-only">Next Page</span>
-        </Button>
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1 || isLoading}
+          >
+            <IconChevronLeft className="h-4 w-4" />
+            <span className="sr-only">Previous Page</span>
+          </Button>
+
+          <div className="text-sm">
+            Page {currentPage} of {totalPages || 1}
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage >= totalPages || isLoading}
+          >
+            <IconChevronRight className="h-4 w-4" />
+            <span className="sr-only">Next Page</span>
+          </Button>
+        </div>
       </div>
-    </div>
+    ),
+    [
+      currentPage,
+      pageSize,
+      totalItems,
+      totalPages,
+      getCurrentTabData.length,
+      handlePageChange,
+      handlePageSizeChange,
+      isLoading,
+    ]
   );
 
   return (
@@ -503,7 +536,7 @@ export function DataViewerModal() {
         if (!open) closeModal();
       }}
     >
-      <DialogContent className="!max-w-fit w-[90vw] min-h-[90vh] flex flex-col">
+      <DialogContent className="!max-w-fit w-[90vw] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Simulation Data Viewer</DialogTitle>
           <DialogDescription>
@@ -552,7 +585,7 @@ export function DataViewerModal() {
                 type="text"
                 placeholder="Search data..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="pl-10 pr-4"
               />
             </div>

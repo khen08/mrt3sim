@@ -47,6 +47,9 @@ interface ModalState {
   // Data caching actions
   setCachedData: (tabId: TabId, page: number, data: any[]) => void;
   clearCache: (tabId?: TabId) => void;
+
+  // Add a new combined action to handle search state changes in one update
+  handleSearchChange: (query: string) => void;
 }
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -177,5 +180,28 @@ export const useModalStore = create<ModalState>((set) => ({
           },
         };
       }
+    }),
+
+  // Add a new combined action to handle search state changes in one update
+  handleSearchChange: (query: string) =>
+    set((state) => {
+      // First create a new cached data object with empty tabs
+      const newCachedData = { ...state.cachedData };
+
+      // Clear cached data for the current active tab
+      newCachedData[state.activeTabId] = {};
+
+      // Update all relevant state in one atomic operation
+      return {
+        searchQuery: query,
+        cachedData: newCachedData,
+        pagination: {
+          ...state.pagination,
+          [state.activeTabId]: {
+            ...state.pagination[state.activeTabId],
+            currentPage: 1, // Reset to first page
+          },
+        },
+      };
     }),
 }));
