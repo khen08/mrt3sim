@@ -15,11 +15,19 @@ import {
   PEAK_HOURS,
 } from "@/lib/constants";
 
+// Assuming SimulationHistoryEntry is defined elsewhere or we use 'any'
+type SimulationHistoryEntry = any; // Replace 'any' if type is defined
+
 interface APIState {
   // API Operations
   fetchDefaultSettings: () => Promise<any | null>;
   fetchSimulationHistory: (fetchFullHistory?: boolean) => Promise<void>;
-  runSimulation: () => Promise<void>;
+  runSimulation: () => Promise<void>; // Public action to initiate run
+  _executeRunSimulation: (
+    filename: string | null,
+    config: SimulationSettings,
+    name: string
+  ) => Promise<void>;
   loadSimulation: (simulationId: number) => Promise<void>;
   fetchPassengerDemand: (simulationId: number | null) => Promise<void>;
   deleteSimulations: (
@@ -30,7 +38,7 @@ interface APIState {
   ) => Promise<SimulationSettings | null>;
 }
 
-export const useAPIStore = create<APIState>((set, get) => ({
+export const useAPIStore = create<APIState>((set: any, get: any) => ({
   // API functions that directly update the simulation store
   fetchDefaultSettings: async () => {
     try {
@@ -90,7 +98,9 @@ export const useAPIStore = create<APIState>((set, get) => ({
     if (!fetchFullHistory && historySimulations.length > 0) {
       // Find the highest ID only if not fetching full history and some history exists
       highestKnownId = Math.max(
-        ...historySimulations.map((sim) => sim.SIMULATION_ID)
+        ...historySimulations.map(
+          (sim: SimulationHistoryEntry) => sim.SIMULATION_ID
+        )
       );
       url += `?since_id=${highestKnownId}`;
       console.log(`Fetching simulation history since ID: ${highestKnownId}...`);
@@ -136,23 +146,28 @@ export const useAPIStore = create<APIState>((set, get) => ({
     }
   },
 
+  // Public action called by the UI button
   runSimulation: async () => {
-    // Get current state from both stores
     const simState = useSimulationStore.getState();
     const {
       simulatePassengers,
       simulationInput,
       simulationSettings,
       nextRunFilename,
+      simulationName, // Keep current name as default/fallback
+      loadedSimulationId,
+      setSimulationNameDialogOpen,
     } = simState;
+    const { _executeRunSimulation } = get(); // Get internal helper
 
+    // Perform initial checks
     if (simulatePassengers && !simulationInput.filename && !nextRunFilename) {
       simState.setApiError(
         "Passenger simulation is enabled, but no CSV file has been uploaded."
       );
       toast({
         title: "Missing File",
-        description: "Please upload a CSV file when simulating passengers.",
+        description: "Please upload a CSV file.",
         variant: "destructive",
       });
       return;
@@ -161,50 +176,37 @@ export const useAPIStore = create<APIState>((set, get) => ({
       simState.setApiError("Simulation settings are missing or still loading.");
       toast({
         title: "Missing Settings",
-        description: "Simulation settings not loaded.",
+        description: "Settings not loaded.",
         variant: "destructive",
       });
       return;
     }
 
+    // Decide whether to run directly or open dialog
+    if (loadedSimulationId !== null) {
+      // Simulation loaded, open dialog to confirm/set name
+      setSimulationNameDialogOpen(true);
+    } else {
+      // No simulation loaded, run directly with current/default name
+      let payloadFilename: string | null = null;
+      if (simulatePassengers) {
+        payloadFilename = nextRunFilename ?? simulationInput.filename;
+      }
+      await _executeRunSimulation(
+        payloadFilename,
+        simulationSettings,
+        simulationName
+      );
+    }
+  },
+
+  // Internal helper function to execute the simulation API call
+  _executeRunSimulation: async (filename, config, name) => {
+    const simState = useSimulationStore.getState();
+
     simState.setIsSimulating(true);
     simState.setIsMapLoading(true);
     simState.setApiError(null);
-
-    const stationNames = simulationSettings.stations.map(
-      (station) => station.name
-    );
-    const stationDistances = simulationSettings.stations
-      .map((station) => station.distance)
-      .slice(1);
-
-    const stationSchemes =
-      simulationSettings.schemeType === "SKIP-STOP"
-        ? simulationSettings.stations.map((station) => station.scheme || "AB")
-        : [];
-
-    const { stations, ...otherSettings } = simulationSettings;
-
-    let payloadFilename: string | null = null;
-    if (simulatePassengers) {
-      if (
-        simState.loadedSimulationId !== null &&
-        simulationInput.filename === null &&
-        nextRunFilename !== null
-      ) {
-        payloadFilename = nextRunFilename;
-        console.log(
-          `Using explicitly uploaded override file for loaded history run: ${payloadFilename}`
-        );
-      } else {
-        payloadFilename = simulationInput.filename;
-        console.log(
-          `Using standard input filename for run: ${payloadFilename}`
-        );
-      }
-    } else {
-      console.log("Passenger simulation disabled, sending null filename.");
-    }
 
     toast({
       title: "Running Simulation",
@@ -219,18 +221,9 @@ export const useAPIStore = create<APIState>((set, get) => ({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          filename: payloadFilename,
-          config: {
-            // Explicitly construct the config object matching backend structure
-            dwellTime: simulationSettings.dwellTime,
-            turnaroundTime: simulationSettings.turnaroundTime,
-            schemeType: simulationSettings.schemeType,
-            servicePeriods: simulationSettings.servicePeriods,
-            schemePattern: simulationSettings.schemePattern, // Pass the pattern directly
-            stations: simulationSettings.stations, // Pass the full array of station objects
-            trainSpecs: simulationSettings.trainSpecs,
-            // Remove stationNames, stationDistances, and conditional stationSchemes
-          },
+          filename: filename, // Use passed filename
+          name: name, // Use passed name
+          config: config, // Use passed config
         }),
       });
 
@@ -329,24 +322,22 @@ export const useAPIStore = create<APIState>((set, get) => ({
         simState.setSimulationResult(timetableData);
 
         // --- Persist Settings & Update Input State ---
-        const settingsUsedForRun = simulationSettings; // Not null checked at start
         simState.setLoadedSimulationId(newSimulationId);
-        simState.setActiveSimulationSettings(settingsUsedForRun);
-        simState.setSimulationSettings(settingsUsedForRun);
+        simState.setActiveSimulationSettings(config); // Use the config passed to this function
+        simState.setSimulationSettings(config); // Keep main settings in sync
         simState.setSimulationInput({
-          filename: payloadFilename, // Reflect the file actually used
-          config: settingsUsedForRun,
+          filename: filename, // Reflect the file actually used
+          config: config,
         });
+        simState.setSimulationName(name); // Set the name used for the run
 
         // *Only* set simulatePassengers based on the file used *if* it's different from current state
-        // This prevents overriding the user's toggle if they ran without passengers intentionally
-        if (simState.simulatePassengers !== !!payloadFilename) {
-          simState.setSimulatePassengers(!!payloadFilename);
+        if (simState.simulatePassengers !== !!filename) {
+          simState.setSimulatePassengers(!!filename);
         }
         simState.setNextRunFilename(null); // Clear override filename
 
         console.log("Fetched Metadata (Run Sim):", fetchedMetadata);
-        // Store the raw service periods array
         simState.setLoadedServicePeriodsData(
           fetchedMetadata.service_periods || null
         );
@@ -368,37 +359,30 @@ export const useAPIStore = create<APIState>((set, get) => ({
           variant: "default",
         });
 
-        // Fetch updated simulation history
         await useAPIStore.getState().fetchSimulationHistory();
 
-        // Fetch passenger demand after simulation run completes
         if (newSimulationId) {
           await useAPIStore.getState().fetchPassengerDemand(newSimulationId);
         }
       } else {
-        // --- Handle failed timetable fetch after successful run ---
         console.error("Failed to fetch timetable data after all retries.");
         simState.setApiError(
           `Simulation run (ID: ${newSimulationId}) but failed to fetch timetable data.`
         );
-        // Don't clear simulationResult here, might still want to see old map? Or maybe clear it? Let's clear it.
         simState.setSimulationResult(null);
-        simState.setLoadedSimulationId(null); // Clear loaded ID as well
+        simState.setLoadedSimulationId(null);
         toast({
           title: "Simulation Complete (Timetable Failed)",
-          description: `The simulation (ID: ${newSimulationId}) ran but timetable data could not be retrieved after ${maxRetries} attempts.`,
+          description: `The simulation (ID: ${newSimulationId}) ran but timetable data could not be retrieved.`,
           variant: "destructive",
         });
-        // Still refresh history
         await useAPIStore.getState().fetchSimulationHistory();
       }
     } catch (error: any) {
-      // --- Handle errors during simulation run or initial fetch ---
       console.error("Simulation API or Timetable Fetch Failed:", error);
       simState.setApiError(
         error.message || "An unknown error occurred during simulation."
       );
-      // Clear results on error
       simState.setSimulationResult(null);
       simState.setLoadedSimulationId(null);
       toast({
@@ -415,7 +399,7 @@ export const useAPIStore = create<APIState>((set, get) => ({
   loadSimulation: async (simulationId: number) => {
     const simState = useSimulationStore.getState();
     const uiState = useUIStore.getState();
-    const { fetchSimulationConfig } = useAPIStore.getState(); // Get the new action
+    const { fetchSimulationConfig } = useAPIStore.getState();
 
     uiState.setHistoryLoading(true);
     simState.setIsMapLoading(true);
@@ -430,9 +414,10 @@ export const useAPIStore = create<APIState>((set, get) => ({
 
     try {
       const historyEntry = uiState.historySimulations.find(
-        (sim) => sim.SIMULATION_ID === simulationId
+        (sim: SimulationHistoryEntry) => sim.SIMULATION_ID === simulationId
       );
       const filename = historyEntry?.PASSENGER_DATA_FILE ?? null;
+      const simName = historyEntry?.NAME ?? "Unnamed Simulation";
 
       const timetableResponse = await fetch(
         GET_TIMETABLE_ENDPOINT(simulationId)
@@ -450,22 +435,19 @@ export const useAPIStore = create<APIState>((set, get) => ({
         throw new Error("Invalid timetable data received from server.");
       }
 
-      // Fetch the specific configuration for this simulation ID
       const loadedConfig = await fetchSimulationConfig(simulationId);
 
-      // Check if config was fetched successfully
       if (loadedConfig && Array.isArray(timetableData.timetable)) {
         simState.setSimulationResult(timetableData.timetable);
         simState.setLoadedSimulationId(simulationId);
+        simState.setSimulationName(simName);
 
-        // Use the loaded configuration instead of defaults
-        simState.setSimulationSettings(loadedConfig); // Set the main settings
-        simState.setActiveSimulationSettings(loadedConfig); // Set the active settings for the UI
+        simState.setSimulationSettings(loadedConfig);
+        simState.setActiveSimulationSettings(loadedConfig);
 
         console.log("Fetched Timetable Data (Load Sim):", timetableData);
         console.log("Loaded Config Data (Load Sim):", loadedConfig);
 
-        // Store the raw service periods array
         simState.setLoadedServicePeriodsData(
           timetableData.service_periods || null
         );
@@ -479,7 +461,7 @@ export const useAPIStore = create<APIState>((set, get) => ({
         simState.setApiError(null);
         simState.setSimulationInput({
           filename: filename,
-          config: loadedConfig, // Use the loaded config here as well
+          config: loadedConfig,
         });
 
         simState.setSimulatePassengers(!!filename);
@@ -487,14 +469,14 @@ export const useAPIStore = create<APIState>((set, get) => ({
 
         toast({
           title: "Simulation Loaded",
-          description: `Successfully loaded simulation ID ${simulationId}. Settings loaded from run. Passenger sim ${filename ? "enabled" : "disabled"}.`,
+          description: `Successfully loaded simulation ID ${simulationId}. Settings loaded from run. Passenger sim ${
+            filename ? "enabled" : "disabled"
+          }.`,
           variant: "default",
         });
 
-        // Fetch passenger demand after simulation load completes
         await useAPIStore.getState().fetchPassengerDemand(simulationId);
       } else {
-        // Handle cases where config fetch failed or timetable was invalid
         const errorMsg = !loadedConfig
           ? "Failed to fetch specific simulation config."
           : "Timetable data structure was invalid after loading history.";
@@ -537,13 +519,12 @@ export const useAPIStore = create<APIState>((set, get) => ({
       }
       const demandData = await response.json();
 
-      // --- Aggregate demand data for the chart --- //
       const hourlyTotals: Record<string, number> = {};
       if (Array.isArray(demandData)) {
         demandData.forEach((entry) => {
-          const demandTime = entry["Demand Time"]; // HH:MM:SS
+          const demandTime = entry["Demand Time"];
           if (demandTime && typeof demandTime === "string") {
-            const hour = demandTime.substring(0, 2); // Extract HH
+            const hour = demandTime.substring(0, 2);
             const passengers = entry.Passengers || 0;
             if (hour) {
               hourlyTotals[hour] = (hourlyTotals[hour] || 0) + passengers;
@@ -569,14 +550,12 @@ export const useAPIStore = create<APIState>((set, get) => ({
         error
       );
       useSimulationStore.getState().setPassengerDistributionData(null);
-      // Optional: Show a toast, but might be noisy
-      // toast({ title: "Passenger Demand Error", description: error.message, variant: "warning" });
     }
   },
 
   deleteSimulations: async (simulationIds: number | number[]) => {
     const { setApiError } = useSimulationStore.getState();
-    const { fetchSimulationHistory } = get(); // Get other actions if needed
+    const { fetchSimulationHistory } = get();
     setApiError(null);
 
     const isBulk = Array.isArray(simulationIds);
@@ -588,45 +567,44 @@ export const useAPIStore = create<APIState>((set, get) => ({
 
     const endpoint = isBulk
       ? DELETE_BULK_SIMULATIONS_ENDPOINT
-      : DELETE_SIMULATION_ENDPOINT(idsToDelete[0]); // Use single delete endpoint if not bulk
+      : DELETE_SIMULATION_ENDPOINT(idsToDelete[0]);
     const method = "DELETE";
     let body: string | undefined;
 
-    // Only include body for bulk delete
     if (isBulk) {
-      body = JSON.stringify({ simulationIds: idsToDelete }); // Match backend expected key
+      body = JSON.stringify({ simulationIds: idsToDelete });
     }
 
     console.log(
-      `Attempting to delete simulation(s): ${idsToDelete.join(", ")} via ${endpoint}`
+      `Attempting to delete simulation(s): ${idsToDelete.join(
+        ", "
+      )} via ${endpoint}`
     );
 
     try {
       const response = await fetch(endpoint, {
         method: method,
         headers: {
-          // Only add Content-Type if there's a body
           ...(body && { "Content-Type": "application/json" }),
         },
-        ...(body && { body: body }), // Only add body if it exists
+        ...(body && { body: body }),
       });
 
-      const result = await response.json().catch(() => null); // Attempt to parse JSON, default to null
+      const result = await response.json().catch(() => null);
 
       if (!response.ok) {
-        const errorMessage =
-          result?.error || `HTTP Error ${response.status}`;
+        const errorMessage = result?.error || `HTTP Error ${response.status}`;
         throw new Error(errorMessage);
       }
 
       console.log("Deletion successful:", result?.message);
 
-      // Refresh history after successful deletion
-      await fetchSimulationHistory(true); // Force full refresh
+      await fetchSimulationHistory(true);
 
-      // Return success status and message
-      return { success: true, message: result?.message || "Deletion successful." };
-
+      return {
+        success: true,
+        message: result?.message || "Deletion successful.",
+      };
     } catch (error: any) {
       console.error("Failed to delete simulations:", error);
       setApiError(
@@ -644,18 +622,16 @@ export const useAPIStore = create<APIState>((set, get) => ({
   ): Promise<SimulationSettings | null> => {
     const { setApiError } = useSimulationStore.getState();
     setApiError(null);
-    console.log(
-      `Fetching configuration for simulation ID: ${simulationId}...`
-    );
+    console.log(`Fetching configuration for simulation ID: ${simulationId}...`);
 
     try {
-      const response = await fetch(GET_SIMULATION_CONFIG_ENDPOINT(simulationId));
+      const response = await fetch(
+        GET_SIMULATION_CONFIG_ENDPOINT(simulationId)
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          errorData.error || `HTTP Error ${response.status}`
-        );
+        throw new Error(errorData.error || `HTTP Error ${response.status}`);
       }
 
       const configData = await response.json();
@@ -663,17 +639,18 @@ export const useAPIStore = create<APIState>((set, get) => ({
         `Successfully fetched config for simulation ${simulationId}:`,
         configData
       );
-      return configData; // Return the fetched config object
-
+      return configData;
     } catch (error: any) {
       console.error(
         `Failed to fetch config for simulation ${simulationId}:`,
         error
       );
       setApiError(
-        `Failed to fetch config for ${simulationId}: ${error.message || "Unknown error"}`
+        `Failed to fetch config for ${simulationId}: ${
+          error.message || "Unknown error"
+        }`
       );
-      return null; // Return null on error
+      return null;
     }
   },
 }));

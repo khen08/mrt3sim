@@ -5,16 +5,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { ArrowUpDown } from "lucide-react";
 
-// Define the structure for a single simulation history entry
-export interface SimulationHistoryEntry {
-  SIMULATION_ID: number;
-  CREATED_AT: string;
-  PASSENGER_DATA_FILE: string;
-  START_TIME: string;
-  END_TIME: string;
-  TOTAL_RUN_TIME_SECONDS: number;
-}
-
 // Type alias for clarity
 type HistoryEntry = SimulationHistoryEntry;
 
@@ -68,6 +58,34 @@ export const columns = (
         {row.getValue("SIMULATION_ID")}
       </div>
     ),
+  },
+  {
+    accessorKey: "NAME", // Assuming backend saves it as NAME
+    header: ({ column }) => {
+      return (
+        <Button
+          variant="ghost"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          className="p-0 hover:bg-transparent"
+        >
+          Name
+          <ArrowUpDown className="ml-2 h-3 w-3" />
+        </Button>
+      );
+    },
+    cell: ({ row }) => {
+      const name = row.getValue("NAME") as string | null;
+      return (
+        <div
+          className="w-[180px] truncate font-medium"
+          title={name ?? "Unnamed"}
+        >
+          {name || (
+            <span className="italic text-muted-foreground">Unnamed</span>
+          )}
+        </div>
+      );
+    },
   },
   {
     accessorKey: "CREATED_AT",
@@ -204,3 +222,14 @@ export const columns = (
     },
   },
 ];
+
+// Also update the SimulationHistoryEntry interface if NAME is not already there
+export interface SimulationHistoryEntry {
+  SIMULATION_ID: number;
+  NAME?: string | null; // Add NAME property
+  CREATED_AT: string;
+  PASSENGER_DATA_FILE: string;
+  START_TIME: string;
+  END_TIME: string;
+  TOTAL_RUN_TIME_SECONDS: number;
+}

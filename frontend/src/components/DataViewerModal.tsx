@@ -39,6 +39,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+// --- Add Heatmap Imports and Types --- //
+import { PassengerHeatmap } from "@/components/PassengerHeatmap"; // Import the heatmap component
+import { API_BASE_URL, GET_PASSENGER_DEMAND_ENDPOINT } from "@/lib/constants"; // Import API constants
+
+// Define HeatmapSeries type locally or import if exported from PassengerHeatmap.tsx
+interface HeatmapDataPoint {
+  x: string | number;
+  y: number;
+}
+interface HeatmapSeries {
+  id: string;
+  data: HeatmapDataPoint[];
+}
+// -------------------------------------- //
+
 // Updated Timetable columns definition with the specified fields
 const timetableColumns = [
   {
@@ -301,10 +316,16 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
 
   // Get simulation data from store
   const simulationResult = useSimulationStore(
-    (state) => state.simulationResult
+    (state: any) => state.simulationResult
   );
   const loadedSimulationId = useSimulationStore(
-    (state) => state.loadedSimulationId
+    (state: any) => state.loadedSimulationId
+  );
+  const simulationName = useSimulationStore(
+    (state: any) => state.simulationName
+  );
+  const activeSimulationSettings = useSimulationStore(
+    (state) => state.activeSimulationSettings
   );
 
   // Check if we have data to display
@@ -504,16 +525,123 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
   const passengerDemandColumnsMemo = useMemo(() => passengerDemandColumns, []);
   const metricsColumnsMemo = useMemo(() => metricsColumns, []);
 
+  // --- Add Heatmap State --- //
+  const [heatmapData, setHeatmapData] = useState<HeatmapSeries[]>([]);
+  const [isHeatmapLoading, setIsHeatmapLoading] = useState(false);
+  const [heatmapError, setHeatmapError] = useState<string | null>(null);
+  // ------------------------ //
+
+  // Fetch and process passenger demand data for the heatmap
+  useEffect(() => {
+    if (isOpen && loadedSimulationId !== null) {
+      const fetchHeatmapData = async () => {
+        console.log(
+          "[HEATMAP DEBUG] Starting fetchHeatmapData for sim ID:",
+          loadedSimulationId
+        );
+        setIsHeatmapLoading(true);
+        setHeatmapError(null);
+        setHeatmapData([]); // Clear previous data
+
+        try {
+          const apiUrl = GET_PASSENGER_DEMAND_ENDPOINT(loadedSimulationId);
+          console.log("[HEATMAP DEBUG] Fetching from URL:", apiUrl);
+          const response = await fetch(apiUrl);
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `HTTP error ${response.status}`);
+          }
+          const rawDemandData = await response.json();
+          console.log("[HEATMAP DEBUG] Raw API Response:", rawDemandData);
+
+          if (!Array.isArray(rawDemandData)) {
+            throw new Error("Invalid data format received from API");
+          }
+
+          // --- Transform raw data into HeatmapSeries[] format --- //
+          const transformedData: Record<string, Record<string, number>> = {};
+          const stationNames: Record<number, string> = {};
+          if (activeSimulationSettings?.stations) {
+            activeSimulationSettings.stations.forEach((s, index) => {
+              stationNames[index + 1] = s.name;
+            });
+          }
+
+          rawDemandData.forEach((entry: any) => {
+            // Use the correct keys from the API response
+            const route = entry.Route;
+            const count = entry.Passengers || 0;
+
+            // Parse origin/destination IDs from the 'Route' string
+            if (route && typeof route === "string" && route.includes("-")) {
+              const [originIdStr, destIdStr] = route.split("-");
+              const originId = parseInt(originIdStr, 10);
+              const destId = parseInt(destIdStr, 10);
+
+              if (!isNaN(originId) && !isNaN(destId)) {
+                const originName = stationNames[originId] || `Stn ${originId}`;
+                const destName = stationNames[destId] || `Stn ${destId}`;
+
+                if (!transformedData[originName]) {
+                  transformedData[originName] = {};
+                }
+                transformedData[originName][destName] =
+                  (transformedData[originName][destName] || 0) + count;
+              } else {
+                console.warn(
+                  "[HEATMAP DEBUG] Could not parse origin/destination IDs from route:",
+                  route
+                );
+              }
+            } else {
+              // Log if the route key is missing or invalid
+              console.warn(
+                "[HEATMAP DEBUG] Invalid or missing 'Route' key in raw data entry:",
+                entry
+              );
+            }
+          });
+
+          console.log(
+            "[HEATMAP DEBUG] Intermediate Transformed Data:",
+            transformedData
+          );
+
+          const heatmapSeries: HeatmapSeries[] = Object.entries(
+            transformedData
+          ).map(([originName, destinations]) => ({
+            id: originName,
+            data: Object.entries(destinations).map(([destName, count]) => ({
+              x: destName,
+              y: count,
+            })),
+          }));
+          // ----------------------------------------------------- //
+
+          console.log("[HEATMAP DEBUG] Final HeatmapSeries:", heatmapSeries);
+          setHeatmapData(heatmapSeries);
+        } catch (error: any) {
+          console.error("Error fetching heatmap data:", error);
+          console.log("[HEATMAP DEBUG] Error caught:", error);
+          setHeatmapError(`Failed to load heatmap data: ${error.message}`);
+        } finally {
+          setIsHeatmapLoading(false);
+        }
+      };
+
+      fetchHeatmapData();
+    }
+  }, [isOpen, loadedSimulationId, activeSimulationSettings]); // Add activeSimulationSettings as dependency for station names
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="!max-w-fit w-[90vw] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Simulation Data Viewer</DialogTitle>
           <DialogDescription>
-            View the detailed data for{" "}
-            {loadedSimulationId
-              ? `Simulation #${loadedSimulationId}`
-              : "the current simulation"}
+            Viewing data for:{" "}
+            <strong>{simulationName || "Unnamed Simulation"}</strong>
+            {loadedSimulationId !== null ? ` (ID: ${loadedSimulationId})` : ""}
           </DialogDescription>
         </DialogHeader>
 
@@ -592,17 +720,30 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
 
             <TabsContent
               value="passengerDemand"
-              className="pt-2 flex-1 flex flex-col"
+              className="pt-2 flex-1 flex flex-col overflow-hidden"
             >
-              <DataTable
-                columns={passengerDemandColumnsMemo}
-                data={[]} // Empty data for now
-                sorting={sorting}
-                setSorting={setSorting}
-                rowSelection={rowSelection}
-                setRowSelection={setRowSelection}
-                stickyHeader={true}
-              />
+              {/* Conditional rendering for heatmap */}
+              {isHeatmapLoading ? (
+                <div className="flex justify-center items-center h-full">
+                  <Skeleton className="h-[400px] w-[80%]" />
+                </div>
+              ) : heatmapError ? (
+                <div className="py-8 text-center text-red-500">
+                  Error loading heatmap data: {heatmapError}
+                </div>
+              ) : heatmapData.length > 0 ? (
+                // Render heatmap if data is available
+                <div className="flex-1 min-h-0">
+                  {" "}
+                  {/* Ensure flex container takes space */}
+                  <PassengerHeatmap data={heatmapData} />
+                </div>
+              ) : (
+                // Show message if no data and no error
+                <div className="py-8 text-center text-muted-foreground">
+                  No passenger demand data available for heatmap.
+                </div>
+              )}
             </TabsContent>
 
             <TabsContent value="metrics" className="pt-2 flex-1 flex flex-col">

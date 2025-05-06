@@ -82,7 +82,8 @@ def create_simulation():
         return jsonify({"error": f"Could not parse request JSON: {e}"}), 400
 
     config = simulation_input_data.get('config')
-    name = simulation_input_data.get('name') if simulation_input_data.get('name') else "DEFAULT"####
+    # Get the name from the JSON, default if not provided
+    simulation_name = simulation_input_data.get('name', "Untitled Simulation")
 
     if config is None: # Check for None specifically, as config could be an empty dict {}
         print("[ROUTE:/SIMULATIONS POST] ERROR: 'config' MISSING IN JSON PAYLOAD")
@@ -106,8 +107,8 @@ def create_simulation():
                 return jsonify({"error": f"File '{secure_name}' not found. Please upload the file first."}), 404
 
     try:
-        # Instantiate the Simulation class
-        sim = Simulation(name=name, csv_filename=secure_name, config=config)
+        # Instantiate the Simulation class, passing the name
+        sim = Simulation(simulation_name=simulation_name, csv_filename=secure_name, config=config)
 
         run_duration = sim.run()
 
@@ -224,7 +225,7 @@ def get_simulations():
 
         try:
             query_args = {
-                 'order': [{'CREATED_AT': 'desc'}] # Keep descending order for history
+                'order': [{'CREATED_AT': 'desc'}] # Keep descending order for history
             }
             if since_id is not None:
                 query_args['where'] = {'SIMULATION_ID': {'gt': since_id}}
@@ -242,12 +243,12 @@ def get_simulations():
                 
                 # Attempt to parse JSON fields if they are strings
                 for key in ['CONFIG', 'STATION_CAPACITIES', 'SERVICE_PERIODS', 'PERFORMANCE_METRICS']:
-                     if key in entry_dict and isinstance(entry_dict[key], str):
+                    if key in entry_dict and isinstance(entry_dict[key], str):
                         try:
                             entry_dict[key] = json.loads(entry_dict[key])
                         except json.JSONDecodeError:
-                             print(f"[ROUTE:/SIMULATIONS GET] WARNING: Could not decode JSON for field {key} in simulation {entry_dict.get('SIMULATION_ID')}")
-                             # Keep the original string or set to an error indicator if preferred
+                            print(f"[ROUTE:/SIMULATIONS GET] WARNING: Could not decode JSON for field {key} in simulation {entry_dict.get('SIMULATION_ID')}")
+                            # Keep the original string or set to an error indicator if preferred
                 
                 serializable_entries.append(entry_dict)
             

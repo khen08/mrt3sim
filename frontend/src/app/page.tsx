@@ -28,6 +28,7 @@ import {
   IconFile,
   IconX,
   IconTable,
+  IconCheck,
 } from "@tabler/icons-react";
 import CsvUpload from "@/components/CsvUpload";
 import MrtMap, { MrtMapHandle } from "@/components/MrtMap";
@@ -72,6 +73,7 @@ import { useAPIStore } from "@/store/apiStore";
 import { useFileStore } from "@/store/fileStore";
 import { DataViewerButton } from "@/components/DataViewerButton";
 import { DataViewerModal } from "@/components/DataViewerModal";
+import { SimulationNameDialog } from "@/components/SimulationNameDialog";
 
 // Define props for the LoadingPlaceholder component
 interface LoadingPlaceholderProps {
@@ -90,129 +92,184 @@ const LoadingPlaceholder: React.FC<LoadingPlaceholderProps> = ({
   );
 };
 
+// Define a placeholder component inline
+const FileReadyPlaceholder = ({ fileName }: { fileName: string }) => {
+  return (
+    <div className="flex-grow flex flex-col items-center justify-center p-4 space-y-4">
+      <Card className="w-full max-w-lg text-center">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-center text-green-700 dark:text-green-400">
+            <IconCheck className="mr-2" size={24} /> File Ready
+          </CardTitle>
+          <CardDescription>
+            <span className="font-medium">{fileName}</span> is validated and
+            ready.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Click the <span className="font-medium">Run Simulation</span> button
+            in the sidebar to start.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
 export default function Home() {
   // Get state from Zustand stores
   // Simulation store
   const simulationSettings = useSimulationStore(
-    (state) => state.simulationSettings
+    (state: any) => state.simulationSettings
   );
   const activeSimulationSettings = useSimulationStore(
-    (state) => state.activeSimulationSettings
+    (state: any) => state.activeSimulationSettings
   );
-  const simulationInput = useSimulationStore((state) => state.simulationInput);
-  const simulationTime = useSimulationStore((state) => state.simulationTime);
+  const simulationInput = useSimulationStore(
+    (state: any) => state.simulationInput
+  );
+  const simulationTime = useSimulationStore(
+    (state: any) => state.simulationTime
+  );
   const isSimulationRunning = useSimulationStore(
-    (state) => state.isSimulationRunning
+    (state: any) => state.isSimulationRunning
   );
   const simulatePassengers = useSimulationStore(
-    (state) => state.simulatePassengers
+    (state: any) => state.simulatePassengers
   );
-  const selectedScheme = useSimulationStore((state) => state.selectedScheme);
+  const selectedScheme = useSimulationStore(
+    (state: any) => state.selectedScheme
+  );
   const simulationResult = useSimulationStore(
-    (state) => state.simulationResult
+    (state: any) => state.simulationResult
   );
-  const isLoading = useSimulationStore((state) => state.isLoading);
-  const isSimulating = useSimulationStore((state) => state.isSimulating);
-  const isMapLoading = useSimulationStore((state) => state.isMapLoading);
-  const apiError = useSimulationStore((state) => state.apiError);
-  const nextRunFilename = useSimulationStore((state) => state.nextRunFilename);
+  const isLoading = useSimulationStore((state: any) => state.isLoading);
+  const isSimulating = useSimulationStore((state: any) => state.isSimulating);
+  const isMapLoading = useSimulationStore((state: any) => state.isMapLoading);
+  const apiError = useSimulationStore((state: any) => state.apiError);
+  const nextRunFilename = useSimulationStore(
+    (state: any) => state.nextRunFilename
+  );
   const loadedSimulationId = useSimulationStore(
-    (state) => state.loadedSimulationId
+    (state: any) => state.loadedSimulationId
   );
-  const isFullDayView = useSimulationStore((state) => state.isFullDayView);
-  const selectedPeak = useSimulationStore((state) => state.selectedPeak);
-  const showDebugInfo = useSimulationStore((state) => state.showDebugInfo);
+  const isFullDayView = useSimulationStore((state: any) => state.isFullDayView);
+  const selectedPeak = useSimulationStore((state: any) => state.selectedPeak);
+  const showDebugInfo = useSimulationStore((state: any) => state.showDebugInfo);
   const loadedServicePeriodsData = useSimulationStore(
-    (state) => state.loadedServicePeriodsData
+    (state: any) => state.loadedServicePeriodsData
   );
   const passengerDistributionData = useSimulationStore(
-    (state) => state.passengerDistributionData
+    (state: any) => state.passengerDistributionData
   );
-  const mapRefreshKey = useSimulationStore((state) => state.mapRefreshKey);
+  const mapRefreshKey = useSimulationStore((state: any) => state.mapRefreshKey);
 
   // UI store
-  const isSidebarCollapsed = useUIStore((state) => state.isSidebarCollapsed);
-  const isHistoryModalOpen = useUIStore((state) => state.isHistoryModalOpen);
-  const isClearConfirmOpen = useUIStore((state) => state.isClearConfirmOpen);
-  const selectedStation = useUIStore((state) => state.selectedStation);
-  const selectedTrainId = useUIStore((state) => state.selectedTrainId);
-  const selectedTrainDetails = useUIStore(
-    (state) => state.selectedTrainDetails
+  const isSidebarCollapsed = useUIStore(
+    (state: any) => state.isSidebarCollapsed
   );
-  const isHistoryLoading = useUIStore((state) => state.isHistoryLoading);
-  const historySimulations = useUIStore((state) => state.historySimulations);
+  const isHistoryModalOpen = useUIStore(
+    (state: any) => state.isHistoryModalOpen
+  );
+  const isClearConfirmOpen = useUIStore(
+    (state: any) => state.isClearConfirmOpen
+  );
+  const selectedStation = useUIStore((state: any) => state.selectedStation);
+  const selectedTrainId = useUIStore((state: any) => state.selectedTrainId);
+  const selectedTrainDetails = useUIStore(
+    (state: any) => state.selectedTrainDetails
+  );
+  const isHistoryLoading = useUIStore((state: any) => state.isHistoryLoading);
+  const historySimulations = useUIStore(
+    (state: any) => state.historySimulations
+  );
   const hasFetchedInitialHistory = useUIStore(
-    (state) => state.hasFetchedInitialHistory
+    (state: any) => state.hasFetchedInitialHistory
   );
 
   // File store
-  const uploadedFileObject = useFileStore((state) => state.uploadedFileObject);
+  const uploadedFileObject = useFileStore(
+    (state: any) => state.uploadedFileObject
+  );
+  const validationStatus = useFileStore((state: any) => state.validationStatus);
+  const uploadedFileName = useFileStore((state: any) => state.uploadedFileName);
 
   // Get actions from Zustand stores
   // Simulation store actions
   const setSimulationSettings = useSimulationStore(
-    (state) => state.setSimulationSettings
+    (state: any) => state.setSimulationSettings
   );
   const setActiveSimulationSettings = useSimulationStore(
-    (state) => state.setActiveSimulationSettings
+    (state: any) => state.setActiveSimulationSettings
   );
   const setSimulationInput = useSimulationStore(
-    (state) => state.setSimulationInput
+    (state: any) => state.setSimulationInput
   );
   const setSimulationTime = useSimulationStore(
-    (state) => state.setSimulationTime
+    (state: any) => state.setSimulationTime
   );
   const setIsSimulationRunning = useSimulationStore(
-    (state) => state.setIsSimulationRunning
+    (state: any) => state.setIsSimulationRunning
   );
   const setSimulatePassengers = useSimulationStore(
-    (state) => state.setSimulatePassengers
+    (state: any) => state.setSimulatePassengers
   );
   const setSelectedScheme = useSimulationStore(
-    (state) => state.setSelectedScheme
+    (state: any) => state.setSelectedScheme
   );
   const setIsFullDayView = useSimulationStore(
-    (state) => state.setIsFullDayView
+    (state: any) => state.setIsFullDayView
   );
-  const setSelectedPeak = useSimulationStore((state) => state.setSelectedPeak);
+  const setSelectedPeak = useSimulationStore(
+    (state: any) => state.setSelectedPeak
+  );
   const setShowDebugInfo = useSimulationStore(
-    (state) => state.setShowDebugInfo
+    (state: any) => state.setShowDebugInfo
   );
   const setNextRunFilename = useSimulationStore(
-    (state) => state.setNextRunFilename
+    (state: any) => state.setNextRunFilename
   );
   const incrementMapRefreshKey = useSimulationStore(
-    (state) => state.incrementMapRefreshKey
+    (state: any) => state.incrementMapRefreshKey
   );
-  const resetSimulation = useSimulationStore((state) => state.resetSimulation);
+  const resetSimulation = useSimulationStore(
+    (state: any) => state.resetSimulation
+  );
 
   // UI store actions
-  const setSidebarCollapsed = useUIStore((state) => state.setSidebarCollapsed);
-  const setHistoryModalOpen = useUIStore((state) => state.setHistoryModalOpen);
-  const setClearConfirmOpen = useUIStore((state) => state.setClearConfirmOpen);
-  const setDataViewerModalOpen = useUIStore(
-    (state) => state.setDataViewerModalOpen
+  const setSidebarCollapsed = useUIStore(
+    (state: any) => state.setSidebarCollapsed
   );
-  const selectStation = useUIStore((state) => state.selectStation);
-  const selectTrain = useUIStore((state) => state.selectTrain);
+  const setHistoryModalOpen = useUIStore(
+    (state: any) => state.setHistoryModalOpen
+  );
+  const setClearConfirmOpen = useUIStore(
+    (state: any) => state.setClearConfirmOpen
+  );
+  const setDataViewerModalOpen = useUIStore(
+    (state: any) => state.setDataViewerModalOpen
+  );
+  const selectStation = useUIStore((state: any) => state.selectStation);
+  const selectTrain = useUIStore((state: any) => state.selectTrain);
   const setHasFetchedInitialHistory = useUIStore(
-    (state) => state.setHasFetchedInitialHistory
+    (state: any) => state.setHasFetchedInitialHistory
   );
 
   // File store actions
   const setUploadedFileObject = useFileStore(
-    (state) => state.setUploadedFileObject
+    (state: any) => state.setUploadedFileObject
   );
 
   // API store actions
   const fetchDefaultSettings = useAPIStore(
-    (state) => state.fetchDefaultSettings
+    (state: any) => state.fetchDefaultSettings
   );
   const fetchSimulationHistory = useAPIStore(
-    (state) => state.fetchSimulationHistory
+    (state: any) => state.fetchSimulationHistory
   );
-  const runSimulation = useAPIStore((state) => state.runSimulation);
-  const loadSimulation = useAPIStore((state) => state.loadSimulation);
+  const runSimulation = useAPIStore((state: any) => state.runSimulation);
+  const loadSimulation = useAPIStore((state: any) => state.loadSimulation);
 
   const { toast } = useToast();
   const mrtMapRef = useRef<MrtMapHandle>(null);
@@ -476,7 +533,7 @@ export default function Home() {
   // Handler for loading new data
   const handleLoadNewData = () => {
     // Perform a complete reset of relevant state
-    useFileStore.getState().resetUploadState(); // Reset file store
+    useFileStore.getState().resetFileState(); // Corrected: Use resetFileState
     resetSimulation(); // Reset simulation store
     useUIStore.getState().resetState(); // Reset UI store
 
@@ -504,26 +561,25 @@ export default function Home() {
   // Determine what to show in the main content area
   const hasResults = !!simulationResult && simulationResult.length > 0;
   const showInitialState = !isMapLoading && !hasResults;
+  const uploadSource = useFileStore((state: any) => state.uploadSource);
 
-  // Get upload source from fileStore to prevent showing CsvUpload when source is from settings
-  const uploadSource = useFileStore((state) => state.uploadSource);
-
-  // Only show CsvUpload when explicitly requested and not from settings-change
-  const shouldShowCsvUpload =
-    simulatePassengers &&
-    uploadSource !== "settings-change" &&
-    (!simulationInput.filename ||
-      (uploadSource && uploadSource === "main-upload")) &&
-    !nextRunFilename &&
-    !hasResults; // Don't show in results view, just in initial state
-
-  // Update the conditional for the initial state view (CSV Upload or Passenger Sim Disabled message)
+  // **Updated Conditions**
   const showCsvUploadCard =
     simulatePassengers &&
     !hasResults &&
     !nextRunFilename &&
+    validationStatus !== "valid" && // Only show if file isn't valid yet
     uploadSource !== "settings-change";
+
   const showPassengerDisabledCard = !simulatePassengers && !hasResults;
+
+  // **New Condition**
+  const showFileReadyPlaceholder =
+    simulatePassengers &&
+    !hasResults &&
+    !isMapLoading &&
+    validationStatus === "valid" && // Show when file is valid
+    uploadedFileName; // And a file name exists
 
   // --- Define content for the main area ---
   let mainContent: ReactNode;
@@ -573,7 +629,7 @@ export default function Home() {
             simulationTime={simulationTime}
             isRunning={isSimulationRunning}
             simulationTimetable={simulationResult?.filter(
-              (entry) =>
+              (entry: any) =>
                 !entry.SCHEME_TYPE ||
                 entry.SCHEME_TYPE === selectedScheme ||
                 entry.SERVICE_TYPE === selectedScheme
@@ -600,10 +656,12 @@ export default function Home() {
             startTime={
               isFullDayView
                 ? FULL_DAY_HOURS.start
-                : PEAK_HOURS[selectedPeak].start
+                : PEAK_HOURS[selectedPeak as PeakPeriod].start
             }
             endTime={
-              isFullDayView ? FULL_DAY_HOURS.end : PEAK_HOURS[selectedPeak].end
+              isFullDayView
+                ? FULL_DAY_HOURS.end
+                : PEAK_HOURS[selectedPeak as PeakPeriod].end
             }
             onTimeUpdate={handleTimeUpdate}
             onSimulationStateChange={handleSimulationStateChange}
@@ -676,6 +734,8 @@ export default function Home() {
         </div>
       </div>
     );
+  } else if (showFileReadyPlaceholder) {
+    mainContent = <FileReadyPlaceholder fileName={uploadedFileName!} />;
   } else {
     // Initial State (CSV Upload or Passenger Sim Disabled message)
     mainContent = (
@@ -692,11 +752,7 @@ export default function Home() {
             </CardHeader>
             <CardContent>
               <CsvUpload
-                // Use nextRunFilename for initial display if available
                 onFileSelect={(file, backendFilename) => {
-                  // When a new file is selected in the initial state,
-                  // update both nextRunFilename (for immediate use)
-                  // and simulationInput.filename (for persistence if run is clicked)
                   setNextRunFilename(backendFilename);
                   setSimulationInput({ filename: backendFilename });
                 }}
@@ -920,9 +976,12 @@ export default function Home() {
       />
 
       <DataViewerModal
-        isOpen={useUIStore((state) => state.isDataViewerModalOpen)}
+        isOpen={useUIStore((state: any) => state.isDataViewerModalOpen)}
         onClose={() => useUIStore.getState().setDataViewerModalOpen(false)}
       />
+
+      {/* Add the Simulation Name Dialog */}
+      <SimulationNameDialog />
     </main>
   );
 }

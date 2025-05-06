@@ -1407,9 +1407,10 @@ class EventHandler:
         }
 
 class Simulation:
-    def __init__(self, simulation_name, csv_filename, config):
+    def __init__(self, simulation_name="Untitled Simulation", csv_filename=None, config=None):
         self.simulation_id = None
-        self.simulation_name = simulation_name
+        # Use the provided name or the default
+        self.simulation_name = simulation_name if simulation_name else "Untitled Simulation"
         self.passenger_data_file = csv_filename
         self.config = config
         self.scheme_type = None

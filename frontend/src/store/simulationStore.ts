@@ -82,6 +82,10 @@ interface SimulationState {
   // Map refresh (for key changes)
   mapRefreshKey: number;
 
+  // Simulation Name
+  simulationName: string;
+  isSimulationNameDialogOpen: boolean;
+
   // Actions
   setSimulationSettings: (settings: SimulationSettings | null) => void;
   setActiveSimulationSettings: (settings: SimulationSettings | null) => void;
@@ -109,6 +113,8 @@ interface SimulationState {
   setIsMapLoading: (isLoading: boolean) => void;
   setApiError: (error: string | null) => void;
   incrementMapRefreshKey: () => void;
+  setSimulationName: (name: string) => void;
+  setSimulationNameDialogOpen: (isOpen: boolean) => void;
 
   // Helper actions for settings
   updateSimulationSetting: (key: string, value: any) => void;
@@ -144,6 +150,8 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   isMapLoading: false,
   apiError: null,
   mapRefreshKey: 0,
+  simulationName: "Untitled Simulation",
+  isSimulationNameDialogOpen: false,
 
   // Basic setters
   setSimulationSettings: (settings) => set({ simulationSettings: settings }),
@@ -189,6 +197,10 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   setApiError: (error) => set({ apiError: error }),
   incrementMapRefreshKey: () =>
     set((state) => ({ mapRefreshKey: state.mapRefreshKey + 1 })),
+  setSimulationName: (name) =>
+    set({ simulationName: name || "Untitled Simulation" }),
+  setSimulationNameDialogOpen: (isOpen) =>
+    set({ isSimulationNameDialogOpen: isOpen }),
 
   // Complex actions
   updateSimulationSetting: (key, value) =>
@@ -302,5 +314,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
       nextRunFilename: null,
       simulationTime: PEAK_HOURS[state.selectedPeak].start,
       isSimulationRunning: false,
+      simulationName: "Untitled Simulation",
+      isSimulationNameDialogOpen: false,
     })),
 }));

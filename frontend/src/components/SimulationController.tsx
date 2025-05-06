@@ -75,22 +75,22 @@ const SimulationController = ({
   className, // Destructure className
 }: SimulationControllerProps) => {
   // Use Zustand store
-  const simulationTime = useSimulationStore((state) => state.simulationTime);
+  const simulationTime = useSimulationStore((state: any) => state.simulationTime);
   const isSimulationRunning = useSimulationStore(
-    (state) => state.isSimulationRunning
+    (state: any) => state.isSimulationRunning
   );
   const setSimulationTime = useSimulationStore(
-    (state) => state.setSimulationTime
+    (state: any) => state.setSimulationTime
   );
   const setIsSimulationRunning = useSimulationStore(
-    (state) => state.setIsSimulationRunning
+    (state: any) => state.setIsSimulationRunning
   );
-  const selectedScheme = useSimulationStore((state) => state.selectedScheme);
+  const selectedScheme = useSimulationStore((state: any) => state.selectedScheme);
   const setSelectedScheme = useSimulationStore(
-    (state) => state.setSelectedScheme
+    (state: any) => state.setSelectedScheme
   );
   const setShowDebugInfo = useSimulationStore(
-    (state) => state.setShowDebugInfo
+    (state: any) => state.setShowDebugInfo
   );
 
   // Local state for UI

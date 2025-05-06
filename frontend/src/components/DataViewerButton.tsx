@@ -8,12 +8,12 @@ import { cn } from "@/lib/utils";
 function DataViewerButtonComponent() {
   // Get the setter from the UI store
   const setDataViewerModalOpen = useUIStore(
-    (state) => state.setDataViewerModalOpen
+    (state: any) => state.setDataViewerModalOpen
   );
   const loadedSimulationId = useSimulationStore(
-    (state) => state.loadedSimulationId
+    (state: any) => state.loadedSimulationId
   );
-  const hasResults = !!useSimulationStore((state) => state.simulationResult)
+  const hasResults = !!useSimulationStore((state: any) => state.simulationResult)
     ?.length;
 
   // Check if there's data to view

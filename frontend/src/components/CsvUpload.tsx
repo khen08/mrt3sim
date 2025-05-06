@@ -2,12 +2,13 @@ import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
   IconUpload,
-  IconFile,
   IconX,
   IconCheck,
   IconDownload,
   IconLoader2,
   IconAlertCircle,
+  IconTrash,
+  IconReplace,
 } from "@tabler/icons-react";
 import { toast } from "@/components/ui/use-toast";
 import { SAMPLE_CSV_PATH, SAMPLE_CSV_FILENAME } from "@/lib/constants";
@@ -30,74 +31,82 @@ const CsvUpload = ({
     uploadedFileName,
     uploadStatus,
     uploadSource,
+    validationStatus,
+    validationErrors,
+    validateFile,
+    resetFileState,
   } = useFileStore();
 
-  // Get relevant state from simulation store to prevent duplicate UI
-  const nextRunFilename = useSimulationStore((state) => state.nextRunFilename);
-  const hasResults = useSimulationStore(
-    (state) =>
-      state.simulationResult !== null && state.simulationResult.length > 0
+  // Get relevant state from simulation store
+  const nextRunFilename = useSimulationStore((state: any) => state.nextRunFilename);
+  const setSimulationNameDialogOpen = useSimulationStore(
+    (state: any) => state.setSimulationNameDialogOpen
   );
 
   // Local state
   const [isDragging, setIsDragging] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // If this component shouldn't show its UI, return null
-  // Added checks to prevent duplicate upload components when file is handled elsewhere
-  if (
-    uploadSource === "settings-change" || // Don't show when settings card is handling the upload
-    nextRunFilename !== null // Don't show when a file is already selected for next run
-  ) {
+  if (uploadSource === "settings-change" || nextRunFilename !== null) {
     return null;
   }
 
-  // Handle file input change
-  const handleFileChange = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
+  // Shared file processing logic
+  const processFile = useCallback(
+    async (file: File | null | undefined) => {
       if (!file) return;
 
-      setIsUploading(true);
-      try {
-        const result = await uploadFile(file, "main-upload");
-        if (result.success && result.filename) {
-          onFileSelect(file, result.filename);
+      setIsProcessing(true);
+      useFileStore.setState({ validationStatus: "pending" });
 
-          toast({
-            title: "File Uploaded Successfully",
-            description: `${file.name} is ready for simulation.`,
-            variant: "default",
-          });
-        } else {
-          if (result.errorType === "format_error") {
-            toast({
-              title: "Invalid CSV Format",
-              description:
-                result.error || "The CSV file has an invalid format.",
-              variant: "destructive",
-            });
+      try {
+        const isValid = await validateFile(file);
+
+        if (isValid) {
+          const uploadResult = await uploadFile(file, "main-upload");
+          if (uploadResult.success && uploadResult.filename) {
+            onFileSelect(file, uploadResult.filename);
+            setSimulationNameDialogOpen(true);
           } else {
+            onFileSelect(null, null);
             toast({
               title: "Upload Failed",
-              description: result.error || "An error occurred during upload.",
+              description:
+                uploadResult.error || "An error occurred during upload.",
               variant: "destructive",
             });
           }
+        } else {
+          onFileSelect(null, null);
         }
       } catch (error) {
-        console.error("Error in file upload:", error);
+        console.error("Error processing file:", error);
+        onFileSelect(null, null);
         toast({
-          title: "Upload Error",
-          description: "An unexpected error occurred during upload.",
+          title: "Processing Error",
+          description: "An unexpected error occurred.",
           variant: "destructive",
         });
+        useFileStore.setState({
+          validationStatus: "invalid",
+          validationErrors: ["Unexpected processing error"],
+        });
       } finally {
-        setIsUploading(false);
+        setIsProcessing(false);
       }
     },
-    [onFileSelect, uploadFile]
+    [validateFile, uploadFile, onFileSelect, setSimulationNameDialogOpen]
+  );
+
+  // Handle file input change
+  const handleFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      processFile(file);
+    },
+    [processFile]
   );
 
   // Handle drag and drop
@@ -114,7 +123,7 @@ const CsvUpload = ({
   }, []);
 
   const handleDrop = useCallback(
-    async (e: React.DragEvent<HTMLDivElement>) => {
+    (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(false);
@@ -122,8 +131,6 @@ const CsvUpload = ({
       const files = e.dataTransfer.files;
       if (files.length > 0) {
         const file = files[0];
-
-        // Check if file is csv
         if (!file.name.toLowerCase().endsWith(".csv")) {
           toast({
             title: "Invalid File Type",
@@ -132,70 +139,38 @@ const CsvUpload = ({
           });
           return;
         }
-
-        setIsUploading(true);
-        try {
-          const result = await uploadFile(file, "main-upload");
-          if (result.success && result.filename) {
-            onFileSelect(file, result.filename);
-
-            toast({
-              title: "File Uploaded Successfully",
-              description: `${file.name} is ready for simulation.`,
-              variant: "default",
-            });
-          } else {
-            if (result.errorType === "format_error") {
-              toast({
-                title: "Invalid CSV Format",
-                description:
-                  result.error || "The CSV file has an invalid format.",
-                variant: "destructive",
-              });
-            } else {
-              toast({
-                title: "Upload Failed",
-                description: result.error || "An error occurred during upload.",
-                variant: "destructive",
-              });
-            }
-          }
-        } catch (error) {
-          console.error("Error in file upload:", error);
-          toast({
-            title: "Upload Error",
-            description: "An unexpected error occurred during upload.",
-            variant: "destructive",
-          });
-        } finally {
-          setIsUploading(false);
-        }
+        processFile(file);
       }
     },
-    [onFileSelect, uploadFile]
+    [processFile]
   );
 
-  // Handle file removal
-  const handleRemoveFile = useCallback(() => {
-    useFileStore.getState().resetUploadState();
+  // Handle file removal/clearing state
+  const handleClearFileState = useCallback(() => {
+    resetFileState();
     onFileSelect(null, null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-
     toast({
-      title: "File Removed",
-      description: "The file has been removed.",
+      title: "File Cleared",
+      description: "Upload state has been reset.",
       variant: "default",
     });
-  }, [onFileSelect]);
+  }, [resetFileState, onFileSelect]);
 
-  // Handle manual file selection click
+  // Handle triggering file input
   const handleClickUpload = useCallback(() => {
+    if (validationStatus !== "invalid") {
+      fileInputRef.current?.click();
+    }
+  }, [validationStatus]);
+
+  const handleReplaceFile = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
 
-  // Handle sample file download
+  // Handle sample download
   const handleSampleDownload = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
 
@@ -230,9 +205,13 @@ const CsvUpload = ({
   }, []);
 
   // Determine UI states
-  const isFileSelected = !!uploadedFileObject;
+  const showUploadArea =
+    validationStatus !== "valid" &&
+    validationStatus !== "invalid" &&
+    !uploadedFileObject;
+  const showFileInfo = validationStatus === "valid" && uploadedFileObject;
+  const showErrorState = validationStatus === "invalid";
 
-  // Render the upload UI
   return (
     <div className="w-full">
       <input
@@ -243,8 +222,8 @@ const CsvUpload = ({
         className="hidden"
       />
 
-      {/* Upload area when no file is selected */}
-      {!isFileSelected && (
+      {/* 1. Default Upload Area */}
+      {showUploadArea && (
         <div
           className={`border-2 border-dashed rounded-lg p-6 transition-colors ${
             isDragging
@@ -255,50 +234,63 @@ const CsvUpload = ({
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           onClick={handleClickUpload}
+          style={{ cursor: "pointer" }}
         >
           <div className="flex flex-col items-center justify-center space-y-4 text-center">
-            <IconUpload size={36} className="text-muted-foreground/60" />
-            <div>
-              <p className="text-sm font-medium">
-                <span className="text-primary font-semibold hover:underline cursor-pointer">
-                  Click to upload
-                </span>{" "}
-                or drag and drop
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                CSV file with passenger flow data
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-2"
-              onClick={handleSampleDownload}
-            >
-              <IconDownload size={14} className="mr-1" /> Download Sample CSV
-            </Button>
+            {isProcessing ? (
+              <>
+                <IconLoader2 size={36} className="text-primary animate-spin" />
+                <p className="text-sm font-medium">Validating...</p>
+              </>
+            ) : (
+              <>
+                <IconUpload size={36} className="text-muted-foreground/60" />
+                <div>
+                  <p className="text-sm font-medium">
+                    <span className="text-primary font-semibold hover:underline">
+                      Click to upload
+                    </span>{" "}
+                    or drag and drop
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    CSV file with passenger flow data
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={handleSampleDownload}
+                >
+                  <IconDownload size={14} className="mr-1" /> Download Sample
+                  CSV
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}
 
-      {/* Uploaded file info */}
-      {isFileSelected && (
-        <div className="border rounded-lg p-4 bg-muted/30">
+      {/* 2. Valid File Info */}
+      {showFileInfo && uploadedFileName && (
+        <div className="border rounded-lg p-4 bg-green-50 border-green-300">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <IconFile size={24} className="text-primary" />
+              <IconCheck size={24} className="text-green-600" />
               <div>
-                <p className="text-sm font-medium">{uploadedFileName}</p>
-                <p className="text-xs text-muted-foreground">
-                  Ready for simulation
+                <p className="text-sm font-medium text-green-800">
+                  {uploadedFileName}
+                </p>
+                <p className="text-xs text-green-700">
+                  File validated successfully.
                 </p>
               </div>
             </div>
             <Button
               variant="outline"
               size="sm"
-              onClick={handleRemoveFile}
-              className="h-8 px-2"
+              onClick={handleClearFileState}
+              className="h-8 px-2 border-gray-300 hover:bg-gray-100"
             >
               <IconX size={16} />
             </Button>
@@ -306,44 +298,87 @@ const CsvUpload = ({
         </div>
       )}
 
-      {/* Upload status */}
-      {uploadStatus && (
-        <div
-          className={`mt-4 p-3 rounded-md ${
-            uploadStatus.success
-              ? "bg-green-50 text-green-700 border border-green-200"
-              : "bg-red-50 text-red-700 border border-red-200"
-          }`}
-        >
-          <div className="flex items-start space-x-2">
-            {uploadStatus.success ? (
-              <IconCheck size={18} className="flex-shrink-0" />
-            ) : (
-              <IconAlertCircle size={18} className="flex-shrink-0" />
-            )}
-            <div>
-              <p className="text-sm font-medium">{uploadStatus.message}</p>
-              {uploadStatus.details && uploadStatus.details.length > 0 && (
-                <ul className="mt-1 text-xs list-disc list-inside">
-                  {uploadStatus.details.map((detail, idx) => (
-                    <li key={idx}>{detail}</li>
-                  ))}
-                </ul>
-              )}
+      {/* 3. Invalid File / Error State */}
+      {showErrorState && (
+        <div className="border rounded-lg p-4 bg-red-50 border-red-300">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center space-x-3">
+              <IconAlertCircle size={24} className="text-red-600" />
+              <div>
+                <p className="text-sm font-medium text-red-800">
+                  {uploadedFileName || "Invalid File"}
+                </p>
+                <p className="text-xs text-red-700">
+                  Validation failed. Please fix the issues below.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="destructive"
+                size="icon"
+                onClick={handleClearFileState}
+                className="h-8 w-8"
+                title="Remove File"
+              >
+                <IconTrash size={16} />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleReplaceFile}
+                className="h-8 w-8 border-gray-300 hover:bg-gray-100 dark:text-black"
+                title="Replace File"
+              >
+                <IconReplace size={16} />
+              </Button>
             </div>
           </div>
+
+          {validationErrors.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-red-200">
+              <ul className="list-disc pl-5 text-xs text-red-600 space-y-1 max-h-20 overflow-y-auto">
+                {validationErrors.map((error: any, idx: any) => (
+                  <li key={idx}>{error}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Loading state */}
-      {isUploading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
-          <div className="flex flex-col items-center space-y-2">
-            <IconLoader2 size={24} className="animate-spin text-primary" />
-            <p className="text-sm font-medium">Uploading...</p>
+      {/* Generic Upload Status (e.g., network errors during upload) */}
+      {uploadStatus &&
+        !uploadStatus.success &&
+        validationStatus !== "invalid" && (
+          <div className="mt-4 p-3 rounded-md bg-red-50 text-red-700 border border-red-200">
+            <div className="flex items-start space-x-2">
+              <IconAlertCircle size={18} className="flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium">
+                  Upload Error: {uploadStatus.message}
+                </p>
+                {uploadStatus.details && uploadStatus.details.length > 0 && (
+                  <ul className="mt-1 text-xs list-disc list-inside">
+                    {uploadStatus.details.map((detail: any, idx: any) => (
+                      <li key={idx}>{detail}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleClearFileState}
+                className="h-6 w-6 text-red-500 hover:bg-red-100 ml-auto"
+                title="Clear Error"
+              >
+                <IconX size={14} />
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
     </div>
   );
 };

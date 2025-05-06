@@ -503,7 +503,7 @@ const StationInfo = ({
                 {chartData.length > 0 ? (
                   <BarChart
                     data={chartData}
-                    yAxisWidth={25}
+                    yAxisWidth={60}
                     showAnimation={false}
                     showLegend={false}
                     colors={["#0066CC"]}
