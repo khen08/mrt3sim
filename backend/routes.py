@@ -10,6 +10,7 @@ from config import DEFAULT_SETTINGS, UPLOAD_FOLDER
 
 # Import database client
 from connect import db
+from prisma.models import PASSENGER_DEMAND # Import model for type hinting if needed
 
 # Import Simulation Handler
 from simulation import Simulation
@@ -386,19 +387,15 @@ def get_simulation_config(simulation_id):
 
         config_data = simulation.CONFIG
 
-        # Assuming CONFIG is stored as a JSON string in the database
         if isinstance(config_data, str):
             try:
                 config_data = json.loads(config_data)
             except json.JSONDecodeError:
                 print(f"[ROUTE:/SIMULATIONS/<id>/CONFIG] WARNING: Failed to parse CONFIG JSON for simulation {simulation_id}.")
-                # Return the raw string or an error, depending on desired behavior
                 return jsonify({"error": "Failed to parse configuration data"}), 500
-        elif not isinstance(config_data, dict): # If it's not a string or a dict
+        elif not isinstance(config_data, dict):
             print(f"[ROUTE:/SIMULATIONS/<id>/CONFIG] WARNING: Unexpected type for CONFIG field for simulation {simulation_id}: {type(config_data)}")
-            # Decide how to handle this - return as is, or return error
             return jsonify({"error": f"Unexpected data type for configuration: {type(config_data)}"}), 500
-
 
         print(f"[ROUTE:/SIMULATIONS/<id>/CONFIG] Successfully retrieved config for simulation ID {simulation_id}")
         return jsonify(config_data)
@@ -407,6 +404,86 @@ def get_simulation_config(simulation_id):
         import traceback
         print(f"[ROUTE:/SIMULATIONS/<id>/CONFIG] FAILED TO FETCH CONFIG: {e}\n{traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
+
+# Route to get aggregated passenger demand by time period and scheme (Prisma ORM version)
+@main_bp.route('/simulations/<int:simulation_id>/aggregated_demand', methods=['GET'])
+def get_aggregated_demand(simulation_id):
+    """
+    Aggregates passenger demand for a simulation by O-D pair,
+    categorized into Full Service, AM Peak (7-9), and PM Peak (17-20),
+    and further broken down by scheme type, using Prisma ORM.
+    """
+    print(f"[ROUTE:/SIMULATIONS/<id>/AGGREGATED_DEMAND_ORM] STARTING AGGREGATION FOR SIMULATION ID: {simulation_id}")
+    try:
+        passenger_demand_entries = db.passenger_demand.find_many(
+            where={'SIMULATION_ID': simulation_id},
+            # Optional: include related station names if needed for display, though not in current output format
+            # include={'origin_station': True, 'destination_station': True} 
+        )
+        print(f"[ROUTE:/SIMULATIONS/<id>/AGGREGATED_DEMAND_ORM] FETCHED {len(passenger_demand_entries)} ENTRIES FROM DB")
+
+        # Intermediate structure to hold aggregated counts before final formatting
+        # Format: {period: {scheme: {(origin_id, dest_id): count}}}
+        aggregated_counts = {
+            "FULL_SERVICE": {"REGULAR": {}, "SKIP-STOP": {}},
+            "AM_PEAK": {"REGULAR": {}, "SKIP-STOP": {}},
+            "PM_PEAK": {"REGULAR": {}, "SKIP-STOP": {}}
+        }
+
+        for entry in passenger_demand_entries:
+            # entry_dict = entry.dict() # .dict() might not be needed if accessing attributes directly
+            origin_id = entry.ORIGIN_STATION_ID
+            dest_id = entry.DESTINATION_STATION_ID
+            pass_count = entry.PASSENGER_COUNT
+            scheme = entry.SCHEME_TYPE
+            arrival_time = entry.ARRIVAL_TIME_AT_ORIGIN # This is a datetime object
+
+            if scheme not in ["REGULAR", "SKIP-STOP"]:
+                print(f"[ROUTE:/SIMULATIONS/<id>/AGGREGATED_DEMAND_ORM] WARNING: UNEXPECTED SCHEME_TYPE '{scheme}' FOUND. SKIPPING ENTRY.")
+                continue
+            
+            od_pair = (origin_id, dest_id)
+
+            # --- Aggregate for FULL_SERVICE ---
+            current_full_service_count = aggregated_counts["FULL_SERVICE"][scheme].get(od_pair, 0)
+            aggregated_counts["FULL_SERVICE"][scheme][od_pair] = current_full_service_count + pass_count
+
+            # --- Aggregate for AM_PEAK (7:00 - 8:59) ---
+            if arrival_time and 7 <= arrival_time.hour < 9:
+                current_am_peak_count = aggregated_counts["AM_PEAK"][scheme].get(od_pair, 0)
+                aggregated_counts["AM_PEAK"][scheme][od_pair] = current_am_peak_count + pass_count
+
+            # --- Aggregate for PM_PEAK (17:00 - 19:59) ---
+            if arrival_time and 17 <= arrival_time.hour < 20:
+                current_pm_peak_count = aggregated_counts["PM_PEAK"][scheme].get(od_pair, 0)
+                aggregated_counts["PM_PEAK"][scheme][od_pair] = current_pm_peak_count + pass_count
+        
+        print(f"[ROUTE:/SIMULATIONS/<id>/AGGREGATED_DEMAND_ORM] INTERMEDIATE AGGREGATION COMPLETE")
+
+        # Structure the results according to the desired JSON output format
+        output = {
+            "FULL_SERVICE": {"REGULAR": [], "SKIP-STOP": []},
+            "AM_PEAK": {"REGULAR": [], "SKIP-STOP": []},
+            "PM_PEAK": {"REGULAR": [], "SKIP-STOP": []}
+        }
+
+        for period, schemes_data in aggregated_counts.items():
+            for scheme, od_pairs_data in schemes_data.items():
+                for od_pair, count in od_pairs_data.items():
+                    if count > 0: # Only include OD pairs with passengers in this period/scheme
+                        route_str = f"{od_pair[0]}-{od_pair[1]}"
+                        output[period][scheme].append({
+                            "ROUTE": route_str,
+                            "PASSENGER_COUNT": count
+                        })
+        
+        print(f"[ROUTE:/SIMULATIONS/<id>/AGGREGATED_DEMAND_ORM] SUCCESSFULLY PROCESSED RESULTS FOR SIMULATION ID {simulation_id}")
+        return jsonify(output)
+
+    except Exception as e:
+        import traceback
+        print(f"[ROUTE:/SIMULATIONS/<id>/AGGREGATED_DEMAND_ORM] FAILED TO FETCH OR PROCESS AGGREGATED DEMAND: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": f"Failed to retrieve or process aggregated demand: {str(e)}"}), 500
 
 # --- Helper Functions ---
 
