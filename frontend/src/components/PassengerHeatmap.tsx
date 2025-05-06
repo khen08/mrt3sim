@@ -32,8 +32,8 @@ interface PassengerHeatmapProps {
 export function PassengerHeatmap({ data }: PassengerHeatmapProps) {
   // Remove destinationStations prop passing
   return (
-    <div className="w-[1000px] h-[500px] bg-white p-4 rounded-xl justify-center items-center flex">
-      <div className="!w-[600px]">
+    <div className="w-[1000px] h-[550px] bg-white p-4 rounded-xl justify-center items-center flex">
+      <div className="!w-[600px] h-[400px]">
         <HeatmapChart data={data} className="h-full w-full" />
       </div>
     </div>
@@ -122,7 +122,7 @@ function HeatmapChart({
           data: data, // Data should match Nivo's expected type now
           // keys prop removed
           indexBy: "id", // Index by the 'id' field (origin station)
-          margin: { top: 30, right: 80, bottom: 80, left: 80 },
+          margin: { top: 30, right: 130, bottom: 100, left: 130 },
           valueFormat: ">,.0f",
           // Disable the top axis
           axisTop: null,
@@ -142,7 +142,7 @@ function HeatmapChart({
             tickRotation: 0,
             legend: "Origin Station",
             legendPosition: "middle",
-            legendOffset: -60,
+            legendOffset: -110,
           },
           colors: {
             type: "sequential",
