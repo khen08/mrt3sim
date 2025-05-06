@@ -5,174 +5,356 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
-import { ResponsiveHeatMap, DefaultHeatMapDatum } from "@nivo/heatmap";
-import { Tooltip } from "@nivo/tooltip";
-import { useTheme } from "next-themes";
-import * as React from "react";
+import { ResponsiveHeatMap } from "@nivo/heatmap";
+import { ResponsiveLine } from "@nivo/line";
 
-// Revert to the structure Nivo types seem to demand: { id: string, data: Datum[] }[]
-interface HeatmapDataPoint {
-  // Equivalent to Nivo's Datum
-  x: string | number; // Destination Station
-  y: number; // Demand Value
-}
-
-interface HeatmapSeries {
-  // Equivalent to Nivo's HeatMapSeries
-  id: string; // Origin Station (for indexBy)
-  data: HeatmapDataPoint[]; // Data points for this origin
-}
-
-// Update props
-interface PassengerHeatmapProps {
-  data: HeatmapSeries[];
-  // destinationStations prop removed
-}
-
-export function PassengerHeatmap({ data }: PassengerHeatmapProps) {
-  // Remove destinationStations prop passing
+export default function Component() {
   return (
-    <div className="w-[1000px] h-[550px] bg-white p-4 rounded-xl justify-center items-center flex">
-      <div className="!w-[600px] h-[400px]">
-        <HeatmapChart data={data} className="h-full w-full" />
-      </div>
-    </div>
+    <Card className="h-full w-full max-w-4xl">
+      <CardHeader>
+        <CardTitle>Sales Performance Heatmap</CardTitle>
+        <CardDescription>
+          This heatmap shows the sales performance across different regions and
+          product categories.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-10 gap-1">
+          <div className="col-span-8 row-span-8">
+            <HeatmapChart className="aspect-[4/3]" />
+          </div>
+          <div className="col-span-2 row-span-4 flex flex-col items-start gap-4">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-[#0077b6]" />
+              <span className="text-sm">Low Sales</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-[#ffa500]" />
+              <span className="text-sm">Average Sales</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-[#ff0000]" />
+              <span className="text-sm">High Sales</span>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
-function HeatmapChart({
-  data,
-  // destinationStations removed
-  className,
-}: {
-  data: HeatmapSeries[];
-  className?: string;
-}) {
-  // Update function signature
-  const { theme } = useTheme();
-
-  // Update value calculation based on the new structure
-  const values = data
-    .flatMap((series) => series.data.map((d) => d.y)) // Access nested data
-    .filter((y): y is number => typeof y === "number" && !isNaN(y));
-
-  const minValue = values.length > 0 ? Math.min(...values) : 0;
-  const maxValue = values.length > 0 ? Math.max(...values) : 1;
-
-  const nivoTheme = {
-    axis: {
-      ticks: {
-        text: {
-          fill: theme === "dark" ? "#a0aec0" : "#4a5568",
-          fontSize: 10,
-        },
-      },
-      legend: {
-        text: {
-          fill: theme === "dark" ? "#cbd5e0" : "#2d3748",
-          fontSize: 12,
-          fontWeight: 500,
-        },
-      },
-    },
-    tooltip: {
-      container: {
-        background: theme === "dark" ? "#2d3748" : "#ffffff",
-        color: theme === "dark" ? "#e2e8f0" : "#1a202c",
-        fontSize: "12px",
-        borderRadius: "3px",
-        boxShadow:
-          "0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24)",
-      },
-    },
-  };
-
-  // Adjust tooltip for indexBy approach (data structure { id: string, data: {x, y}[] })
-  // Nivo cell should contain serieId (origin) and data (the HeatmapDataPoint {x, y})
-  const CustomTooltip: React.FC<{
-    cell: {
-      serieId: string | number;
-      data: HeatmapDataPoint;
-      value: number | null;
-    };
-  }> = ({ cell }) => (
-    <div
-      style={{
-        background: nivoTheme.tooltip.container.background,
-        color: nivoTheme.tooltip.container.color,
-        padding: "6px 9px",
-        borderRadius: nivoTheme.tooltip.container.borderRadius,
-        boxShadow: nivoTheme.tooltip.container.boxShadow,
-        fontSize: nivoTheme.tooltip.container.fontSize,
-      }}
-    >
-      <strong>Origin: {cell.serieId}</strong>
-      <br />
-      <strong>Destination: {cell.data.x}</strong>
-      <br />
-      Demand: {cell.value?.toLocaleString() ?? "N/A"}
-    </div>
-  );
-
+function HeatmapChart(props: any) {
   return (
-    <div className={className}>
+    <div {...props}>
       <ResponsiveHeatMap
-        {...({
-          // Cast the entire props object
-          data: data, // Data should match Nivo's expected type now
-          // keys prop removed
-          indexBy: "id", // Index by the 'id' field (origin station)
-          margin: { top: 30, right: 130, bottom: 100, left: 130 },
-          valueFormat: ">,.0f",
-          // Disable the top axis
-          axisTop: null,
-          axisRight: null,
-          // Configure the bottom axis instead
-          axisBottom: {
-            tickSize: 5,
-            tickPadding: 5,
-            tickRotation: -45, // Keep rotation
-            legend: "Destination Station",
-            legendPosition: "middle",
-            legendOffset: 80, // Positive offset to place below axis
+        data={[
+          {
+            id: "A",
+            data: [
+              {
+                x: "1",
+                y: 4415,
+              },
+              {
+                x: "2",
+                y: -59456,
+              },
+              {
+                x: "3",
+                y: -79886,
+              },
+              {
+                x: "4",
+                y: 14478,
+              },
+              {
+                x: "5",
+                y: -63874,
+              },
+              {
+                x: "6",
+                y: -47542,
+              },
+              {
+                x: "7",
+                y: 16635,
+              },
+              {
+                x: "8",
+                y: -30278,
+              },
+              {
+                x: "9",
+                y: -95178,
+              },
+            ],
           },
-          axisLeft: {
-            tickSize: 5,
-            tickPadding: 5,
-            tickRotation: 0,
-            legend: "Origin Station",
-            legendPosition: "middle",
-            legendOffset: -110,
+          {
+            id: "B",
+            data: [
+              {
+                x: "1",
+                y: 41241,
+              },
+              {
+                x: "2",
+                y: -77516,
+              },
+              {
+                x: "3",
+                y: -19422,
+              },
+              {
+                x: "4",
+                y: 61220,
+              },
+              {
+                x: "5",
+                y: -65044,
+              },
+              {
+                x: "6",
+                y: -59254,
+              },
+              {
+                x: "7",
+                y: 9299,
+              },
+              {
+                x: "8",
+                y: -58470,
+              },
+              {
+                x: "9",
+                y: 51828,
+              },
+            ],
           },
-          colors: {
-            type: "sequential",
-            scheme: "blues",
+          {
+            id: "C",
+            data: [
+              {
+                x: "1",
+                y: 94426,
+              },
+              {
+                x: "2",
+                y: 31248,
+              },
+              {
+                x: "3",
+                y: -15766,
+              },
+              {
+                x: "4",
+                y: 22271,
+              },
+              {
+                x: "5",
+                y: 86246,
+              },
+              {
+                x: "6",
+                y: -23717,
+              },
+              {
+                x: "7",
+                y: 97595,
+              },
+              {
+                x: "8",
+                y: -69800,
+              },
+              {
+                x: "9",
+                y: 74453,
+              },
+            ],
           },
-          emptyColor: "#555555",
-          cellBorderWidth: 1,
-          cellBorderColor: { from: "color", modifiers: [["darker", 0.4]] },
-          legends: [
-            {
-              anchor: "right",
-              translateX: 20,
-              translateY: 0,
-              length: 300,
-              thickness: 10,
-              direction: "column",
-              tickPosition: "after",
-              tickSize: 3,
-              tickSpacing: 4,
-              tickOverlap: false,
-              tickFormat: ">-.2s",
-              title: "Passenger Demand →",
-              titleAlign: "start",
-              titleOffset: -55,
+          {
+            id: "D",
+            data: [
+              {
+                x: "1",
+                y: -49899,
+              },
+              {
+                x: "2",
+                y: 13864,
+              },
+              {
+                x: "3",
+                y: -45673,
+              },
+              {
+                x: "4",
+                y: -20270,
+              },
+              {
+                x: "5",
+                y: 99430,
+              },
+              {
+                x: "6",
+                y: 17283,
+              },
+              {
+                x: "7",
+                y: -6514,
+              },
+              {
+                x: "8",
+                y: -21766,
+              },
+              {
+                x: "9",
+                y: -52610,
+              },
+            ],
+          },
+          {
+            id: "E",
+            data: [
+              {
+                x: "1",
+                y: 81123,
+              },
+              {
+                x: "2",
+                y: -25153,
+              },
+              {
+                x: "3",
+                y: 2577,
+              },
+              {
+                x: "4",
+                y: 24409,
+              },
+              {
+                x: "5",
+                y: 82923,
+              },
+              {
+                x: "6",
+                y: 51283,
+              },
+              {
+                x: "7",
+                y: 10208,
+              },
+              {
+                x: "8",
+                y: 4055,
+              },
+              {
+                x: "9",
+                y: -14699,
+              },
+            ],
+          },
+        ]}
+        margin={{ top: 0, right: 10, bottom: 30, left: 30 }}
+        axisTop={null}
+        axisBottom={{
+          tickSize: 0,
+          tickPadding: 16,
+        }}
+        axisLeft={{
+          tickSize: 0,
+          tickPadding: 16,
+        }}
+        colors={{
+          type: "sequential",
+          scheme: "blue_green",
+        }}
+        theme={{
+          tooltip: {
+            chip: {
+              borderRadius: "9999px",
             },
-          ],
-          // tooltip prop using the adjusted CustomTooltip
-          tooltip: ({ cell }: any) => <CustomTooltip cell={cell as any} />, // Keep 'as any' temporarily
-          theme: nivoTheme,
-        } as any)} // <--- Add type assertion here
+            container: {
+              fontSize: "12px",
+              textTransform: "capitalize",
+              borderRadius: "6px",
+            },
+          },
+        }}
+        role="application"
+        ariaLabel="A heatmap chart/matrix"
+      />
+    </div>
+  );
+}
+
+function LineChart(props: any) {
+  return (
+    <div {...props}>
+      <ResponsiveLine
+        data={[
+          {
+            id: "Desktop",
+            data: [
+              { x: "Jan", y: 43 },
+              { x: "Feb", y: 137 },
+              { x: "Mar", y: 61 },
+              { x: "Apr", y: 145 },
+              { x: "May", y: 26 },
+              { x: "Jun", y: 154 },
+            ],
+          },
+          {
+            id: "Mobile",
+            data: [
+              { x: "Jan", y: 60 },
+              { x: "Feb", y: 48 },
+              { x: "Mar", y: 177 },
+              { x: "Apr", y: 78 },
+              { x: "May", y: 96 },
+              { x: "Jun", y: 204 },
+            ],
+          },
+        ]}
+        margin={{ top: 10, right: 10, bottom: 40, left: 40 }}
+        xScale={{
+          type: "point",
+        }}
+        yScale={{
+          type: "linear",
+        }}
+        axisTop={null}
+        axisRight={null}
+        axisBottom={{
+          tickSize: 0,
+          tickPadding: 16,
+        }}
+        axisLeft={{
+          tickSize: 0,
+          tickValues: 5,
+          tickPadding: 16,
+        }}
+        colors={["#2563eb", "#e11d48"]}
+        pointSize={6}
+        useMesh={true}
+        gridYValues={6}
+        theme={{
+          tooltip: {
+            chip: {
+              borderRadius: "9999px",
+            },
+            container: {
+              fontSize: "12px",
+              textTransform: "capitalize",
+              borderRadius: "6px",
+            },
+          },
+          grid: {
+            line: {
+              stroke: "#f3f4f6",
+            },
+          },
+        }}
+        role="application"
       />
     </div>
   );

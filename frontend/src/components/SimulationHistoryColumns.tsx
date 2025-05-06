@@ -3,7 +3,9 @@
 import { ColumnDef } from "@tanstack/react-table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, Search, ArrowUp, ArrowDown } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+// import { SimulationRun } from "@/lib/bindings"; // Path will be corrected later
 
 // Type alias for clarity
 type HistoryEntry = SimulationHistoryEntry;
@@ -42,34 +44,72 @@ export const columns = (
   {
     accessorKey: "SIMULATION_ID",
     header: ({ column }) => {
+      const sortIndex = column.getSortIndex();
+      const sortDirection = column.getIsSorted();
       return (
         <Button
           variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          className="p-0 hover:bg-transparent"
+          onClick={column.getToggleSortingHandler()}
+          className="p-0 hover:bg-transparent group"
         >
           ID
-          <ArrowUpDown className="ml-2 h-3 w-3" />
+          {sortDirection && sortIndex !== -1 && (
+            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
+              ({sortIndex + 1})
+            </span>
+          )}
+          {sortDirection === "asc" ? (
+            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
+          ) : sortDirection === "desc" ? (
+            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
+          ) : (
+            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
+          )}
         </Button>
       );
     },
     cell: ({ row }) => (
-      <div className="w-[50px] text-center font-medium">
-        {row.getValue("SIMULATION_ID")}
+      <div className="flex items-center">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="mr-2 h-7 w-7"
+          onClick={() => {
+            console.log("View details for:", row.original.SIMULATION_ID);
+          }}
+        >
+          <Search className="h-4 w-4" />
+        </Button>
+        <div className="w-[50px] text-center font-medium">
+          {row.getValue("SIMULATION_ID")}
+        </div>
       </div>
     ),
   },
   {
     accessorKey: "NAME", // Assuming backend saves it as NAME
     header: ({ column }) => {
+      const sortIndex = column.getSortIndex();
+      const sortDirection = column.getIsSorted();
       return (
         <Button
           variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          className="p-0 hover:bg-transparent"
+          onClick={column.getToggleSortingHandler()}
+          className="p-0 hover:bg-transparent group"
         >
           Name
-          <ArrowUpDown className="ml-2 h-3 w-3" />
+          {sortDirection && sortIndex !== -1 && (
+            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
+              ({sortIndex + 1})
+            </span>
+          )}
+          {sortDirection === "asc" ? (
+            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
+          ) : sortDirection === "desc" ? (
+            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
+          ) : (
+            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
+          )}
         </Button>
       );
     },
@@ -90,14 +130,27 @@ export const columns = (
   {
     accessorKey: "CREATED_AT",
     header: ({ column }) => {
+      const sortIndex = column.getSortIndex();
+      const sortDirection = column.getIsSorted();
       return (
         <Button
           variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          className="p-0 hover:bg-transparent"
+          onClick={column.getToggleSortingHandler()}
+          className="p-0 hover:bg-transparent group"
         >
           Created
-          <ArrowUpDown className="ml-2 h-3 w-3" />
+          {sortDirection && sortIndex !== -1 && (
+            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
+              ({sortIndex + 1})
+            </span>
+          )}
+          {sortDirection === "asc" ? (
+            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
+          ) : sortDirection === "desc" ? (
+            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
+          ) : (
+            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
+          )}
         </Button>
       );
     },
@@ -140,14 +193,27 @@ export const columns = (
   {
     accessorKey: "START_TIME",
     header: ({ column }) => {
+      const sortIndex = column.getSortIndex();
+      const sortDirection = column.getIsSorted();
       return (
         <Button
           variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          className="p-0 hover:bg-transparent"
+          onClick={column.getToggleSortingHandler()}
+          className="p-0 hover:bg-transparent group"
         >
           Simulation Start Time
-          <ArrowUpDown className="ml-2 h-3 w-3" />
+          {sortDirection && sortIndex !== -1 && (
+            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
+              ({sortIndex + 1})
+            </span>
+          )}
+          {sortDirection === "asc" ? (
+            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
+          ) : sortDirection === "desc" ? (
+            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
+          ) : (
+            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
+          )}
         </Button>
       );
     },
@@ -160,14 +226,27 @@ export const columns = (
   {
     accessorKey: "END_TIME",
     header: ({ column }) => {
+      const sortIndex = column.getSortIndex();
+      const sortDirection = column.getIsSorted();
       return (
         <Button
           variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          className="p-0 hover:bg-transparent"
+          onClick={column.getToggleSortingHandler()}
+          className="p-0 hover:bg-transparent group"
         >
           Simulation End Time
-          <ArrowUpDown className="ml-2 h-3 w-3" />
+          {sortDirection && sortIndex !== -1 && (
+            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
+              ({sortIndex + 1})
+            </span>
+          )}
+          {sortDirection === "asc" ? (
+            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
+          ) : sortDirection === "desc" ? (
+            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
+          ) : (
+            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
+          )}
         </Button>
       );
     },
@@ -180,14 +259,27 @@ export const columns = (
   {
     accessorKey: "TOTAL_RUN_TIME_SECONDS",
     header: ({ column }) => {
+      const sortIndex = column.getSortIndex();
+      const sortDirection = column.getIsSorted();
       return (
         <Button
           variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          className="p-0 hover:bg-transparent w-full justify-end"
+          onClick={column.getToggleSortingHandler()}
+          className="p-0 hover:bg-transparent group text-right w-full justify-end"
         >
           Duration
-          <ArrowUpDown className="ml-2 h-3 w-3" />
+          {sortDirection && sortIndex !== -1 && (
+            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
+              ({sortIndex + 1})
+            </span>
+          )}
+          {sortDirection === "asc" ? (
+            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
+          ) : sortDirection === "desc" ? (
+            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
+          ) : (
+            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
+          )}
         </Button>
       );
     },

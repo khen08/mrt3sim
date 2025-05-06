@@ -38,7 +38,9 @@ const CsvUpload = ({
   } = useFileStore();
 
   // Get relevant state from simulation store
-  const nextRunFilename = useSimulationStore((state: any) => state.nextRunFilename);
+  const nextRunFilename = useSimulationStore(
+    (state: any) => state.nextRunFilename
+  );
   const setSimulationNameDialogOpen = useSimulationStore(
     (state: any) => state.setSimulationNameDialogOpen
   );
@@ -68,7 +70,6 @@ const CsvUpload = ({
           const uploadResult = await uploadFile(file, "main-upload");
           if (uploadResult.success && uploadResult.filename) {
             onFileSelect(file, uploadResult.filename);
-            setSimulationNameDialogOpen(true);
           } else {
             onFileSelect(null, null);
             toast({
@@ -97,7 +98,7 @@ const CsvUpload = ({
         setIsProcessing(false);
       }
     },
-    [validateFile, uploadFile, onFileSelect, setSimulationNameDialogOpen]
+    [validateFile, uploadFile, onFileSelect]
   );
 
   // Handle file input change

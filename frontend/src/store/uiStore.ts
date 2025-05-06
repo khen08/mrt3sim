@@ -1,4 +1,19 @@
 import { create } from "zustand";
+import {
+  SortingState,
+  PaginationState,
+  RowSelectionState,
+} from "@tanstack/react-table";
+
+// Define initial states for table controls
+const initialHistorySorting: SortingState = [
+  { id: "CREATED_AT", desc: true }, // Default sort
+];
+const initialHistoryPagination: PaginationState = {
+  pageIndex: 0,
+  pageSize: 10, // Default page size
+};
+const initialHistoryRowSelection: RowSelectionState = {};
 
 // Define UI state interface
 interface UIState {
@@ -20,6 +35,11 @@ interface UIState {
   historySimulations: any[];
   hasFetchedInitialHistory: boolean;
 
+  // History Table State
+  historySorting: SortingState;
+  historyPagination: PaginationState;
+  historyRowSelection: RowSelectionState;
+
   // Actions
   setSidebarCollapsed: (collapsed: boolean) => void;
   setHistoryModalOpen: (open: boolean) => void;
@@ -33,6 +53,17 @@ interface UIState {
   addHistorySimulations: (simulations: any[]) => void;
   setHasFetchedInitialHistory: (fetched: boolean) => void;
   resetState: () => void;
+
+  // New actions for history table state
+  setHistorySorting: (
+    updater: SortingState | ((old: SortingState) => SortingState)
+  ) => void;
+  setHistoryPagination: (
+    updater: PaginationState | ((old: PaginationState) => PaginationState)
+  ) => void;
+  setHistoryRowSelection: (
+    updater: RowSelectionState | ((old: RowSelectionState) => RowSelectionState)
+  ) => void;
 
   // Combined actions
   selectStation: (stationId: number | null) => void;
@@ -51,6 +82,11 @@ export const useUIStore = create<UIState>((set) => ({
   isHistoryLoading: false,
   historySimulations: [],
   hasFetchedInitialHistory: false,
+
+  // History Table Initial State
+  historySorting: initialHistorySorting,
+  historyPagination: initialHistoryPagination,
+  historyRowSelection: initialHistoryRowSelection,
 
   // Basic setters
   setSidebarCollapsed: (collapsed) => set({ isSidebarCollapsed: collapsed }),
@@ -92,7 +128,32 @@ export const useUIStore = create<UIState>((set) => ({
       isHistoryModalOpen: false,
       isClearConfirmOpen: false,
       isDataViewerModalOpen: false,
+      // Also reset history table state
+      historySorting: initialHistorySorting,
+      historyPagination: initialHistoryPagination,
+      historyRowSelection: initialHistoryRowSelection,
     }),
+
+  // New setters for history table state
+  setHistorySorting: (updater) =>
+    set((state) => ({
+      historySorting:
+        typeof updater === "function" ? updater(state.historySorting) : updater,
+    })),
+  setHistoryPagination: (updater) =>
+    set((state) => ({
+      historyPagination:
+        typeof updater === "function"
+          ? updater(state.historyPagination)
+          : updater,
+    })),
+  setHistoryRowSelection: (updater) =>
+    set((state) => ({
+      historyRowSelection:
+        typeof updater === "function"
+          ? updater(state.historyRowSelection)
+          : updater,
+    })),
 
   // Combined actions
   selectStation: (stationId) =>

@@ -18,9 +18,14 @@ import {
   SimulationHistoryEntry,
 } from "@/components/SimulationHistoryColumns"; // Re-add SimulationHistoryEntry here
 import { DataTable } from "@/components/DataTable"; // Import the DataTable component
-import { RowSelectionState, SortingState } from "@tanstack/react-table"; // Import RowSelectionState and SortingState
+import {
+  RowSelectionState,
+  SortingState,
+  PaginationState, // Import PaginationState
+} from "@tanstack/react-table"; // Import RowSelectionState and SortingState
 import { useToast } from "@/lib/toast"; // Import custom toast hook
 import { useAPIStore } from "@/store/apiStore"; // Import the API store
+import { useUIStore } from "@/store/uiStore"; // Import the UI store
 
 interface SimulationHistoryModalProps {
   isOpen: boolean;
@@ -43,11 +48,18 @@ export function SimulationHistoryModal({
   isSimulating = false, // Destructure the new prop with a default
   onRefreshHistory, // Destructure the new prop - *Note: deleteSimulations in apiStore now handles refresh*
 }: SimulationHistoryModalProps) {
-  // State for row selection
-  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
-  const [sorting, setSorting] = React.useState<SortingState>([
-    { id: "CREATED_AT", desc: true }, // Default sort by creation date descending
-  ]);
+  // Select state and actions individually from uiStore to prevent infinite loops
+  const historyRowSelection = useUIStore((state) => state.historyRowSelection);
+  const setHistoryRowSelection = useUIStore(
+    (state) => state.setHistoryRowSelection
+  );
+  const historySorting = useUIStore((state) => state.historySorting);
+  const setHistorySorting = useUIStore((state) => state.setHistorySorting);
+  const historyPagination = useUIStore((state) => state.historyPagination);
+  const setHistoryPagination = useUIStore(
+    (state) => state.setHistoryPagination
+  );
+
   const [isDeleting, setIsDeleting] = React.useState(false);
   const { toast } = useToast();
   const { deleteSimulations } = useAPIStore(); // Get the delete action from the store
@@ -60,7 +72,7 @@ export function SimulationHistoryModal({
   );
 
   // Get number of selected rows
-  const selectedRowCount = Object.keys(rowSelection).length;
+  const selectedRowCount = Object.keys(historyRowSelection).length;
 
   const handleDeleteSelected = () => {
     handleDeleteSelectedSimulations();
@@ -68,7 +80,7 @@ export function SimulationHistoryModal({
 
   // Function to handle the delete API call - Refactored to use apiStore
   const handleDeleteSelectedSimulations = async () => {
-    const selectedIndices = Object.keys(rowSelection);
+    const selectedIndices = Object.keys(historyRowSelection);
     const selectedIds = selectedIndices
       .map((index) => {
         const simIndex = parseInt(index, 10);
@@ -107,8 +119,8 @@ export function SimulationHistoryModal({
         description: result.message,
         variant: "success",
       });
-      setRowSelection({}); // Clear selection on success
-      // No need to call onRefreshHistory here, apiStore action handles it
+      // Clear selection using uiStore action
+      setHistoryRowSelection({});
     } else {
       toast({
         title: "Deletion Failed",
@@ -125,7 +137,8 @@ export function SimulationHistoryModal({
       open={isOpen}
       onOpenChange={(open) => {
         if (!open) {
-          setRowSelection({}); // Reset selection when closing
+          // Reset selection using uiStore action when closing
+          setHistoryRowSelection({});
           onClose();
         } else {
           // Dialog handles its own opening state based on the isOpen prop
@@ -159,10 +172,19 @@ export function SimulationHistoryModal({
           <DataTable
             columns={tableColumns}
             data={simulations}
-            rowSelection={rowSelection}
-            setRowSelection={setRowSelection}
-            sorting={sorting}
-            setSorting={setSorting}
+            // Pass state and setters from uiStore
+            rowSelection={historyRowSelection}
+            setRowSelection={setHistoryRowSelection}
+            sorting={historySorting}
+            setSorting={setHistorySorting}
+            // --- Pass Pagination Props from uiStore ---
+            pageIndex={historyPagination.pageIndex}
+            pageSize={historyPagination.pageSize}
+            pageCount={Math.ceil(
+              simulations.length / historyPagination.pageSize
+            )}
+            onPaginationChange={setHistoryPagination}
+            // --- End Pagination Props ---
           />
         )}
         {/* </ScrollArea> */}

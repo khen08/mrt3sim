@@ -7,8 +7,10 @@ import {
   flexRender,
   getCoreRowModel,
   getSortedRowModel,
+  getPaginationRowModel,
   useReactTable,
   RowSelectionState,
+  PaginationState,
 } from "@tanstack/react-table";
 
 import {
@@ -20,7 +22,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { useActiveTabId, useCurrentTabData } from "@/store/modalStore";
 
 // Empty array constant to avoid creating new empty array references
 const EMPTY_ARRAY: any[] = [];
@@ -33,6 +34,10 @@ interface DataTableProps<TData, TValue> {
   rowSelection: RowSelectionState;
   setRowSelection: React.Dispatch<React.SetStateAction<RowSelectionState>>;
   stickyHeader?: boolean;
+  pageIndex: number;
+  pageSize: number;
+  pageCount: number;
+  onPaginationChange: (updater: React.SetStateAction<PaginationState>) => void;
 }
 
 export function DataTable<TData, TValue>({
@@ -43,30 +48,50 @@ export function DataTable<TData, TValue>({
   rowSelection,
   setRowSelection,
   stickyHeader = false,
+  pageIndex,
+  pageSize,
+  pageCount,
+  onPaginationChange,
 }: DataTableProps<TData, TValue>) {
-  // If data is provided via props, use it, otherwise use data from Zustand store
-  const storeData = useCurrentTabData();
-  const activeTabId = useActiveTabId();
-
-  // Use provided data or fall back to store data
+  // Use provided data directly
   const tableData = React.useMemo(() => {
-    if (data) return data as TData[];
-    return (storeData || EMPTY_ARRAY) as TData[];
-  }, [data, storeData]);
+    return (data || EMPTY_ARRAY) as TData[];
+  }, [data]);
+
+  // Define pagination state for the table
+  const pagination = React.useMemo<PaginationState>(
+    () => ({
+      pageIndex,
+      pageSize,
+    }),
+    [pageIndex, pageSize]
+  );
 
   // Call useReactTable at the top level
   const table = useReactTable({
     data: tableData,
     columns,
+    pageCount: pageCount,
     state: {
       sorting,
       rowSelection,
+      pagination,
     },
     onSortingChange: setSorting,
-    getSortedRowModel: getSortedRowModel(),
+    onPaginationChange: onPaginationChange,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
     onRowSelectionChange: setRowSelection,
     enableRowSelection: true,
+    enableMultiSort: true,
+    isMultiSortEvent: (e: unknown) => {
+      if (typeof e === "object" && e !== null && "shiftKey" in e) {
+        return !!(e as { shiftKey?: boolean }).shiftKey;
+      }
+      return false;
+    },
+    manualPagination: true,
   });
 
   return (

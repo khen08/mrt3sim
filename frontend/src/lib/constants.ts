@@ -28,6 +28,12 @@ export const DELETE_SIMULATION_ENDPOINT = (simId: number | string) =>
   `${API_BASE_URL}/simulations/${simId}`;
 export const DELETE_BULK_SIMULATIONS_ENDPOINT = `${API_BASE_URL}/simulations`;
 
+// --- Add new endpoint for aggregated demand ---
+export const GET_AGGREGATED_PASSENGER_DEMAND_ENDPOINT = (
+  simId: number | string
+) => `${API_BASE_URL}/simulations/${simId}/aggregated_demand`;
+// --- End new endpoint ---
+
 // MRT Map Layout Constants
 export const HORIZONTAL_STATION_SPACING = 70;
 export const MAP_START_X = 170;

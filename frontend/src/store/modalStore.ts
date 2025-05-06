@@ -1,258 +1,273 @@
 import { create } from "zustand";
+import { SortingState, PaginationState } from "@tanstack/react-table"; // Import types
+import { filter, sort, paginate } from "@/store/modalStoreUtils"; // Assume utility functions exist
+import { useSimulationStore } from "./simulationStore"; // To get simulationResult
 
 export type TabId = "timetable" | "passengerDemand" | "metrics";
 
-interface PaginationState {
-  currentPage: number;
-  pageSize: number;
-  totalItems: number;
+// Define the full data structure (adjust 'any' as needed)
+// Example for timetable, others might differ
+interface TimetableEntry {
+  MOVEMENT_ID?: number;
+  SCHEME_TYPE?: string;
+  TRAIN_ID: number;
+  TRAIN_SERVICE_TYPE?: string;
+  STATION_ID: number;
+  DIRECTION: "NORTHBOUND" | "SOUTHBOUND";
+  TRAIN_STATUS: string;
+  ARRIVAL_TIME: string | null;
+  DEPARTURE_TIME: string | null;
+  TRAVEL_TIME_SECONDS?: number;
+  // Add other potential fields
 }
 
-interface LoadingState {
-  isLoading: boolean;
-  error: string | null;
-}
+type RawData = Record<TabId, any[]>; // Store raw data per tab
 
 interface ModalState {
   // Modal state
   isModalOpen: boolean;
   activeTabId: TabId;
+
+  // Data state
+  rawData: RawData; // Store the full, raw data per tab
+  isLoading: boolean;
+  error: string | null;
+
+  // View state
   searchQuery: string;
-
-  // Pagination state (separate for each tab)
-  pagination: Record<TabId, PaginationState>;
-
-  // Loading state (separate for each tab)
-  loading: Record<TabId, LoadingState>;
-
-  // Data cache
-  cachedData: Record<TabId, Record<number, any[]>>;
+  sorting: SortingState;
+  pagination: PaginationState;
 
   // Actions
-  openModal: () => void;
+  openModal: (initialTab?: TabId) => void;
   closeModal: () => void;
-  setActiveTab: (tabId: TabId) => void;
+  setActiveTabId: (tabId: TabId) => void;
+  setRawData: (tabId: TabId, data: any[]) => void;
+  setIsLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
   setSearchQuery: (query: string) => void;
+  setSorting: (
+    sortingUpdater: SortingState | ((old: SortingState) => SortingState)
+  ) => void;
+  setPagination: (
+    paginationUpdater:
+      | PaginationState
+      | ((old: PaginationState) => PaginationState)
+  ) => void;
+  resetViewState: () => void; // Reset search, sort, pagination
 
-  // Pagination actions
-  setPage: (tabId: TabId, page: number) => void;
-  setPageSize: (tabId: TabId, size: number) => void;
-  setTotalItems: (tabId: TabId, total: number) => void;
-
-  // Loading state actions
-  setLoading: (tabId: TabId, isLoading: boolean) => void;
-  setError: (tabId: TabId, error: string | null) => void;
-
-  // Data caching actions
-  setCachedData: (tabId: TabId, page: number, data: any[]) => void;
-  clearCache: (tabId?: TabId) => void;
-
-  // Add a new combined action to handle search state changes in one update
-  handleSearchChange: (query: string) => void;
+  // Selectors (accessible via get() or directly if returned)
+  getFilteredData: () => any[];
+  getSortedData: () => any[];
+  getCurrentPageData: () => any[];
+  getPageCount: () => number;
+  getTotalItems: () => number;
 }
 
 const DEFAULT_PAGE_SIZE = 50;
 
+const initialPagination: PaginationState = {
+  pageIndex: 0, // 0-based index
+  pageSize: DEFAULT_PAGE_SIZE,
+};
+
 const initialState = {
-  // Initial state
   isModalOpen: false,
   activeTabId: "timetable" as TabId,
+  rawData: {
+    // Initialize with empty arrays
+    timetable: [],
+    passengerDemand: [],
+    metrics: [],
+  },
+  isLoading: false,
+  error: null,
   searchQuery: "",
-
-  // Initialize pagination state for each tab
-  pagination: {
-    timetable: { currentPage: 1, pageSize: DEFAULT_PAGE_SIZE, totalItems: 0 },
-    passengerDemand: {
-      currentPage: 1,
-      pageSize: DEFAULT_PAGE_SIZE,
-      totalItems: 0,
-    },
-    metrics: { currentPage: 1, pageSize: DEFAULT_PAGE_SIZE, totalItems: 0 },
-  },
-
-  // Initialize loading state for each tab
-  loading: {
-    timetable: { isLoading: false, error: null },
-    passengerDemand: { isLoading: false, error: null },
-    metrics: { isLoading: false, error: null },
-  },
-
-  // Initialize empty data cache
-  cachedData: {
-    timetable: {},
-    passengerDemand: {},
-    metrics: {},
-  },
+  sorting: [] as SortingState,
+  pagination: initialPagination,
 };
 
 // Create the store
-export const useModalStore = create<ModalState>((set) => ({
-  ...initialState,
+export const useModalStore = create<ModalState>((set, get) => {
+  // --- Helper function to safely get current raw data ---
+  const getCurrentRawData = () => {
+    const { activeTabId, rawData } = get();
+    return rawData[activeTabId] || [];
+  };
 
-  // Actions for modal state
-  openModal: () => set({ isModalOpen: true }),
-  closeModal: () => set({ isModalOpen: false }),
+  // --- Memoized Selectors ---
+  // These are defined here to access get() and recompute automatically on state change
+  const getFilteredData = () => {
+    const data = getCurrentRawData();
+    const query = get().searchQuery;
+    // console.log(`Filtering ${data.length} items with query: "${query}"`);
+    return filter(data, query); // Use utility function
+  };
 
-  // Set active tab
-  setActiveTab: (tabId) => set({ activeTabId: tabId }),
+  const getSortedData = () => {
+    const data = getFilteredData(); // Use filtered data
+    const currentSorting = get().sorting;
+    // console.log(`Sorting ${data.length} items with state:`, currentSorting);
+    return sort(data, currentSorting); // Use utility function
+  };
 
-  setSearchQuery: (query) => set({ searchQuery: query }),
+  const getCurrentPageData = () => {
+    const data = getSortedData(); // Use sorted data
+    const { pageIndex, pageSize } = get().pagination;
+    // console.log(`Paginating ${data.length} items: Page ${pageIndex}, Size ${pageSize}`);
+    return paginate(data, pageIndex, pageSize); // Use utility function
+  };
 
-  // Actions for pagination
-  setPage: (tabId, page) =>
-    set((state) => ({
-      pagination: {
-        ...state.pagination,
-        [tabId]: {
-          ...state.pagination[tabId],
-          currentPage: page,
-        },
-      },
-    })),
+  const getTotalItems = () => {
+    // Count after filtering and sorting (before pagination)
+    return getSortedData().length;
+  };
 
-  setPageSize: (tabId, size) =>
-    set((state) => ({
-      pagination: {
-        ...state.pagination,
-        [tabId]: {
-          ...state.pagination[tabId],
-          pageSize: size,
-          // Reset to first page when changing page size
-          currentPage: 1,
-        },
-      },
-    })),
+  const getPageCount = () => {
+    const total = getTotalItems();
+    const { pageSize } = get().pagination;
+    return Math.ceil(total / pageSize);
+  };
 
-  setTotalItems: (tabId, total) =>
-    set((state) => ({
-      pagination: {
-        ...state.pagination,
-        [tabId]: {
-          ...state.pagination[tabId],
-          totalItems: total,
-        },
-      },
-    })),
+  // --- State and Actions ---
+  return {
+    ...initialState,
 
-  // Actions for loading state
-  setLoading: (tabId, isLoading) =>
-    set((state) => ({
-      loading: {
-        ...state.loading,
-        [tabId]: {
-          ...state.loading[tabId],
-          isLoading,
-        },
-      },
-    })),
-
-  setError: (tabId, error) =>
-    set((state) => ({
-      loading: {
-        ...state.loading,
-        [tabId]: {
-          ...state.loading[tabId],
-          error,
-        },
-      },
-    })),
-
-  // Actions for data caching
-  setCachedData: (tabId, page, data) =>
-    set((state) => ({
-      cachedData: {
-        ...state.cachedData,
-        [tabId]: {
-          ...state.cachedData[tabId],
-          [page]: data,
-        },
-      },
-    })),
-
-  clearCache: (tabId) =>
-    set((state) => {
-      if (tabId) {
-        return {
-          cachedData: {
-            ...state.cachedData,
-            [tabId]: {},
-          },
-        };
-      } else {
-        return {
-          cachedData: {
-            timetable: {},
-            passengerDemand: {},
-            metrics: {},
-          },
-        };
+    // Actions
+    openModal: (initialTab = "timetable") => {
+      set({
+        isModalOpen: true,
+        activeTabId: initialTab,
+        // Optionally reset view state on open, or keep it persistent
+        // ...initialState // Uncomment to fully reset on open
+      });
+      // Potentially trigger initial data fetch here if rawData is empty for the tab
+      const simState = useSimulationStore.getState();
+      const currentData = get().rawData[initialTab];
+      if (
+        initialTab === "timetable" &&
+        (!currentData || currentData.length === 0) &&
+        simState.simulationResult
+      ) {
+        get().setRawData(initialTab, simState.simulationResult);
       }
-    }),
+      // TODO: Add logic to fetch passenger demand / metrics if needed
+    },
+    closeModal: () => set({ isModalOpen: false }),
 
-  // Optimized search handler in one atomic update
-  handleSearchChange: (query: string) =>
-    set((state) => {
-      // First create a new cached data object with empty tabs
-      const newCachedData = { ...state.cachedData };
+    setActiveTabId: (tabId) => {
+      set((state) => ({
+        activeTabId: tabId,
+        pagination: { ...state.pagination, pageIndex: 0 }, // Reset page index on tab change
+        searchQuery: "", // Optionally reset search on tab change
+        sorting: [], // Optionally reset sorting on tab change
+        error: null, // Clear errors
+        isLoading: false, // Reset loading
+      }));
+      // Potentially trigger data fetch if needed for the new tab
+      const simState = useSimulationStore.getState();
+      const currentData = get().rawData[tabId];
+      if (
+        tabId === "timetable" &&
+        (!currentData || currentData.length === 0) &&
+        simState.simulationResult
+      ) {
+        get().setRawData(tabId, simState.simulationResult);
+      }
+    },
 
-      // Clear cached data for the current active tab
-      newCachedData[state.activeTabId] = {};
-
-      // Update all relevant state in one atomic operation
-      return {
-        searchQuery: query,
-        cachedData: newCachedData,
-        pagination: {
-          ...state.pagination,
-          [state.activeTabId]: {
-            ...state.pagination[state.activeTabId],
-            currentPage: 1, // Reset to first page
-          },
+    setRawData: (tabId, data) => {
+      set((state) => ({
+        rawData: {
+          ...state.rawData,
+          [tabId]: data || [], // Ensure it's always an array
         },
-      };
-    }),
-}));
+        isLoading: false, // Assume loading finished when data is set
+        error: null,
+      }));
+    },
 
-// Keep a constant empty array to prevent new references
-const EMPTY_ARRAY: any[] = [];
+    setIsLoading: (loading) => set({ isLoading: loading }),
+    setError: (error) => set({ error: error, isLoading: false }),
 
-// Primitive selectors
-export const useModalIsOpen = () => useModalStore((state) => state.isModalOpen);
-export const useActiveTabId = () => useModalStore((state) => state.activeTabId);
-export const useSearchQuery = () => useModalStore((state) => state.searchQuery);
+    setSearchQuery: (query) => {
+      set((state) => ({
+        searchQuery: query,
+        pagination: { ...state.pagination, pageIndex: 0 }, // Reset page index
+      }));
+    },
 
-// Memoized object selectors with custom equality by returning the same object references
-export const useCurrentPagination = () =>
-  useModalStore((state) => state.pagination[state.activeTabId]);
+    setSorting: (sortingUpdater) => {
+      set((state) => ({
+        sorting:
+          typeof sortingUpdater === "function"
+            ? sortingUpdater(state.sorting)
+            : sortingUpdater,
+        pagination: { ...state.pagination, pageIndex: 0 }, // Reset page index
+      }));
+    },
 
-export const useCurrentLoading = () =>
-  useModalStore((state) => state.loading[state.activeTabId]);
+    setPagination: (paginationUpdater) => {
+      set((state) => ({
+        pagination:
+          typeof paginationUpdater === "function"
+            ? paginationUpdater(state.pagination)
+            : paginationUpdater,
+      }));
+    },
 
-// Optimize the selector to avoid creating new array references
-export const useCurrentTabData = () =>
-  useModalStore((state) => {
-    const activeTabId = state.activeTabId;
-    const currentPage = state.pagination[activeTabId].currentPage;
-    const data = state.cachedData[activeTabId][currentPage];
-    return data || EMPTY_ARRAY;
-  });
+    resetViewState: () => {
+      set({
+        searchQuery: "",
+        sorting: [],
+        pagination: initialPagination,
+        error: null,
+        isLoading: false,
+      });
+    },
 
-// Export action functions directly to avoid calling getState in components
-export const openModal = () => useModalStore.getState().openModal();
-export const closeModal = () => useModalStore.getState().closeModal();
-export const setActiveTab = (tabId: TabId) =>
-  useModalStore.getState().setActiveTab(tabId);
-export const handleSearchChange = (query: string) =>
-  useModalStore.getState().handleSearchChange(query);
-export const setPage = (tabId: TabId, page: number) =>
-  useModalStore.getState().setPage(tabId, page);
-export const setPageSize = (tabId: TabId, size: number) =>
-  useModalStore.getState().setPageSize(tabId, size);
-export const setTotalItems = (tabId: TabId, total: number) =>
-  useModalStore.getState().setTotalItems(tabId, total);
-export const setLoading = (tabId: TabId, isLoading: boolean) =>
-  useModalStore.getState().setLoading(tabId, isLoading);
-export const setError = (tabId: TabId, error: string | null) =>
-  useModalStore.getState().setError(tabId, error);
-export const setCachedData = (tabId: TabId, page: number, data: any[]) =>
-  useModalStore.getState().setCachedData(tabId, page, data);
+    // Expose selectors directly on the store object
+    getFilteredData,
+    getSortedData,
+    getCurrentPageData,
+    getPageCount,
+    getTotalItems,
+  };
+});
+
+// --- Custom hook for convenience ---
+export const useDataViewer = () => {
+  const state = useModalStore();
+
+  // Return state and computed values needed by the component
+  return {
+    // State
+    isModalOpen: state.isModalOpen,
+    activeTabId: state.activeTabId,
+    isLoading: state.isLoading,
+    error: state.error,
+    searchQuery: state.searchQuery,
+    sorting: state.sorting,
+    pagination: state.pagination,
+
+    // Computed/Selected Data
+    currentPageData: state.getCurrentPageData(),
+    pageCount: state.getPageCount(),
+    totalItems: state.getTotalItems(),
+
+    // Actions (bound)
+    openModal: state.openModal,
+    closeModal: state.closeModal,
+    setActiveTabId: state.setActiveTabId,
+    setSearchQuery: state.setSearchQuery,
+    setSorting: state.setSorting,
+    setPagination: state.setPagination,
+    resetViewState: state.resetViewState,
+    // Add fetchDataForTab if/when implemented
+  };
+};
+
+// Optional: export individual actions if needed elsewhere
+// export const openModal = useModalStore.getState().openModal;
+// export const closeModal = useModalStore.getState().closeModal;
+// ... etc

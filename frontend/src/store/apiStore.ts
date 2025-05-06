@@ -150,19 +150,21 @@ export const useAPIStore = create<APIState>((set: any, get: any) => ({
   runSimulation: async () => {
     const simState = useSimulationStore.getState();
     const {
+      setIsLoading, // Added for consistency
+      setApiError,
+      setIsSimulating,
+      setIsMapLoading,
       simulatePassengers,
       simulationInput,
       simulationSettings,
       nextRunFilename,
-      simulationName, // Keep current name as default/fallback
-      loadedSimulationId,
       setSimulationNameDialogOpen,
     } = simState;
-    const { _executeRunSimulation } = get(); // Get internal helper
+    // Removed _executeRunSimulation import here, it will be called from the dialog
 
-    // Perform initial checks
+    // Perform initial checks first
     if (simulatePassengers && !simulationInput.filename && !nextRunFilename) {
-      simState.setApiError(
+      setApiError(
         "Passenger simulation is enabled, but no CSV file has been uploaded."
       );
       toast({
@@ -173,7 +175,7 @@ export const useAPIStore = create<APIState>((set: any, get: any) => ({
       return;
     }
     if (!simulationSettings) {
-      simState.setApiError("Simulation settings are missing or still loading.");
+      setApiError("Simulation settings are missing or still loading.");
       toast({
         title: "Missing Settings",
         description: "Settings not loaded.",
@@ -182,22 +184,16 @@ export const useAPIStore = create<APIState>((set: any, get: any) => ({
       return;
     }
 
-    // Decide whether to run directly or open dialog
-    if (loadedSimulationId !== null) {
-      // Simulation loaded, open dialog to confirm/set name
-      setSimulationNameDialogOpen(true);
-    } else {
-      // No simulation loaded, run directly with current/default name
-      let payloadFilename: string | null = null;
-      if (simulatePassengers) {
-        payloadFilename = nextRunFilename ?? simulationInput.filename;
-      }
-      await _executeRunSimulation(
-        payloadFilename,
-        simulationSettings,
-        simulationName
-      );
-    }
+    // Clear any previous errors and set loading state if needed (dialog opens quickly)
+    setApiError(null);
+    // Might not need loading states here if dialog handles it
+
+    // ALWAYS open the dialog to confirm/set the name
+    console.log("Opening simulation name dialog...");
+    setSimulationNameDialogOpen(true);
+
+    // The actual API call (_executeRunSimulation) will be triggered
+    // by the dialog's confirmation button.
   },
 
   // Internal helper function to execute the simulation API call
