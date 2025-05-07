@@ -1,17 +1,23 @@
 import React from "react";
 import ReactECharts from "echarts-for-react";
-import { useMetricsStore } from "@/store/metricsStore";
+import {
+  useMetricsStore,
+  useCurrentProcessedMetrics,
+} from "@/store/metricsStore";
 
 interface ComparativeBarChartProps {
   title?: string;
   height?: number | string;
+  width?: number | string;
 }
 
 export const ComparativeBarChart: React.FC<ComparativeBarChartProps> = ({
   title = "Scheme Comparison",
   height = "400px",
+  width = "100%",
 }) => {
-  const { processedMetrics, isLoading } = useMetricsStore();
+  const isLoading = useMetricsStore((state) => state.isLoading);
+  const processedMetrics = useCurrentProcessedMetrics();
 
   if (isLoading) {
     return (
@@ -44,10 +50,22 @@ export const ComparativeBarChart: React.FC<ComparativeBarChartProps> = ({
     (metric) => processedMetrics.averageMetrics[metric]?.["SKIP-STOP"] || 0
   );
 
+  // Dynamic text color based on theme
+  const isDarkMode =
+    typeof window !== "undefined" &&
+    document.documentElement.classList.contains("dark");
+  const textColor = isDarkMode ? "#E0E0E0" : "#333333";
+  const axisColor = isDarkMode ? "#AAAAAA" : "#666666";
+  const legendColor = isDarkMode ? "#CCCCCC" : "#555555";
+
   const option = {
     title: {
-      text: title,
+      text: "Scheme Performance",
       left: "center",
+      textStyle: {
+        color: textColor,
+        fontSize: 16,
+      },
     },
     tooltip: {
       trigger: "axis",
@@ -74,6 +92,9 @@ export const ComparativeBarChart: React.FC<ComparativeBarChartProps> = ({
     legend: {
       data: ["Regular", "Skip-Stop"],
       bottom: 0,
+      textStyle: {
+        color: legendColor,
+      },
     },
     grid: {
       left: "3%",
@@ -86,15 +107,23 @@ export const ComparativeBarChart: React.FC<ComparativeBarChartProps> = ({
       type: "category",
       data: ["Travel Time", "Wait Time", "Total Journey Time"],
       axisLabel: {
+        color: axisColor,
         rotate: 0,
         interval: 0,
       },
+      axisLine: { lineStyle: { color: axisColor } },
+      axisTick: { lineStyle: { color: axisColor } },
     },
     yAxis: {
       type: "value",
       name: "Seconds",
+      nameTextStyle: { color: textColor },
       nameLocation: "middle",
       nameGap: 40,
+      axisLabel: { color: axisColor },
+      splitLine: { lineStyle: { color: isDarkMode ? "#444444" : "#EEEEEE" } },
+      axisLine: { lineStyle: { color: axisColor } },
+      axisTick: { lineStyle: { color: axisColor } },
     },
     series: [
       {
@@ -116,5 +145,5 @@ export const ComparativeBarChart: React.FC<ComparativeBarChartProps> = ({
     ],
   };
 
-  return <ReactECharts option={option} style={{ height }} />;
+  return <ReactECharts option={option} style={{ height, width }} />;
 };

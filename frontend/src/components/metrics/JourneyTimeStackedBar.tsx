@@ -1,17 +1,23 @@
 import React from "react";
 import ReactECharts from "echarts-for-react";
-import { useMetricsStore } from "@/store/metricsStore";
+import {
+  useMetricsStore,
+  useCurrentProcessedMetrics,
+} from "@/store/metricsStore";
 
 interface JourneyTimeStackedBarProps {
   title?: string;
   height?: number | string;
+  width?: number | string;
 }
 
 export const JourneyTimeStackedBar: React.FC<JourneyTimeStackedBarProps> = ({
   title = "Journey Time Composition",
   height = "400px",
+  width = "100%",
 }) => {
-  const { processedMetrics, isLoading } = useMetricsStore();
+  const isLoading = useMetricsStore((state) => state.isLoading);
+  const processedMetrics = useCurrentProcessedMetrics();
 
   if (isLoading) {
     return (
@@ -46,10 +52,22 @@ export const JourneyTimeStackedBar: React.FC<JourneyTimeStackedBarProps> = ({
       ] || 0
   );
 
+  // Dynamic text color based on theme
+  const isDarkMode =
+    typeof window !== "undefined" &&
+    document.documentElement.classList.contains("dark");
+  const textColor = isDarkMode ? "#E0E0E0" : "#333333";
+  const axisColor = isDarkMode ? "#AAAAAA" : "#666666";
+  const legendColor = isDarkMode ? "#CCCCCC" : "#555555";
+
   const option = {
     title: {
-      text: title,
+      text: "Journey Time Composition",
       left: "center",
+      textStyle: {
+        color: textColor,
+        fontSize: 16,
+      },
     },
     tooltip: {
       trigger: "axis",
@@ -82,6 +100,9 @@ export const JourneyTimeStackedBar: React.FC<JourneyTimeStackedBarProps> = ({
     legend: {
       data: ["Travel Time", "Wait Time"],
       bottom: 0,
+      textStyle: {
+        color: legendColor,
+      },
     },
     grid: {
       left: "3%",
@@ -93,12 +114,20 @@ export const JourneyTimeStackedBar: React.FC<JourneyTimeStackedBarProps> = ({
     xAxis: {
       type: "category",
       data: ["Regular", "Skip-Stop"],
+      axisLabel: { color: axisColor },
+      axisLine: { lineStyle: { color: axisColor } },
+      axisTick: { lineStyle: { color: axisColor } },
     },
     yAxis: {
       type: "value",
       name: "Seconds",
+      nameTextStyle: { color: textColor },
       nameLocation: "middle",
       nameGap: 40,
+      axisLabel: { color: axisColor },
+      splitLine: { lineStyle: { color: isDarkMode ? "#444444" : "#EEEEEE" } },
+      axisLine: { lineStyle: { color: axisColor } },
+      axisTick: { lineStyle: { color: axisColor } },
     },
     series: [
       {
@@ -124,5 +153,5 @@ export const JourneyTimeStackedBar: React.FC<JourneyTimeStackedBarProps> = ({
     ],
   };
 
-  return <ReactECharts option={option} style={{ height }} />;
+  return <ReactECharts option={option} style={{ height, width }} />;
 };

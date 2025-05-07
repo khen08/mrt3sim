@@ -14,14 +14,17 @@ type MetricType = "PASSENGER_COUNT" | "WAIT_TIME" | "TRAVEL_TIME";
 
 interface TripTypeBarChartProps {
   height?: number | string;
+  width?: number | string;
+  selectedMetric: MetricType;
+  onMetricChange: (value: MetricType) => void;
 }
 
 export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
   height = "400px",
+  width = "100%",
+  selectedMetric,
+  onMetricChange,
 }) => {
-  const [selectedMetric, setSelectedMetric] =
-    useState<MetricType>("PASSENGER_COUNT");
-
   const { passengerDemand, isLoading, error } = usePassengerDemandStore();
 
   if (isLoading) {
@@ -163,17 +166,23 @@ export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
 
   const tripTypeData = prepareTripTypeData();
 
+  // Dynamic text color based on theme
+  const isDarkMode =
+    typeof window !== "undefined" &&
+    document.documentElement.classList.contains("dark");
+  const textColor = isDarkMode ? "#E0E0E0" : "#333333";
+  const axisColor = isDarkMode ? "#AAAAAA" : "#666666";
+  const legendColor = isDarkMode ? "#CCCCCC" : "#555555";
+
   const getOption = () => {
     const option = {
       title: {
-        text: `${
-          selectedMetric === "PASSENGER_COUNT"
-            ? "Passenger Count"
-            : selectedMetric === "WAIT_TIME"
-            ? "Average Wait Time"
-            : "Average Travel Time"
-        } by Trip Type and Scheme`,
+        text: "Trip Type Metrics",
         left: "center",
+        textStyle: {
+          color: textColor,
+          fontSize: 16,
+        },
       },
       tooltip: {
         trigger: "axis",
@@ -201,6 +210,9 @@ export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
       legend: {
         data: ["Regular", "Skip-Stop"],
         bottom: 0,
+        textStyle: {
+          color: legendColor,
+        },
       },
       grid: {
         left: "5%",
@@ -213,6 +225,8 @@ export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
         type: "category",
         data: ["Direct", "Transfer"],
         axisTick: { alignWithLabel: true },
+        axisLabel: { color: axisColor },
+        axisLine: { lineStyle: { color: axisColor } },
       },
       yAxis: {
         type: "value",
@@ -221,7 +235,12 @@ export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
             ? "Passenger Count"
             : "Time (minutes)",
         nameLocation: "middle",
+        nameTextStyle: { color: textColor },
         nameGap: 50,
+        axisLabel: { color: axisColor },
+        splitLine: { lineStyle: { color: isDarkMode ? "#444444" : "#EEEEEE" } },
+        axisLine: { lineStyle: { color: axisColor } },
+        axisTick: { lineStyle: { color: axisColor } },
       },
       series: [
         {
@@ -252,27 +271,5 @@ export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
     return option;
   };
 
-  return (
-    <Card>
-      <CardContent>
-        <div className="w-full mb-4">
-          <label className="text-sm font-medium mb-1 block">Metric:</label>
-          <Select
-            value={selectedMetric}
-            onValueChange={(value) => setSelectedMetric(value as MetricType)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select metric" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="PASSENGER_COUNT">Passenger Count</SelectItem>
-              <SelectItem value="WAIT_TIME">Average Wait Time</SelectItem>
-              <SelectItem value="TRAVEL_TIME">Average Travel Time</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <ReactECharts option={getOption()} style={{ height }} />
-      </CardContent>
-    </Card>
-  );
+  return <ReactECharts option={getOption()} style={{ height, width }} />;
 };

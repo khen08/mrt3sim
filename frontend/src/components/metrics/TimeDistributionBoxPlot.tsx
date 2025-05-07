@@ -1,13 +1,5 @@
 import React, { useState } from "react";
 import ReactECharts from "echarts-for-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   usePassengerDemandStore,
   PassengerDemandEntry,
@@ -18,14 +10,23 @@ type BreakdownType = "SCHEME_TYPE" | "TRIP_TYPE";
 
 interface TimeDistributionBoxPlotProps {
   height?: number | string;
+  width?: number | string;
+  selectedMetric: MetricType;
+  onMetricChange: (value: MetricType) => void;
+  breakdownBy: BreakdownType;
+  onBreakdownChange: (value: BreakdownType) => void;
 }
 
 export const TimeDistributionBoxPlot: React.FC<
   TimeDistributionBoxPlotProps
-> = ({ height = "400px" }) => {
-  const [selectedMetric, setSelectedMetric] = useState<MetricType>("WAIT_TIME");
-  const [breakdownBy, setBreakdownBy] = useState<BreakdownType>("SCHEME_TYPE");
-
+> = ({
+  height = "400px",
+  width = "100%",
+  selectedMetric,
+  onMetricChange,
+  breakdownBy,
+  onBreakdownChange,
+}) => {
   const { passengerDemand, isLoading, error } = usePassengerDemandStore();
 
   if (isLoading) {
@@ -158,12 +159,21 @@ export const TimeDistributionBoxPlot: React.FC<
       calculateBoxPlotData(boxPlotData[cat])
     );
 
+    // Dynamic text color based on theme
+    const isDarkMode =
+      typeof window !== "undefined" &&
+      document.documentElement.classList.contains("dark");
+    const textColor = isDarkMode ? "#E0E0E0" : "#333333"; // Light gray for dark mode
+    const axisColor = isDarkMode ? "#AAAAAA" : "#666666";
+
     const option = {
       title: {
-        text: `Distribution of ${
-          selectedMetric === "WAIT_TIME" ? "Wait Time" : "Travel Time"
-        } by ${breakdownBy === "SCHEME_TYPE" ? "Scheme" : "Trip Type"}`,
+        text: `Time Distribution (Box Plot)`,
         left: "center",
+        textStyle: {
+          color: textColor,
+          fontSize: 16,
+        },
       },
       tooltip: {
         trigger: "item",
@@ -183,14 +193,22 @@ export const TimeDistributionBoxPlot: React.FC<
         type: "category",
         data: categories,
         axisLabel: {
+          color: axisColor,
           interval: 0,
         },
+        axisLine: { lineStyle: { color: axisColor } },
+        axisTick: { lineStyle: { color: axisColor } },
       },
       yAxis: {
         type: "value",
         name: "Minutes",
+        nameTextStyle: { color: textColor },
         nameLocation: "middle",
         nameGap: 40,
+        axisLabel: { color: axisColor },
+        splitLine: { lineStyle: { color: isDarkMode ? "#444444" : "#EEEEEE" } },
+        axisLine: { lineStyle: { color: axisColor } },
+        axisTick: { lineStyle: { color: axisColor } },
       },
       grid: {
         left: "10%",
@@ -216,45 +234,5 @@ export const TimeDistributionBoxPlot: React.FC<
     return option;
   };
 
-  return (
-    <Card>
-      <CardContent>
-        <div className="flex space-x-4 mb-4">
-          <div className="w-1/2">
-            <label className="text-sm font-medium mb-1 block">Metric:</label>
-            <Select
-              value={selectedMetric}
-              onValueChange={(value) => setSelectedMetric(value as MetricType)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select metric" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="WAIT_TIME">Wait Time</SelectItem>
-                <SelectItem value="TRAVEL_TIME">Travel Time</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="w-1/2">
-            <label className="text-sm font-medium mb-1 block">
-              Breakdown by:
-            </label>
-            <Select
-              value={breakdownBy}
-              onValueChange={(value) => setBreakdownBy(value as BreakdownType)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select breakdown" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="SCHEME_TYPE">Scheme Type</SelectItem>
-                <SelectItem value="TRIP_TYPE">Trip Type</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <ReactECharts option={getOption()} style={{ height }} />
-      </CardContent>
-    </Card>
-  );
+  return <ReactECharts option={getOption()} style={{ height, width }} />;
 };

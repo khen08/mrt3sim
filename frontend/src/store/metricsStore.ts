@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { GET_SIMULATION_METRICS_ENDPOINT } from "@/lib/constants";
+import { useSimulationStore } from "./simulationStore"; // To get loadedSimulationId
 
 // Define types based on schema.prisma models
 export type SchemeType = "REGULAR" | "SKIP-STOP";
@@ -28,33 +29,58 @@ export interface ProcessedMetrics {
 }
 
 interface MetricsStore {
-  // Raw data
-  rawMetricsData: MetricsData[];
+  // Raw data, now keyed by simulationId
+  rawMetricsData: Record<number, MetricsData[]>;
 
-  // Processed data for charts
-  processedMetrics: ProcessedMetrics | null;
+  // Processed data for charts, now keyed by simulationId
+  processedMetrics: Record<number, ProcessedMetrics | null>;
 
   // UI state
   isLoading: boolean;
   error: string | null;
+  lastFetchedMetrics: Record<number, number | null>; // Timestamp per simulationId
 
   // Actions
-  fetchMetrics: (simulationId: number) => Promise<void>;
-  processMetricsForCharts: () => void;
+  fetchMetrics: (simulationId: number, forceRefresh?: boolean) => Promise<void>;
+  processMetricsForCharts: (simulationId: number) => void;
   reset: () => void;
 }
 
 const initialState = {
-  rawMetricsData: [],
-  processedMetrics: null,
+  rawMetricsData: {},
+  processedMetrics: {},
   isLoading: false,
   error: null,
+  lastFetchedMetrics: {},
 };
 
 export const useMetricsStore = create<MetricsStore>((set, get) => ({
   ...initialState,
 
-  fetchMetrics: async (simulationId: number) => {
+  fetchMetrics: async (simulationId: number, forceRefresh = false) => {
+    if (!simulationId) return;
+
+    const now = Date.now();
+    const lastFetchedTime = get().lastFetchedMetrics[simulationId];
+    const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+    if (
+      !forceRefresh &&
+      lastFetchedTime &&
+      now - lastFetchedTime < CACHE_DURATION &&
+      get().rawMetricsData[simulationId] // Check if data actually exists for this ID
+    ) {
+      console.log(`Using cached metrics for simulation ID: ${simulationId}`);
+      // Ensure processed data is also available for this ID if raw data exists
+      if (
+        !get().processedMetrics[simulationId] &&
+        get().rawMetricsData[simulationId]?.length > 0
+      ) {
+        get().processMetricsForCharts(simulationId);
+      }
+      return;
+    }
+
     set({ isLoading: true, error: null });
     try {
       const response = await fetch(
@@ -66,10 +92,20 @@ export const useMetricsStore = create<MetricsStore>((set, get) => ({
       }
 
       const data = await response.json();
-      set({ rawMetricsData: data, isLoading: false });
+      set((state) => ({
+        rawMetricsData: {
+          ...state.rawMetricsData,
+          [simulationId]: data,
+        },
+        isLoading: false,
+        lastFetchedMetrics: {
+          ...state.lastFetchedMetrics,
+          [simulationId]: now,
+        },
+      }));
 
-      // Process the data for charts
-      get().processMetricsForCharts();
+      // Process the data for charts for the specific simulationId
+      get().processMetricsForCharts(simulationId);
     } catch (err) {
       console.error("Failed to fetch metrics:", err);
       set({
@@ -80,10 +116,19 @@ export const useMetricsStore = create<MetricsStore>((set, get) => ({
     }
   },
 
-  processMetricsForCharts: () => {
+  processMetricsForCharts: (simulationId: number) => {
     const { rawMetricsData } = get();
+    const currentSimData = rawMetricsData[simulationId];
 
-    if (!rawMetricsData.length) return;
+    if (!currentSimData || currentSimData.length === 0) {
+      set((state) => ({
+        processedMetrics: {
+          ...state.processedMetrics,
+          [simulationId]: null, // Set to null if no raw data for this ID
+        },
+      }));
+      return;
+    }
 
     // Initialize processed metrics structure
     const processed: ProcessedMetrics = {
@@ -92,7 +137,7 @@ export const useMetricsStore = create<MetricsStore>((set, get) => ({
     };
 
     // Process data for each metric
-    rawMetricsData.forEach((item) => {
+    currentSimData.forEach((item) => {
       const metricName = item.metric.replace(/ \((REGULAR|SKIP-STOP)\)$/, "");
       const scheme = item.scheme;
 
@@ -127,8 +172,31 @@ export const useMetricsStore = create<MetricsStore>((set, get) => ({
       }
     });
 
-    set({ processedMetrics: processed });
+    set((state) => ({
+      processedMetrics: {
+        ...state.processedMetrics,
+        [simulationId]: processed,
+      },
+    }));
   },
 
   reset: () => set(initialState),
 }));
+
+// Add a selector to get processed metrics for the currently loaded simulation ID
+export const useCurrentProcessedMetrics = () => {
+  const loadedSimId = useSimulationStore((state) => state.loadedSimulationId);
+  const allProcessedMetrics = useMetricsStore(
+    (state) => state.processedMetrics
+  );
+  if (loadedSimId === null) return null;
+  return allProcessedMetrics[loadedSimId] || null;
+};
+
+// Add a selector to get raw metrics for the currently loaded simulation ID
+export const useCurrentRawMetrics = () => {
+  const loadedSimId = useSimulationStore((state) => state.loadedSimulationId);
+  const allRawMetrics = useMetricsStore((state) => state.rawMetricsData);
+  if (loadedSimId === null) return null;
+  return allRawMetrics[loadedSimId] || [];
+};

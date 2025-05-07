@@ -1,17 +1,23 @@
 import React from "react";
 import ReactECharts from "echarts-for-react";
-import { useMetricsStore } from "@/store/metricsStore";
+import {
+  useMetricsStore,
+  useCurrentProcessedMetrics,
+} from "@/store/metricsStore";
 
 interface PassengerCountsChartProps {
   title?: string;
   height?: number | string;
+  width?: number | string;
 }
 
 export const PassengerCountsChart: React.FC<PassengerCountsChartProps> = ({
   title = "Total Passengers Who Completed Their Journey by Scheme",
   height = "400px",
+  width = "100%",
 }) => {
-  const { processedMetrics, isLoading } = useMetricsStore();
+  const isLoading = useMetricsStore((state) => state.isLoading);
+  const processedMetrics = useCurrentProcessedMetrics();
 
   if (isLoading) {
     return (
@@ -35,11 +41,19 @@ export const PassengerCountsChart: React.FC<PassengerCountsChartProps> = ({
   const skipStopCount =
     processedMetrics.basicMetrics["Total Passengers"]?.["SKIP-STOP"] || 0;
 
+  // Dynamic text color based on theme
+  const isDarkMode =
+    typeof window !== "undefined" &&
+    document.documentElement.classList.contains("dark");
+  const textColor = isDarkMode ? "#E0E0E0" : "#333333";
+  const axisColor = isDarkMode ? "#AAAAAA" : "#666666";
+
   const option = {
     title: {
-      text: title,
+      text: "Passenger Throughput",
       left: "center",
       textStyle: {
+        color: textColor,
         fontSize: 16,
       },
       subtext:
@@ -70,14 +84,22 @@ export const PassengerCountsChart: React.FC<PassengerCountsChartProps> = ({
       type: "category",
       data: ["Regular", "Skip-Stop"],
       axisLabel: {
+        color: axisColor,
         interval: 0,
       },
+      axisLine: { lineStyle: { color: axisColor } },
+      axisTick: { lineStyle: { color: axisColor } },
     },
     yAxis: {
       type: "value",
       name: "Passenger Count",
+      nameTextStyle: { color: textColor },
       nameLocation: "middle",
       nameGap: 60,
+      axisLabel: { color: axisColor },
+      splitLine: { lineStyle: { color: isDarkMode ? "#444444" : "#EEEEEE" } },
+      axisLine: { lineStyle: { color: axisColor } },
+      axisTick: { lineStyle: { color: axisColor } },
     },
     series: [
       {
@@ -101,5 +123,5 @@ export const PassengerCountsChart: React.FC<PassengerCountsChartProps> = ({
     ],
   };
 
-  return <ReactECharts option={option} style={{ height }} />;
+  return <ReactECharts option={option} style={{ height, width }} />;
 };

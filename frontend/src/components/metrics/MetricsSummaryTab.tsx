@@ -1,10 +1,14 @@
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useMetricsStore } from "@/store/metricsStore";
+import {
+  useMetricsStore,
+  useCurrentProcessedMetrics,
+} from "@/store/metricsStore";
 import { usePassengerDemandStore } from "@/store/passengerDemandStore";
 
 const MetricsSummaryTab: React.FC = () => {
-  const { processedMetrics, isLoading: metricsLoading } = useMetricsStore();
+  const metricsLoading = useMetricsStore((state) => state.isLoading);
+  const processedMetrics = useCurrentProcessedMetrics();
   const { passengerDemand, isLoading: demandLoading } =
     usePassengerDemandStore();
 
