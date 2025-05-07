@@ -25,7 +25,7 @@ import {
 } from "@tanstack/react-table"; // Import RowSelectionState and SortingState
 import { useToast } from "@/lib/toast"; // Import custom toast hook
 import { useAPIStore } from "@/store/apiStore"; // Import the API store
-import { useUIStore } from "@/store/uiStore"; // Import the UI store
+import { useUIStore, initialHistorySorting } from "@/store/uiStore"; // Import the UI store and initialHistorySorting
 
 interface SimulationHistoryModalProps {
   isOpen: boolean;
@@ -146,7 +146,7 @@ export function SimulationHistoryModal({
         }
       }}
     >
-      <DialogContent className="!max-w-fit min-w-[800px]">
+      <DialogContent className="!max-w-fit">
         {" "}
         {/* Adjusted width */}
         <DialogHeader>
@@ -156,6 +156,17 @@ export function SimulationHistoryModal({
             delete.
           </DialogDescription>
         </DialogHeader>
+        {/* Add Reset Sort Button */}
+        {historySorting && historySorting.length > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setHistorySorting(initialHistorySorting)}
+            className="mb-2 text-xs"
+          >
+            Reset Sort
+          </Button>
+        )}
         {/* Wrap table in ScrollArea for responsiveness */}
         {/* <ScrollArea className="h-[400px] w-full pr-4"> */}
         {/* Replaced old Table with DataTable */}
@@ -185,6 +196,7 @@ export function SimulationHistoryModal({
             )}
             onPaginationChange={setHistoryPagination}
             // --- End Pagination Props ---
+            hideRowsPerPage={true} // Hide the rows per page selector
           />
         )}
         {/* </ScrollArea> */}

@@ -13,6 +13,7 @@ import {
   DELETE_BULK_SIMULATIONS_ENDPOINT,
   API_BASE_URL,
   PEAK_HOURS,
+  GET_AGGREGATED_PASSENGER_DEMAND_ENDPOINT,
 } from "@/lib/constants";
 
 // Assuming SimulationHistoryEntry is defined elsewhere or we use 'any'
@@ -36,6 +37,7 @@ interface APIState {
   fetchSimulationConfig: (
     simulationId: number
   ) => Promise<SimulationSettings | null>;
+  fetchAggregatedPassengerDemand: (simulationId: number) => Promise<void>;
 }
 
 export const useAPIStore = create<APIState>((set: any, get: any) => ({
@@ -359,6 +361,7 @@ export const useAPIStore = create<APIState>((set: any, get: any) => ({
 
         if (newSimulationId) {
           await useAPIStore.getState().fetchPassengerDemand(newSimulationId);
+          await get().fetchAggregatedPassengerDemand(newSimulationId);
         }
       } else {
         console.error("Failed to fetch timetable data after all retries.");
@@ -472,6 +475,7 @@ export const useAPIStore = create<APIState>((set: any, get: any) => ({
         });
 
         await useAPIStore.getState().fetchPassengerDemand(simulationId);
+        await get().fetchAggregatedPassengerDemand(simulationId);
       } else {
         const errorMsg = !loadedConfig
           ? "Failed to fetch specific simulation config."
@@ -647,6 +651,49 @@ export const useAPIStore = create<APIState>((set: any, get: any) => ({
         }`
       );
       return null;
+    }
+  },
+
+  fetchAggregatedPassengerDemand: async (simulationId: number) => {
+    const { setAggregatedPassengerDemand, setIsAggregatedDemandLoading } =
+      useSimulationStore.getState();
+
+    console.log(
+      `Fetching aggregated passenger demand for simulation ID: ${simulationId}...`
+    );
+    setIsAggregatedDemandLoading(true);
+    setAggregatedPassengerDemand(null); // Clear previous data
+
+    try {
+      const response = await fetch(
+        GET_AGGREGATED_PASSENGER_DEMAND_ENDPOINT(simulationId)
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          errorData.error ||
+            `HTTP error ${response.status} on aggregated demand`
+        );
+      }
+      const demandData = await response.json();
+      setAggregatedPassengerDemand(demandData);
+      console.log(
+        "Aggregated passenger demand data fetched successfully:",
+        demandData
+      );
+    } catch (error: any) {
+      console.error(
+        `Failed to fetch or process aggregated passenger demand for sim ${simulationId}:`,
+        error
+      );
+      setAggregatedPassengerDemand(null);
+      toast({
+        title: "Error Fetching Aggregated Demand",
+        description: `Could not fetch aggregated demand: ${error.message}`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsAggregatedDemandLoading(false);
     }
   },
 }));

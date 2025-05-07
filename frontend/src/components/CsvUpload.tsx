@@ -44,6 +44,12 @@ const CsvUpload = ({
   const setSimulationNameDialogOpen = useSimulationStore(
     (state: any) => state.setSimulationNameDialogOpen
   );
+  const simulatePassengers = useSimulationStore(
+    (state: any) => state.simulatePassengers
+  );
+  const loadedSimulationId = useSimulationStore(
+    (state: any) => state.loadedSimulationId
+  );
 
   // Local state
   const [isDragging, setIsDragging] = useState(false);
@@ -51,7 +57,11 @@ const CsvUpload = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // If this component shouldn't show its UI, return null
-  if (uploadSource === "settings-change" || nextRunFilename !== null) {
+  if (
+    uploadSource === "settings-change" ||
+    nextRunFilename !== null ||
+    (loadedSimulationId !== null && !simulatePassengers)
+  ) {
     return null;
   }
 

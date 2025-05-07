@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-table";
 
 // Define initial states for table controls
-const initialHistorySorting: SortingState = [
+export const initialHistorySorting: SortingState = [
   { id: "CREATED_AT", desc: true }, // Default sort
 ];
 const initialHistoryPagination: PaginationState = {

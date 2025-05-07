@@ -1561,7 +1561,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
           ) {
             textColorClass = THEME.train.text;
           } else if (train.direction === "SOUTHBOUND") {
-            textColorClass = "fill-black font-semibold";
+            textColorClass = "fill-white font-semibold";
           } else {
             textColorClass = THEME.train.text;
           }

@@ -86,6 +86,11 @@ interface SimulationState {
   simulationName: string;
   isSimulationNameDialogOpen: boolean;
 
+  // Aggregated Passenger Demand
+  aggregatedPassengerDemand: AggregatedDemandData | null;
+  selectedTimePeriod: TimePeriodFilter;
+  isAggregatedDemandLoading: boolean;
+
   // Actions
   setSimulationSettings: (settings: SimulationSettings | null) => void;
   setActiveSimulationSettings: (settings: SimulationSettings | null) => void;
@@ -116,6 +121,11 @@ interface SimulationState {
   setSimulationName: (name: string) => void;
   setSimulationNameDialogOpen: (isOpen: boolean) => void;
 
+  // Aggregated Passenger Demand Actions
+  setAggregatedPassengerDemand: (data: AggregatedDemandData | null) => void;
+  setSelectedTimePeriod: (period: TimePeriodFilter) => void;
+  setIsAggregatedDemandLoading: (loading: boolean) => void;
+
   // Helper actions for settings
   updateSimulationSetting: (key: string, value: any) => void;
   updateStationDistance: (index: number, value: number) => void;
@@ -124,6 +134,30 @@ interface SimulationState {
 
   // Clear actions
   resetSimulation: () => void;
+}
+
+// Define types for aggregated demand data
+export type TimePeriodFilter = "FULL_SERVICE" | "AM_PEAK" | "PM_PEAK";
+export type SchemeFilter = "REGULAR" | "SKIP-STOP";
+
+export interface AggregatedDemandEntry {
+  ROUTE: string; // e.g., "1-2"
+  PASSENGER_COUNT: number;
+}
+
+export interface AggregatedDemandData {
+  FULL_SERVICE?: {
+    REGULAR?: AggregatedDemandEntry[];
+    "SKIP-STOP"?: AggregatedDemandEntry[];
+  };
+  AM_PEAK?: {
+    REGULAR?: AggregatedDemandEntry[];
+    "SKIP-STOP"?: AggregatedDemandEntry[];
+  };
+  PM_PEAK?: {
+    REGULAR?: AggregatedDemandEntry[];
+    "SKIP-STOP"?: AggregatedDemandEntry[];
+  };
 }
 
 export const useSimulationStore = create<SimulationState>((set) => ({
@@ -152,6 +186,11 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   mapRefreshKey: 0,
   simulationName: "Untitled Simulation",
   isSimulationNameDialogOpen: false,
+
+  // Aggregated Passenger Demand Initial State
+  aggregatedPassengerDemand: null,
+  selectedTimePeriod: "FULL_SERVICE",
+  isAggregatedDemandLoading: false,
 
   // Basic setters
   setSimulationSettings: (settings) => set({ simulationSettings: settings }),
@@ -201,6 +240,13 @@ export const useSimulationStore = create<SimulationState>((set) => ({
     set({ simulationName: name || "Untitled Simulation" }),
   setSimulationNameDialogOpen: (isOpen) =>
     set({ isSimulationNameDialogOpen: isOpen }),
+
+  // Aggregated Passenger Demand Setters
+  setAggregatedPassengerDemand: (data) =>
+    set({ aggregatedPassengerDemand: data }),
+  setSelectedTimePeriod: (period) => set({ selectedTimePeriod: period }),
+  setIsAggregatedDemandLoading: (loading) =>
+    set({ isAggregatedDemandLoading: loading }),
 
   // Complex actions
   updateSimulationSetting: (key, value) =>
@@ -316,5 +362,9 @@ export const useSimulationStore = create<SimulationState>((set) => ({
       isSimulationRunning: false,
       simulationName: "Untitled Simulation",
       isSimulationNameDialogOpen: false,
+      // Reset aggregated demand state as well
+      aggregatedPassengerDemand: null,
+      selectedTimePeriod: "FULL_SERVICE",
+      isAggregatedDemandLoading: false,
     })),
 }));

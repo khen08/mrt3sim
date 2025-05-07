@@ -1,9 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useState as ReactUseState,
-  useCallback,
-} from "react";
+import { useEffect, useMemo } from "react";
 import * as React from "react";
 import {
   Dialog,
@@ -30,7 +25,6 @@ import {
   IconLoader2,
 } from "@tabler/icons-react";
 import {
-  SortingState,
   RowSelectionState,
   Column,
   Row,
@@ -47,6 +41,7 @@ import {
 } from "@/components/ui/select";
 import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useDataViewer, useModalStore } from "@/store/modalStore";
+import PassengerHeatmapTab from "./PassengerHeatmapTab";
 
 // Updated Timetable columns definition with the specified fields
 const timetableColumns: ColumnDef<any>[] = [
@@ -59,7 +54,7 @@ const timetableColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-left w-full justify-start"
         >
           Scheme Type
           {sortDirection && sortIndex !== -1 && (
@@ -77,6 +72,9 @@ const timetableColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    size: 120,
+    minSize: 100,
+    maxSize: 150,
   },
   {
     accessorKey: "TRAIN_ID",
@@ -87,7 +85,7 @@ const timetableColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-right w-full justify-end"
         >
           Train ID
           {sortDirection && sortIndex !== -1 && (
@@ -105,6 +103,9 @@ const timetableColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    size: 100,
+    minSize: 80,
+    maxSize: 120,
   },
   {
     accessorKey: "TRAIN_SERVICE_TYPE",
@@ -115,7 +116,7 @@ const timetableColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-left w-full justify-start"
         >
           Train Service Type
           {sortDirection && sortIndex !== -1 && (
@@ -133,6 +134,9 @@ const timetableColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    size: 150,
+    minSize: 120,
+    maxSize: 180,
   },
   {
     accessorKey: "STATION_ID",
@@ -143,7 +147,7 @@ const timetableColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-right w-full justify-end"
         >
           Station ID
           {sortDirection && sortIndex !== -1 && (
@@ -161,6 +165,9 @@ const timetableColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    size: 100,
+    minSize: 80,
+    maxSize: 120,
   },
   {
     accessorKey: "DIRECTION",
@@ -171,7 +178,7 @@ const timetableColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-left w-full justify-start"
         >
           Direction
           {sortDirection && sortIndex !== -1 && (
@@ -189,6 +196,9 @@ const timetableColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    size: 120,
+    minSize: 100,
+    maxSize: 150,
   },
   {
     accessorKey: "TRAIN_STATUS",
@@ -199,7 +209,7 @@ const timetableColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-left w-full justify-start"
         >
           Train Status
           {sortDirection && sortIndex !== -1 && (
@@ -217,6 +227,9 @@ const timetableColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    size: 120,
+    minSize: 100,
+    maxSize: 150,
   },
   {
     accessorKey: "ARRIVAL_TIME",
@@ -227,7 +240,7 @@ const timetableColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-right w-full justify-end"
         >
           Arrival Time
           {sortDirection && sortIndex !== -1 && (
@@ -245,6 +258,9 @@ const timetableColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    size: 120,
+    minSize: 100,
+    maxSize: 150,
   },
   {
     accessorKey: "DEPARTURE_TIME",
@@ -255,7 +271,7 @@ const timetableColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-right w-full justify-end"
         >
           Departure Time
           {sortDirection && sortIndex !== -1 && (
@@ -273,6 +289,9 @@ const timetableColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    size: 140,
+    minSize: 120,
+    maxSize: 160,
   },
   {
     accessorKey: "TRAVEL_TIME_SECONDS",
@@ -283,7 +302,7 @@ const timetableColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-right w-full justify-end"
         >
           Travel Time (s)
           {sortDirection && sortIndex !== -1 && (
@@ -305,6 +324,9 @@ const timetableColumns: ColumnDef<any>[] = [
       const value = row.getValue("TRAVEL_TIME_SECONDS");
       return <div>{value ? `${value}s` : "N/A"}</div>;
     },
+    size: 130,
+    minSize: 110,
+    maxSize: 150,
   },
 ];
 
@@ -319,7 +341,7 @@ const passengerDemandColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-left w-full justify-start"
         >
           Route
           {sortDirection && sortIndex !== -1 && (
@@ -337,6 +359,9 @@ const passengerDemandColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    size: 150,
+    minSize: 120,
+    maxSize: 200,
   },
   {
     accessorKey: "Passengers",
@@ -347,7 +372,7 @@ const passengerDemandColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-right w-full justify-end"
         >
           Passengers
           {sortDirection && sortIndex !== -1 && (
@@ -365,6 +390,16 @@ const passengerDemandColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    cell: ({ row }: { row: Row<any> }) => {
+      const value = row.getValue("Passengers");
+      if (typeof value === "number") {
+        return <div className="text-right">{value.toLocaleString()}</div>;
+      }
+      return <div className="text-right">{String(value)}</div>;
+    },
+    size: 120,
+    minSize: 100,
+    maxSize: 150,
   },
   {
     accessorKey: "Demand Time",
@@ -375,7 +410,7 @@ const passengerDemandColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-right w-full justify-end"
         >
           Demand Time
           {sortDirection && sortIndex !== -1 && (
@@ -393,6 +428,9 @@ const passengerDemandColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    size: 130,
+    minSize: 110,
+    maxSize: 160,
   },
   {
     accessorKey: "Boarding Time",
@@ -403,7 +441,7 @@ const passengerDemandColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-right w-full justify-end"
         >
           Boarding Time
           {sortDirection && sortIndex !== -1 && (
@@ -421,6 +459,9 @@ const passengerDemandColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    size: 140,
+    minSize: 120,
+    maxSize: 170,
   },
   {
     accessorKey: "Wait Time (s)",
@@ -431,7 +472,7 @@ const passengerDemandColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-right w-full justify-end"
         >
           Wait Time (s)
           {sortDirection && sortIndex !== -1 && (
@@ -449,6 +490,16 @@ const passengerDemandColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    cell: ({ row }: { row: Row<any> }) => {
+      const value = row.getValue("Wait Time (s)");
+      if (typeof value === "number") {
+        return <div className="text-right">{value.toLocaleString()}s</div>;
+      }
+      return <div className="text-right">{String(value)}</div>;
+    },
+    size: 130,
+    minSize: 110,
+    maxSize: 150,
   },
   {
     accessorKey: "Travel Time (s)",
@@ -459,7 +510,7 @@ const passengerDemandColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-right w-full justify-end"
         >
           Travel Time (s)
           {sortDirection && sortIndex !== -1 && (
@@ -477,6 +528,16 @@ const passengerDemandColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    cell: ({ row }: { row: Row<any> }) => {
+      const value = row.getValue("Travel Time (s)");
+      if (typeof value === "number") {
+        return <div className="text-right">{value.toLocaleString()}s</div>;
+      }
+      return <div className="text-right">{String(value)}</div>;
+    },
+    size: 140,
+    minSize: 120,
+    maxSize: 160,
   },
 ];
 
@@ -491,7 +552,7 @@ const metricsColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-left w-full justify-start"
         >
           Metric
           {sortDirection && sortIndex !== -1 && (
@@ -509,6 +570,9 @@ const metricsColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    size: 200,
+    minSize: 180,
+    maxSize: 300,
   },
   {
     accessorKey: "value",
@@ -519,7 +583,7 @@ const metricsColumns: ColumnDef<any>[] = [
         <Button
           variant="ghost"
           onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
+          className="p-0 hover:bg-transparent group text-right w-full justify-end"
         >
           Value
           {sortDirection && sortIndex !== -1 && (
@@ -537,6 +601,17 @@ const metricsColumns: ColumnDef<any>[] = [
         </Button>
       );
     },
+    cell: ({ row }: { row: Row<any> }) => {
+      const value = row.getValue("value");
+      // For numeric values, add right alignment and formatting
+      if (typeof value === "number") {
+        return <div className="text-right">{value.toLocaleString()}</div>;
+      }
+      return <div className="text-right">{String(value)}</div>;
+    },
+    size: 300,
+    minSize: 200,
+    maxSize: 500,
   },
 ];
 
@@ -632,76 +707,8 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
     [pagination.pageSize]
   );
 
-  const renderPagination = useMemo(
-    () => (
-      <div className="flex items-center justify-between py-4">
-        <div className="flex items-center space-x-2">
-          <p className="text-sm text-muted-foreground">Rows per page:</p>
-          <Select
-            value={pagination.pageSize.toString()} // Use state from store
-            onValueChange={(value) => {
-              // Update pagination state: change size, reset index
-              setPagination({
-                pageIndex: 0,
-                pageSize: Number(value),
-              });
-            }}
-          >
-            <SelectTrigger className="h-8 max-w-fit">
-              <SelectValue placeholder={pagination.pageSize.toString()} />
-            </SelectTrigger>
-            <SelectContent>
-              {[10, 25, 50, 100].map((size) => (
-                <SelectItem key={size} value={size.toString()}>
-                  {size}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() =>
-              setPagination((old) => ({ ...old, pageIndex: old.pageIndex - 1 }))
-            } // Decrement page index
-            disabled={pagination.pageIndex <= 0 || isLoading}
-          >
-            <IconChevronLeft className="h-4 w-4" />
-          </Button>
-
-          <div className="flex items-center gap-1">
-            <span className="text-sm">
-              {pagination.pageIndex + 1} of {pageCount || 1}
-            </span>
-            {isLoading ? (
-              <span className="ml-2">
-                <Skeleton className="h-4 w-4 rounded-full" />
-              </span>
-            ) : (
-              <span className="text-sm text-muted-foreground ml-2">
-                ({totalItems} items)
-              </span>
-            )}
-          </div>
-
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() =>
-              setPagination((old) => ({ ...old, pageIndex: old.pageIndex + 1 }))
-            } // Increment page index
-            disabled={pagination.pageIndex >= pageCount - 1 || isLoading}
-          >
-            <IconChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    ),
-    [pagination, pageCount, totalItems, isLoading, setPagination] // Use store state/actions
-  );
+  // --- Re-add local state for row selection ---
+  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
 
   // Memoized column definitions
   const memoizedTimetableColumns = useMemo(
@@ -720,9 +727,6 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
   // Determine if modal should show content or loading/empty state
   const showContent = !isLoading && !error && hasAnyDataForTab;
   const showNoDataMessage = !isLoading && !error && !hasAnyDataForTab;
-
-  // --- Re-add local state for row selection ---
-  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
 
   return (
     // Use store action for closing
@@ -768,24 +772,35 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
               </TabsTrigger>
             </TabsList>
 
-            {/* Search Input - Use state/action from store */}
-            <div className="relative my-4 flex-shrink-0">
-              {" "}
-              {/* Prevent search from shrinking */}
-              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                <IconSearch className="h-4 w-4 text-muted-foreground" />
+            {/* Search Input & Reset Sort Button Container */}
+            {activeTabId !== "passengerDemand" && (
+              <div className="relative my-4 flex items-center gap-2 flex-shrink-0">
+                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                  <IconSearch className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <Input
+                  type="text"
+                  placeholder="Search data..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  className="pl-10 pr-4 flex-grow"
+                />
+                {/* Add Reset Sort Button for DataViewerModal */}
+                {sorting && sorting.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSorting([])} // Reset to empty array for no sort
+                    className="text-xs h-9 ml-2 flex-shrink-0"
+                  >
+                    Reset Sort
+                  </Button>
+                )}
               </div>
-              <Input
-                type="text"
-                placeholder="Search data..."
-                value={searchQuery}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                className="pl-10 pr-4"
-              />
-            </div>
+            )}
 
             {/* Tab Content Area - Add relative positioning for overlay */}
-            <div className="relative flex-1 overflow-hidden flex flex-col min-h-0">
+            <div className="relative flex-1 overflow-hidden flex flex-col min-h-0 h-[50vh]">
               {/* Loading Overlay */}
               {isLoading && (
                 <div className="absolute inset-0 bg-background/80 flex flex-col items-center justify-center z-10">
@@ -817,7 +832,7 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
                     No results found for "{searchQuery}"
                   </div>
                 ) : (
-                  <div className="flex-1 flex flex-col min-h-0">
+                  <div className="flex-1 flex flex-col h-full">
                     {" "}
                     {/* Allow table to grow */}
                     <DataTable
@@ -827,13 +842,12 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
                       setSorting={setSorting} // Use store action
                       rowSelection={rowSelection} // Keep local row selection
                       setRowSelection={setRowSelection}
-                      stickyHeader={true}
                       pageIndex={pagination.pageIndex} // Use store state
                       pageSize={pagination.pageSize} // Use store state
                       pageCount={pageCount} // Use computed value
                       onPaginationChange={handlePaginationChange} // Use wrapper handler
+                      tableHeight="350px" // Add fixed height for scrolling
                     />
-                    {renderPagination}
                   </div>
                 )}
               </TabsContent>
@@ -842,34 +856,7 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
                 value="passengerDemand"
                 className="pt-2 flex-1 overflow-hidden flex flex-col h-full mt-0"
               >
-                {isLoading ? (
-                  renderSkeleton
-                ) : error ? (
-                  <div className="py-8 text-center text-red-500">
-                    Error: {error}
-                  </div>
-                ) : !hasAnyDataForTab ? (
-                  <div className="py-8 text-center text-muted-foreground">
-                    Passenger demand data not available for this simulation.
-                  </div>
-                ) : (
-                  <div className="flex-1 flex flex-col min-h-0">
-                    <DataTable
-                      columns={passengerDemandColumnsMemo}
-                      data={currentPageData} // Pass computed data (will be empty if not loaded)
-                      sorting={sorting}
-                      setSorting={setSorting}
-                      rowSelection={rowSelection}
-                      setRowSelection={setRowSelection}
-                      stickyHeader={true}
-                      pageIndex={pagination.pageIndex}
-                      pageSize={pagination.pageSize}
-                      pageCount={pageCount}
-                      onPaginationChange={handlePaginationChange}
-                    />
-                    {renderPagination}
-                  </div>
-                )}
+                <PassengerHeatmapTab />
               </TabsContent>
 
               <TabsContent
@@ -887,7 +874,7 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
                     Metrics data not available for this simulation.
                   </div>
                 ) : (
-                  <div className="flex-1 flex flex-col min-h-0">
+                  <div className="flex-1 flex flex-col h-full">
                     <DataTable
                       columns={metricsColumnsMemo}
                       data={currentPageData} // Pass computed data (will be empty if not loaded)
@@ -895,13 +882,12 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
                       setSorting={setSorting}
                       rowSelection={rowSelection}
                       setRowSelection={setRowSelection}
-                      stickyHeader={true}
                       pageIndex={pagination.pageIndex}
                       pageSize={pagination.pageSize}
                       pageCount={pageCount}
                       onPaginationChange={handlePaginationChange}
+                      tableHeight="350px" // Add fixed height for scrolling
                     />
-                    {renderPagination}
                   </div>
                 )}
               </TabsContent>
