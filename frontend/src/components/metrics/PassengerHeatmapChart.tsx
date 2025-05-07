@@ -8,20 +8,15 @@ import {
   TitleComponent,
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
+import { useSimulationStore } from "@/store/simulationStore";
 import {
-  useSimulationStore,
-  TimePeriodFilter,
-  AggregatedDemandEntry,
-} from "@/store/simulationStore";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  usePassengerDemandStore,
+  SchemeType as PassengerDemandSchemeType,
+} from "@/store/passengerDemandStore";
 import { IconLoader2, IconInfoCircle } from "@tabler/icons-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { PEAK_HOURS, FULL_DAY_HOURS } from "@/lib/constants";
+import { parseTime } from "@/lib/timeUtils";
 
 // Register ECharts components
 echarts.use([
@@ -35,10 +30,13 @@ echarts.use([
 
 // Define the expected structure for ECharts heatmap data items
 interface EchartsHeatmapDataItem {
-  value: [number, number, number]; // [originIndex, destinationIndex, passengerCount]
+  value: [number, number, number]; // [originIndex, destinationIndex, metricValue]
   originName: string;
   destinationName: string;
 }
+
+// Metric types for the heatmap
+type HeatmapMetricType = "PASSENGER_COUNT" | "WAIT_TIME" | "TRAVEL_TIME";
 
 // --- Station Data (Consider moving to a shared constants/config file if used elsewhere) ---
 const stationNames: { [key: string]: string } = {
@@ -59,8 +57,8 @@ const stationNames: { [key: string]: string } = {
 const stationOrder = Object.keys(stationNames).sort(
   (a, b) => parseInt(a) - parseInt(b)
 ); // "1" to "13"
-const getStationIndex = (stationId: string): number =>
-  stationOrder.indexOf(stationId);
+const getStationIndex = (stationId: string | number): number =>
+  stationOrder.indexOf(String(stationId));
 // --- End Station Data ---
 
 // --- Helper Function ---
@@ -76,67 +74,130 @@ const formatToK = (value: number): string => {
 interface PassengerHeatmapChartProps {
   height?: string | number;
   width?: string | number;
+  selectedMetric: HeatmapMetricType;
+  selectedScheme: PassengerDemandSchemeType;
 }
 
 export const PassengerHeatmapChart: React.FC<PassengerHeatmapChartProps> = ({
-  height = "500px", // Default height increased slightly
+  height = "550px", // Adjusted height to make space for selectors
   width = "100%",
+  selectedMetric,
+  selectedScheme,
 }) => {
-  // --- State and Store Access (from PassengerHeatmapTab) ---
+  // --- State and Store Access ---
+  const { selectedTimePeriod } = useSimulationStore(); // Time period from global store
   const {
-    aggregatedPassengerDemand,
-    selectedTimePeriod,
-    setSelectedTimePeriod,
-    isAggregatedDemandLoading,
-    activeSimulationSettings,
-  } = useSimulationStore();
-  const currentScheme = activeSimulationSettings?.schemeType || "REGULAR";
-  // --- End State and Store Access ---
+    passengerDemand,
+    isLoading: isDemandLoading,
+    error: demandError,
+  } = usePassengerDemandStore();
 
-  // --- Data Processing (from PassengerHeatmapTab) ---
+  // --- Data Processing ---
   const echartsHeatmapData = useMemo(() => {
-    if (!aggregatedPassengerDemand || isAggregatedDemandLoading) return [];
-    const periodData = aggregatedPassengerDemand[selectedTimePeriod];
-    if (!periodData) return [];
-    const schemeData = periodData[currentScheme];
-    if (!schemeData || schemeData.length === 0) return [];
+    if (!passengerDemand || passengerDemand.length === 0 || isDemandLoading)
+      return [];
 
+    // 1. Filter by Scheme
+    const schemeFilteredDemand = passengerDemand.filter(
+      (entry) => entry.SCHEME_TYPE === selectedScheme
+    );
+
+    // 2. Filter by Time Period
+    const timeFilteredDemand = schemeFilteredDemand.filter((entry) => {
+      if (!entry.ARRIVAL_TIME_AT_ORIGIN) return false;
+      const arrivalSeconds = parseTime(entry.ARRIVAL_TIME_AT_ORIGIN);
+
+      if (selectedTimePeriod === "AM_PEAK") {
+        return (
+          arrivalSeconds >= parseTime(PEAK_HOURS.AM.start) &&
+          arrivalSeconds <= parseTime(PEAK_HOURS.AM.end)
+        );
+      } else if (selectedTimePeriod === "PM_PEAK") {
+        return (
+          arrivalSeconds >= parseTime(PEAK_HOURS.PM.start) &&
+          arrivalSeconds <= parseTime(PEAK_HOURS.PM.end)
+        );
+      }
+      // FULL_SERVICE or any other case includes all
+      return true;
+    });
+
+    // 3. Aggregate by OD pair based on selectedMetric
+    const aggregatedData: Record<
+      string, // OD_Pair_Key e.g., "1-2"
+      { sum: number; count: number; entries: number[] }
+    > = {};
+
+    timeFilteredDemand.forEach((entry) => {
+      const odKey = `${entry.ORIGIN_STATION_ID}-${entry.DESTINATION_STATION_ID}`;
+      if (!aggregatedData[odKey]) {
+        aggregatedData[odKey] = { sum: 0, count: 0, entries: [] };
+      }
+
+      if (selectedMetric === "PASSENGER_COUNT") {
+        aggregatedData[odKey].sum += entry.PASSENGER_COUNT;
+      } else if (selectedMetric === "WAIT_TIME") {
+        aggregatedData[odKey].sum += entry.WAIT_TIME;
+        aggregatedData[odKey].count += 1; // For averaging
+        aggregatedData[odKey].entries.push(entry.WAIT_TIME);
+      } else if (selectedMetric === "TRAVEL_TIME") {
+        aggregatedData[odKey].sum += entry.TRAVEL_TIME;
+        aggregatedData[odKey].count += 1; // For averaging
+        aggregatedData[odKey].entries.push(entry.TRAVEL_TIME);
+      }
+    });
+
+    // 4. Transform to ECharts format
     const transformedData: EchartsHeatmapDataItem[] = [];
-    schemeData.forEach((entry: AggregatedDemandEntry) => {
-      const [originId, destinationId] = entry.ROUTE.split("-");
+    Object.keys(aggregatedData).forEach((odKey) => {
+      const [originIdStr, destinationIdStr] = odKey.split("-");
+      const originId = parseInt(originIdStr);
+      const destinationId = parseInt(destinationIdStr);
+
       if (
-        stationOrder.includes(originId) &&
-        stationOrder.includes(destinationId) &&
-        originId !== destinationId
+        getStationIndex(originId) === -1 ||
+        getStationIndex(destinationId) === -1 ||
+        originId === destinationId
       ) {
+        return; // Skip invalid or self-loops
+      }
+
+      let value: number;
+      if (selectedMetric === "PASSENGER_COUNT") {
+        value = aggregatedData[odKey].sum;
+      } else {
+        // Average for WAIT_TIME and TRAVEL_TIME, convert to minutes
+        value =
+          aggregatedData[odKey].count > 0
+            ? aggregatedData[odKey].sum / aggregatedData[odKey].count / 60
+            : 0;
+      }
+
+      if (value > 0) {
+        // Only include pairs with data
         transformedData.push({
           value: [
             getStationIndex(originId),
             getStationIndex(destinationId),
-            entry.PASSENGER_COUNT,
+            value,
           ],
-          originName: stationNames[originId] || `Station ${originId}`,
+          originName: stationNames[originIdStr] || `Station ${originIdStr}`,
           destinationName:
-            stationNames[destinationId] || `Station ${destinationId}`,
+            stationNames[destinationIdStr] || `Station ${destinationIdStr}`,
         });
       }
     });
     return transformedData;
   }, [
-    aggregatedPassengerDemand,
+    passengerDemand,
+    selectedScheme,
     selectedTimePeriod,
-    currentScheme,
-    isAggregatedDemandLoading,
+    selectedMetric,
+    isDemandLoading,
   ]);
   // --- End Data Processing ---
 
-  // --- Event Handlers (from PassengerHeatmapTab) ---
-  const handleTimePeriodChange = (value: string) => {
-    setSelectedTimePeriod(value as TimePeriodFilter);
-  };
-  // --- End Event Handlers ---
-
-  // --- ECharts Rendering Logic (from PassengerHeatmap) ---
+  // --- ECharts Rendering Logic ---
   const chartRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (chartRef.current && echartsHeatmapData.length > 0) {
@@ -147,7 +208,7 @@ export const PassengerHeatmapChart: React.FC<PassengerHeatmapChartProps> = ({
         typeof window !== "undefined" &&
         document.documentElement.classList.contains("dark");
       const textColor = isDarkMode ? "#FFFFFF" : "#333333";
-      const seriesLabelColor = "#000000";
+      const seriesLabelColor = isDarkMode ? "#000000" : "#000000"; // Adjusted for dark mode
 
       const yAxisLabels = stationOrder.map(
         (id) => stationNames[id] || `Station ${id}`
@@ -156,31 +217,78 @@ export const PassengerHeatmapChart: React.FC<PassengerHeatmapChartProps> = ({
         (id) => stationNames[id] || `Station ${id}`
       );
       const processedData = echartsHeatmapData.map((item) => item.value);
-      const passengerCounts = echartsHeatmapData.map((item) => item.value[2]);
+      const metricValues = echartsHeatmapData.map((item) => item.value[2]);
       const minValue =
-        passengerCounts.length > 0 ? Math.min(...passengerCounts) : 0;
-      const maxValue =
-        passengerCounts.length > 0 ? Math.max(...passengerCounts) : 1; // Avoid 0 max
+        metricValues.length > 0 ? Math.min(0, ...metricValues) : 0; // Ensure 0 is included if all values are positive
+      const maxValue = metricValues.length > 0 ? Math.max(...metricValues) : 1; // Avoid 0 max
+
+      let metricNameForTitle: string;
+      let valueSuffix: string;
+      let colorGradient: string[];
+
+      switch (selectedMetric) {
+        case "PASSENGER_COUNT":
+          metricNameForTitle = "Passenger Count";
+          valueSuffix = " passengers";
+          colorGradient = [
+            "#fee0d2", // Lightest Red
+            "#fcbba1",
+            "#fc9272",
+            "#fb6a4a",
+            "#de2d26", // Darkest Red
+          ];
+          break;
+        case "WAIT_TIME":
+          metricNameForTitle = "Average Wait Time";
+          valueSuffix = " min";
+          colorGradient = [
+            "#eff3ff", // Lightest Blue
+            "#bdd7e7",
+            "#6baed6",
+            "#3182bd",
+            "#08519c", // Darkest Blue
+          ];
+          break;
+        case "TRAVEL_TIME":
+          metricNameForTitle = "Average Travel Time";
+          valueSuffix = " min";
+          colorGradient = [
+            "#ffffcc", // Lightest Yellow
+            "#ffeda0",
+            "#fed976",
+            "#feb24c",
+            "#fd8d3c", // Darkest Yellow/Orange
+          ];
+          break;
+        default:
+          metricNameForTitle = "Data";
+          valueSuffix = "";
+          colorGradient = ["#fee0d2", "#fc9272", "#de2d26"];
+      }
+
+      const currentTitle = `O-D Heatmap: ${metricNameForTitle} (${selectedScheme}, ${selectedTimePeriod.replace(
+        "_",
+        " "
+      )})`;
 
       const option = {
         title: {
-          text: "O-D Passenger Heatmap",
+          text: currentTitle,
           left: "center",
-          top: 0, // Move title slightly down
+          top: 5,
           textStyle: { fontSize: 16, fontWeight: "bold", color: textColor },
         },
         tooltip: {
           position: "top",
           formatter: (params: any) => {
-            // Find the original data item based on index if possible
-            // Note: params.dataIndex might not be reliable if data is sparse/filtered
-            // A safer approach might be needed if exact origin/dest names are required
-            const val = params.value; // val is [originIndex, destinationIndex, count]
+            const val = params.value;
             if (val && val.length === 3) {
               const originName = yAxisLabels[val[0]];
               const destinationName = xAxisLabels[val[1]];
               const count = val[2];
-              return `${originName} to ${destinationName}<br />Passengers: ${count.toLocaleString()}`;
+              return `${originName} to ${destinationName}<br />${metricNameForTitle}: ${count.toFixed(
+                selectedMetric === "PASSENGER_COUNT" ? 0 : 2
+              )}${valueSuffix}`;
             }
             return "";
           },
@@ -188,8 +296,8 @@ export const PassengerHeatmapChart: React.FC<PassengerHeatmapChartProps> = ({
         grid: {
           left: "50px",
           right: "50px",
-          bottom: "80px",
-          top: "60px",
+          bottom: "80px", // Adjusted for visualMap
+          top: "70px", // Adjusted for title and selectors
           containLabel: true,
         },
         xAxis: {
@@ -210,23 +318,36 @@ export const PassengerHeatmapChart: React.FC<PassengerHeatmapChartProps> = ({
           axisLabel: { interval: 0, fontSize: 10, color: textColor },
         },
         visualMap: {
-          min: minValue > 0 ? 0 : minValue,
+          min: minValue,
           max: maxValue,
           calculable: true,
           orient: "horizontal",
           left: "center",
           bottom: "10px",
-          inRange: { color: ["#fee0d2", "#fc9272", "#de2d26"] }, // Red gradient
+          inRange: { color: colorGradient },
           textStyle: { fontSize: 10, color: textColor },
+          formatter: (value: number) => {
+            if (selectedMetric === "PASSENGER_COUNT") {
+              return formatToK(value);
+            }
+            return value.toFixed(1) + valueSuffix.trim();
+          },
         },
         series: [
           {
-            name: "Passenger Demand",
+            name: metricNameForTitle,
             type: "heatmap",
             data: processedData,
             label: {
               show: true,
-              formatter: (params: any) => formatToK(params.value[2]),
+              formatter: (params: any) => {
+                const value = params.value[2];
+                if (selectedMetric === "PASSENGER_COUNT") {
+                  return formatToK(value);
+                } else {
+                  return value.toFixed(1) + " min";
+                }
+              },
               fontSize: 9,
               color: seriesLabelColor,
             },
@@ -236,7 +357,7 @@ export const PassengerHeatmapChart: React.FC<PassengerHeatmapChartProps> = ({
           },
         ],
       };
-      chartInstance.setOption(option);
+      chartInstance.setOption(option, true); // Add true for notMerge
       const resizeHandler = () => chartInstance.resize();
       window.addEventListener("resize", resizeHandler);
       return () => {
@@ -244,15 +365,22 @@ export const PassengerHeatmapChart: React.FC<PassengerHeatmapChartProps> = ({
         chartInstance.dispose();
       };
     } else if (chartRef.current) {
-      // If data becomes empty, clear the chart
       const chartInstance = echarts.getInstanceByDom(chartRef.current);
       chartInstance?.clear();
     }
-  }, [echartsHeatmapData, selectedTimePeriod, currentScheme, height, width]); // Re-run effect when data or options change
+  }, [
+    echartsHeatmapData,
+    selectedMetric,
+    selectedScheme,
+    selectedTimePeriod,
+    height,
+    width,
+  ]);
   // --- End ECharts Rendering Logic ---
 
-  // --- Loading and No Data States (from PassengerHeatmapTab) ---
-  if (isAggregatedDemandLoading) {
+  // --- Loading and No Data States ---
+  if (isDemandLoading && echartsHeatmapData.length === 0) {
+    // Show loader if demand is loading AND no data yet
     return (
       <div
         className="flex items-center justify-center"
@@ -264,52 +392,45 @@ export const PassengerHeatmapChart: React.FC<PassengerHeatmapChartProps> = ({
     );
   }
 
-  // Check specifically if data *for the selected period/scheme* is empty
-  const noDataForSelection = useMemo(() => {
-    if (!aggregatedPassengerDemand) return true;
-    const periodData = aggregatedPassengerDemand[selectedTimePeriod];
-    if (!periodData) return true;
-    const schemeData = periodData[currentScheme];
-    return !schemeData || schemeData.length === 0;
-  }, [aggregatedPassengerDemand, selectedTimePeriod, currentScheme]);
-
-  if (noDataForSelection) {
+  if (demandError) {
     return (
       <div
         className="flex flex-col items-center justify-center text-center"
         style={{ height: height, width: width }}
       >
+        <Alert variant="destructive" className="max-w-md">
+          <IconInfoCircle className="h-4 w-4" />
+          <AlertTitle>Error Loading Data</AlertTitle>
+          <AlertDescription>
+            Could not load passenger demand data: {demandError}
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  const noDataForSelection =
+    echartsHeatmapData.length === 0 && !isDemandLoading;
+
+  if (noDataForSelection) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center text-center p-4"
+        style={{ minHeight: "300px", width: width }} // Ensure minimum height
+      >
         <Alert className="max-w-md">
           <IconInfoCircle className="h-4 w-4" />
           <AlertTitle>No Data Available</AlertTitle>
           <AlertDescription>
-            Aggregated passenger demand data is not available for the selected
-            time period ({selectedTimePeriod.replace(/_/g, " ")}) and scheme (
-            {currentScheme}).
+            Passenger demand data is not available for the selected filters:
+            <br />
+            Time Period: {selectedTimePeriod.replace(/_/g, " ")}
+            <br />
+            Metric: {selectedMetric.replace("_", " ")}
+            <br />
+            Scheme: {selectedScheme}
           </AlertDescription>
         </Alert>
-        {/* Keep selector visible */}
-        <div className="mt-4">
-          <label
-            htmlFor="time-period-select-nodata"
-            className="text-sm font-medium mr-2"
-          >
-            Time Period:
-          </label>
-          <Select
-            onValueChange={handleTimePeriodChange}
-            defaultValue={selectedTimePeriod}
-          >
-            <SelectTrigger id="time-period-select-nodata" className="w-[180px]">
-              <SelectValue placeholder="Select Time Period" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="FULL_SERVICE">Full Service</SelectItem>
-              <SelectItem value="AM_PEAK">AM Peak</SelectItem>
-              <SelectItem value="PM_PEAK">PM Peak</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
       </div>
     );
   }
@@ -317,40 +438,10 @@ export const PassengerHeatmapChart: React.FC<PassengerHeatmapChartProps> = ({
 
   // --- Combined Render ---
   return (
-    <div className="w-full" style={{ height: height }}>
-      {/* Selector */}
-      <div className="mb-4 flex justify-start">
-        <div className="flex items-center">
-          <label
-            htmlFor="time-period-select-chart"
-            className="text-sm font-medium mr-2"
-          >
-            Time Period:
-          </label>
-          <Select
-            onValueChange={handleTimePeriodChange}
-            defaultValue={selectedTimePeriod}
-          >
-            <SelectTrigger id="time-period-select-chart" className="w-[180px]">
-              <SelectValue placeholder="Select Time Period" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="FULL_SERVICE">Full Service</SelectItem>
-              <SelectItem value="AM_PEAK">AM Peak</SelectItem>
-              <SelectItem value="PM_PEAK">PM Peak</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      {/* Chart Area */}
+    <div className="p-2" style={{ width: width, height: height }}>
       <div
         ref={chartRef}
-        style={{
-          width: width,
-          height: `calc(${
-            typeof height === "string" ? height : height + "px"
-          } - 40px)` /* Adjust height to account for selector */,
-        }}
+        style={{ width: "100%", height: "100%" }} // Chart takes full height now
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useMetricsStore } from "@/store/metricsStore";
@@ -9,6 +9,7 @@ import {
   useCurrentRawMetrics,
 } from "@/store/metricsStore";
 import { ComparativeBarChart } from "./ComparativeBarChart";
+import { TimePeriodFilter } from "@/store/simulationStore";
 import { JourneyTimeStackedBar } from "./JourneyTimeStackedBar";
 import { PassengerCountsChart } from "./PassengerCountsChart";
 import { PassengerHeatmapChart } from "./PassengerHeatmapChart";
@@ -25,6 +26,7 @@ import {
   IconStack2,
   IconTimeline,
   IconBoxMultiple,
+  IconLoader2,
 } from "@tabler/icons-react";
 import {
   Select,
@@ -33,11 +35,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  ArrowLeft,
+  BarChart3,
+  LineChart,
+  Users,
+  PieChart,
+  Map,
+  ListFilter,
+  Type,
+  Clock,
+} from "lucide-react";
 
 type TimeDistMetricType = "WAIT_TIME" | "TRAVEL_TIME";
 type TimeDistBreakdownType = "SCHEME_TYPE" | "TRIP_TYPE";
 type TimeSeriesMetricType = "PASSENGER_COUNT" | "WAIT_TIME" | "TRAVEL_TIME";
 type TripTypeMetricType = "PASSENGER_COUNT" | "WAIT_TIME" | "TRAVEL_TIME";
+type HeatmapMetricType = "PASSENGER_COUNT" | "WAIT_TIME" | "TRAVEL_TIME";
+type PassengerDemandSchemeType = "REGULAR" | "SKIP-STOP";
 
 interface ChartGalleryItem {
   key: string;
@@ -46,6 +61,8 @@ interface ChartGalleryItem {
   icon: React.ElementType;
   component: React.ReactNode;
   dataTestId?: string;
+  width?: number;
+  height?: number;
 }
 
 const MetricsTab: React.FC = () => {
@@ -76,6 +93,18 @@ const MetricsTab: React.FC = () => {
     useState<TimeSeriesMetricType>("PASSENGER_COUNT");
   const [tripTypeMetric, setTripTypeMetric] =
     useState<TripTypeMetricType>("PASSENGER_COUNT");
+  const [selectedHeatmapMetric, setSelectedHeatmapMetric] =
+    useState<HeatmapMetricType>("PASSENGER_COUNT");
+  const [selectedHeatmapScheme, setSelectedHeatmapScheme] =
+    useState<PassengerDemandSchemeType>("REGULAR");
+
+  // Get necessary state/setters from simulationStore for the heatmap selector
+  const selectedTimePeriod = useSimulationStore(
+    (state) => state.selectedTimePeriod
+  );
+  const setSelectedTimePeriod = useSimulationStore(
+    (state) => state.setSelectedTimePeriod
+  );
 
   // Fetch metrics and passenger demand when the component mounts or simulation ID changes
   useEffect(() => {
@@ -104,100 +133,117 @@ const MetricsTab: React.FC = () => {
   const isLoading = metricsLoading || demandLoading;
   const error = metricsError || demandError;
 
-  const chartGalleryItems: ChartGalleryItem[] = [
-    {
-      key: "schemeComparison",
-      title: "Scheme Performance",
-      description:
-        "Compare average time metrics (wait, travel, total journey) between Regular and Skip-Stop schemes.",
-      icon: IconChartBar,
-      component: <ComparativeBarChart height={400} width={1000} />,
-      dataTestId: "scheme-comparison-card",
-    },
-    {
-      key: "journeyComposition",
-      title: "Journey Time Breakdown",
-      description:
-        "View the composition of total journey time (wait vs. travel) for each scheme.",
-      icon: IconStack2,
-      component: <JourneyTimeStackedBar height={400} width={1000} />,
-      dataTestId: "journey-composition-card",
-    },
-    {
-      key: "passengerCounts",
-      title: "Passenger Throughput",
-      description:
-        "Total passengers who completed their journey, by operational scheme.",
-      icon: IconUsers,
-      component: (
-        <PassengerCountsChart
-          title="Total Passengers by Scheme"
-          height={400}
-          width={1000}
-        />
-      ),
-      dataTestId: "passenger-counts-card",
-    },
-    {
-      key: "odMatrix",
-      title: "O-D Passenger Heatmap",
-      description:
-        "Visualize passenger demand between origin and destination stations.",
-      icon: IconTable, // Changed from IconChartDots3 to IconTable for heatmap
-      component: <PassengerHeatmapChart height={450} width={1000} />,
-      dataTestId: "od-matrix-card",
-    },
-    {
-      key: "timeDistribution",
-      title: "Time Distribution (Box Plot)",
-      description:
-        "Distribution of wait and travel times by scheme or trip type.",
-      icon: IconBoxMultiple,
-      component: (
-        <TimeDistributionBoxPlot
-          height={400}
-          width={1000}
-          selectedMetric={timeDistMetric}
-          onMetricChange={setTimeDistMetric}
-          breakdownBy={timeDistBreakdown}
-          onBreakdownChange={setTimeDistBreakdown}
-        />
-      ),
-      dataTestId: "time-distribution-card",
-    },
-    {
-      key: "timeSeries",
-      title: "Time Series Analysis",
-      description:
-        "View passenger count, average wait, or travel time over the simulation period.",
-      icon: IconTimeline, // Changed from IconChartLine
-      component: (
-        <TimeSeriesPlot
-          height={400}
-          width={1000}
-          selectedMetric={timeSeriesMetric}
-          onMetricChange={setTimeSeriesMetric}
-        />
-      ),
-      dataTestId: "time-series-card",
-    },
-    {
-      key: "tripTypes",
-      title: "Trip Type Metrics",
-      description:
-        "Compare metrics for direct vs. transfer trips under different schemes.",
-      icon: IconChartDots3, // Kept this for general bar chart like metrics
-      component: (
-        <TripTypeBarChart
-          height={400}
-          width={1000}
-          selectedMetric={tripTypeMetric}
-          onMetricChange={setTripTypeMetric}
-        />
-      ),
-      dataTestId: "trip-types-card",
-    },
-  ];
+  const chartGalleryItems = useMemo<ChartGalleryItem[]>(
+    () => [
+      {
+        key: "schemeComparison",
+        title: "Scheme Performance",
+        description:
+          "Compare average time metrics (wait, travel, total journey) between Regular and Skip-Stop schemes.",
+        icon: IconChartBar,
+        component: <ComparativeBarChart height={400} width={1000} />,
+        dataTestId: "scheme-comparison-card",
+      },
+      {
+        key: "journeyComposition",
+        title: "Journey Time Breakdown",
+        description:
+          "View the composition of total journey time (wait vs. travel) for each scheme.",
+        icon: IconStack2,
+        component: <JourneyTimeStackedBar height={400} width={1000} />,
+        dataTestId: "journey-composition-card",
+      },
+      {
+        key: "passengerCounts",
+        title: "Passenger Throughput",
+        description:
+          "Total passengers who completed their journey, by operational scheme.",
+        icon: IconUsers,
+        component: (
+          <PassengerCountsChart
+            title="Total Passengers by Scheme"
+            height={400}
+            width={1000}
+          />
+        ),
+        dataTestId: "passenger-counts-card",
+      },
+      {
+        key: "odMatrix",
+        title: "O-D Passenger Heatmap",
+        description:
+          "Visualize passenger demand between origin and destination stations.",
+        icon: Map,
+        component: (
+          <PassengerHeatmapChart
+            height={450}
+            width={1000}
+            selectedMetric={selectedHeatmapMetric}
+            selectedScheme={selectedHeatmapScheme}
+          />
+        ),
+        dataTestId: "od-matrix-card",
+      },
+      {
+        key: "timeDistribution",
+        title: "Time Distribution (Box Plot)",
+        description:
+          "Distribution of wait and travel times by scheme or trip type.",
+        icon: IconBoxMultiple,
+        component: (
+          <TimeDistributionBoxPlot
+            height={400}
+            width={1000}
+            selectedMetric={timeDistMetric}
+            onMetricChange={setTimeDistMetric}
+            breakdownBy={timeDistBreakdown}
+            onBreakdownChange={setTimeDistBreakdown}
+          />
+        ),
+        dataTestId: "time-distribution-card",
+      },
+      {
+        key: "timeSeries",
+        title: "Time Series Analysis",
+        description:
+          "View passenger count, average wait, or travel time over the simulation period.",
+        icon: IconTimeline,
+        component: (
+          <TimeSeriesPlot
+            height={400}
+            width={1000}
+            selectedMetric={timeSeriesMetric}
+            onMetricChange={setTimeSeriesMetric}
+          />
+        ),
+        dataTestId: "time-series-card",
+      },
+      {
+        key: "tripTypes",
+        title: "Trip Type Metrics",
+        description:
+          "Compare metrics for direct vs. transfer trips under different schemes.",
+        icon: IconChartDots3,
+        component: (
+          <TripTypeBarChart
+            height={400}
+            width={1000}
+            selectedMetric={tripTypeMetric}
+            onMetricChange={setTripTypeMetric}
+          />
+        ),
+        dataTestId: "trip-types-card",
+      },
+    ],
+    [
+      timeDistMetric,
+      timeDistBreakdown,
+      timeSeriesMetric,
+      tripTypeMetric,
+      selectedHeatmapMetric,
+      selectedHeatmapScheme,
+    ]
+  );
 
   const selectedChart = chartGalleryItems.find(
     (item) => item.key === selectedChartKey
@@ -342,7 +388,7 @@ const MetricsTab: React.FC = () => {
                     value={tripTypeMetric}
                     onValueChange={setTripTypeMetric as (value: string) => void}
                   >
-                    <SelectTrigger className="w-[180px] h-8 text-sm">
+                    <SelectTrigger className="w-fit h-8 text-sm">
                       <SelectValue placeholder="Select metric" />
                     </SelectTrigger>
                     <SelectContent>
@@ -358,6 +404,77 @@ const MetricsTab: React.FC = () => {
                     </SelectContent>
                   </Select>
                 </div>
+              )}
+              {selectedChart.key === "odMatrix" && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-medium shrink-0">
+                      Time Period:
+                    </label>
+                    <Select
+                      value={selectedTimePeriod}
+                      onValueChange={(value) =>
+                        setSelectedTimePeriod(value as TimePeriodFilter)
+                      }
+                    >
+                      <SelectTrigger className="w-[160px] h-8 text-sm">
+                        <SelectValue placeholder="Select Time Period" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="FULL_SERVICE">
+                          Full Service
+                        </SelectItem>
+                        <SelectItem value="AM_PEAK">AM Peak</SelectItem>
+                        <SelectItem value="PM_PEAK">PM Peak</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-medium shrink-0">
+                      Metric:
+                    </label>
+                    <Select
+                      value={selectedHeatmapMetric}
+                      onValueChange={(v) =>
+                        setSelectedHeatmapMetric(v as HeatmapMetricType)
+                      }
+                    >
+                      <SelectTrigger className="w-fit h-8 text-sm">
+                        <SelectValue placeholder="Select Metric" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="PASSENGER_COUNT">
+                          Passenger Count
+                        </SelectItem>
+                        <SelectItem value="WAIT_TIME">
+                          Average Wait Time (min)
+                        </SelectItem>
+                        <SelectItem value="TRAVEL_TIME">
+                          Average Travel Time (min)
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-medium shrink-0">
+                      Scheme:
+                    </label>
+                    <Select
+                      value={selectedHeatmapScheme}
+                      onValueChange={(v) =>
+                        setSelectedHeatmapScheme(v as PassengerDemandSchemeType)
+                      }
+                    >
+                      <SelectTrigger className="w-fit h-8 text-sm">
+                        <SelectValue placeholder="Select Scheme" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="REGULAR">Regular</SelectItem>
+                        <SelectItem value="SKIP-STOP">Skip-Stop</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
               )}
             </div>
           </div>
