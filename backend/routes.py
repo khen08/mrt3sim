@@ -356,7 +356,8 @@ def get_passenger_demand(simulation_id):
                     'Arrival Destination': format_time(entry_dict.get('ARRIVAL_TIME_AT_DESTINATION')),
                     'Wait Time (s)': entry_dict.get('WAIT_TIME'),
                     'Travel Time (s)': entry_dict.get('TRAVEL_TIME'),
-                    'Trip Type': entry_dict.get('TRIP_TYPE')
+                    'Trip Type': entry_dict.get('TRIP_TYPE'),
+                    'SchemeType': entry_dict.get('SCHEME_TYPE')
                 }
                 formatted_entries.append(formatted_entry)
 
@@ -484,6 +485,96 @@ def get_aggregated_demand(simulation_id):
         import traceback
         print(f"[ROUTE:/SIMULATIONS/<id>/AGGREGATED_DEMAND_ORM] FAILED TO FETCH OR PROCESS AGGREGATED DEMAND: {e}\n{traceback.format_exc()}")
         return jsonify({"error": f"Failed to retrieve or process aggregated demand: {str(e)}"}), 500
+
+# Route to get simulation metrics for a specific simulation
+@main_bp.route('/simulations/<int:simulation_id>/metrics', methods=['GET'])
+def get_simulation_metrics(simulation_id):
+    """
+    Retrieves metrics data for a simulation and calculates additional derived metrics
+    such as average wait time and average travel time per passenger.
+    """
+    print(f"[ROUTE:/SIMULATIONS/<id>/METRICS] STARTING METRICS RETRIEVAL FOR SIMULATION ID: {simulation_id}")
+    try:
+        metrics_entries = db.simulation_metrics.find_many(
+            where={'SIMULATION_ID': simulation_id}
+        )
+        
+        if not metrics_entries:
+            print(f"[ROUTE:/SIMULATIONS/<id>/METRICS] No metrics found for simulation ID {simulation_id}")
+            return jsonify({"error": f"No metrics data available for simulation ID {simulation_id}"}), 404
+        
+        print(f"[ROUTE:/SIMULATIONS/<id>/METRICS] FETCHED {len(metrics_entries)} METRICS ENTRIES FROM DB")
+        
+        # Process and format the metrics data
+        formatted_metrics = []
+        
+        for entry in metrics_entries:
+            scheme_type = entry.SCHEME_TYPE
+            passenger_count = entry.PASSENGER_COUNT
+            total_travel_time = entry.TOTAL_PASSENGER_TRAVEL_TIME_SECONDS
+            total_wait_time = entry.TOTAL_PASSENGER_WAITING_TIME_SECONDS
+            
+            # Skip entries with no passengers to avoid division by zero
+            if passenger_count <= 0:
+                print(f"[ROUTE:/SIMULATIONS/<id>/METRICS] WARNING: Skipping entry with 0 passengers for scheme {scheme_type}")
+                continue
+            
+            # Calculate average metrics
+            avg_travel_time = total_travel_time / passenger_count
+            avg_wait_time = total_wait_time / passenger_count
+            avg_total_journey_time = (total_travel_time + total_wait_time) / passenger_count
+            
+            # Add basic metrics
+            formatted_metrics.extend([
+                {
+                    "metric": f"Total Passengers ({scheme_type})",
+                    "value": passenger_count,
+                    "category": "basic",
+                    "scheme": scheme_type
+                },
+                {
+                    "metric": f"Total Travel Time ({scheme_type})",
+                    "value": f"{total_travel_time:,} seconds",
+                    "category": "basic",
+                    "scheme": scheme_type
+                },
+                {
+                    "metric": f"Total Wait Time ({scheme_type})",
+                    "value": f"{total_wait_time:,} seconds",
+                    "category": "basic",
+                    "scheme": scheme_type
+                }
+            ])
+            
+            # Add average metrics
+            formatted_metrics.extend([
+                {
+                    "metric": f"Average Travel Time per Passenger ({scheme_type})",
+                    "value": f"{avg_travel_time:.2f} seconds",
+                    "category": "average",
+                    "scheme": scheme_type
+                },
+                {
+                    "metric": f"Average Wait Time per Passenger ({scheme_type})",
+                    "value": f"{avg_wait_time:.2f} seconds",
+                    "category": "average",
+                    "scheme": scheme_type
+                },
+                {
+                    "metric": f"Average Total Journey Time per Passenger ({scheme_type})",
+                    "value": f"{avg_total_journey_time:.2f} seconds",
+                    "category": "average",
+                    "scheme": scheme_type
+                }
+            ])
+        
+        print(f"[ROUTE:/SIMULATIONS/<id>/METRICS] SUCCESSFULLY PROCESSED {len(formatted_metrics)} METRICS FOR SIMULATION ID {simulation_id}")
+        return jsonify(formatted_metrics)
+
+    except Exception as e:
+        import traceback
+        print(f"[ROUTE:/SIMULATIONS/<id>/METRICS] FAILED TO FETCH OR PROCESS METRICS: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": f"Failed to retrieve or process metrics: {str(e)}"}), 500
 
 # --- Helper Functions ---
 

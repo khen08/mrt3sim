@@ -28,11 +28,14 @@ export const DELETE_SIMULATION_ENDPOINT = (simId: number | string) =>
   `${API_BASE_URL}/simulations/${simId}`;
 export const DELETE_BULK_SIMULATIONS_ENDPOINT = `${API_BASE_URL}/simulations`;
 
-// --- Add new endpoint for aggregated demand ---
+// --- Endpoint for aggregated demand ---
 export const GET_AGGREGATED_PASSENGER_DEMAND_ENDPOINT = (
   simId: number | string
 ) => `${API_BASE_URL}/simulations/${simId}/aggregated_demand`;
-// --- End new endpoint ---
+
+// --- Endpoint for simulation metrics ---
+export const GET_SIMULATION_METRICS_ENDPOINT = (simId: number | string) =>
+  `${API_BASE_URL}/simulations/${simId}/metrics`;
 
 // MRT Map Layout Constants
 export const HORIZONTAL_STATION_SPACING = 70;
@@ -99,14 +102,6 @@ export const TRAIN_COLOR_B = "#9E2B25"; // New Red
 export const TRAIN_COLOR_A_STOPPED = "#304d71"; // Darker Blue when stopped
 export const TRAIN_COLOR_B_STOPPED = "#80302b"; // Darker Red when stopped
 
-// Add constants for stopped regular trains (NEW)
+// Add constants for stopped regular trains
 export const TRAIN_COLOR_NB_STOPPED_REGULAR = "#1a6a49"; // Dark Green
 export const TRAIN_COLOR_SB_STOPPED_REGULAR = "#d4b751"; // Dark Yellow
-
-// Train Highlight Filter Constants (NEW)
-// export const TRAIN_HIGHLIGHT_FILTER_STD_DEVIATION = "3"; // Removed duplicate
-
-// Simulation Controller Constants
-// export const SIMULATION_SPEED_PRESETS = [0.5, 1, 2, 5, 10, 20, 30]; // Removed duplicate
-
-// Add other shared constants as needed

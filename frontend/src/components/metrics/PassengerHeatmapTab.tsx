@@ -137,11 +137,10 @@ const PassengerHeatmapTab: React.FC = () => {
   }
 
   return (
-    <Card className="h-full w-[800px] flex flex-col">
+    <Card className="h-full w-full flex flex-col">
       <CardHeader>
-        <CardTitle>Passenger Demand Heatmap</CardTitle>
-        <div className="flex space-x-4 mt-4">
-          <div>
+        <div className="flex">
+          <div className="flex items-center">
             <label
               htmlFor="time-period-select"
               className="text-sm font-medium mr-2"
@@ -164,7 +163,7 @@ const PassengerHeatmapTab: React.FC = () => {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="flex-grow overflow-y-auto pt-4">
+      <CardContent className="flex-grow overflow-y-auto">
         {/* Use the new ECharts component and pass necessary props */}
         <PassengerHeatmap
           data={echartsHeatmapData}

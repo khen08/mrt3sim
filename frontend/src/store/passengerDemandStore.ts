@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { useSimulationStore } from "./simulationStore";
 import { useAPIStore } from "./apiStore";
+import { GET_PASSENGER_DEMAND_ENDPOINT } from "@/lib/constants";
 
 // Types for heatmap data processing
 export interface HeatmapDataPoint {
@@ -40,7 +41,33 @@ export const AVAILABLE_TIME_PERIODS: TimePeriod[] = [
 ];
 export const AVAILABLE_SCHEME_TYPES: SchemeType[] = ["REGULAR", "SKIP-STOP"];
 
+// Passenger demand data model (matching PASSENGER_DEMAND table)
+export interface PassengerDemandEntry {
+  SCHEME_TYPE: SchemeType;
+  TRIP_TYPE: "DIRECT" | "TRANSFER";
+  ORIGIN_STATION_ID: number;
+  DESTINATION_STATION_ID: number;
+  PASSENGER_COUNT: number;
+  WAIT_TIME: number;
+  TRAVEL_TIME: number;
+  ARRIVAL_TIME_AT_ORIGIN: string;
+}
+
+// Raw passenger demand data from backend
+export interface RawPassengerDemandEntry {
+  Route: string;
+  Passengers: number;
+  "Demand Time": string;
+  "Boarding Time": string;
+  "Arrival Destination": string;
+  "Wait Time (s)": number;
+  "Travel Time (s)": number;
+  "Trip Type": string;
+  SchemeType: "REGULAR" | "SKIP-STOP";
+}
+
 interface PassengerDemandStoreState {
+  // Original heatmap data
   heatmapData: HeatmapSeries[] | null;
   rawAggregatedData: AggregatedPeriodData | null;
   isLoadingHeatmap: boolean;
@@ -49,8 +76,18 @@ interface PassengerDemandStoreState {
   selectedSchemeType: SchemeType;
   stationNames: Record<string, string>; // Store station ID to name mapping
 
+  // Passenger demand data for visualizations
+  passengerDemand: PassengerDemandEntry[];
+  isLoading: boolean;
+  error: string | null;
+  lastFetched: number | null; // Timestamp for caching
+
   actions: {
     fetchAggregatedPassengerDemand: (simulationId: number) => Promise<void>;
+    fetchPassengerDemand: (
+      simulationId: number,
+      forceRefresh?: boolean
+    ) => Promise<void>;
     setSelectedTimePeriod: (period: TimePeriod) => void;
     setSelectedSchemeType: (scheme: SchemeType) => void;
     setStationNames: (stations: { id: number; name: string }[]) => void;
@@ -67,6 +104,12 @@ const initialState = {
   selectedTimePeriod: "FULL_SERVICE" as TimePeriod,
   selectedSchemeType: "REGULAR" as SchemeType,
   stationNames: {},
+
+  // Initial state for passenger demand
+  passengerDemand: [],
+  isLoading: false,
+  error: null,
+  lastFetched: null,
 };
 
 export const usePassengerDemandStore = create<PassengerDemandStoreState>(
@@ -84,14 +127,17 @@ export const usePassengerDemandStore = create<PassengerDemandStoreState>(
         if (!simulationId) return;
         set({ isLoadingHeatmap: true, heatmapError: null });
         try {
-          const data = await useAPIStore
-            .getState()
-            .fetchAggregatedPassengerDemandFromAPI(simulationId);
+          const apiStore = useAPIStore.getState();
+          const data = await apiStore.fetchAggregatedPassengerDemand(
+            simulationId
+          );
+
+          // Store the data in our store if it exists
           if (data) {
             set({ rawAggregatedData: data, isLoadingHeatmap: false });
             get().actions.processHeatmapData();
           } else {
-            throw new Error("No data returned from API");
+            set({ isLoadingHeatmap: false });
           }
         } catch (error: any) {
           console.error("Failed to fetch aggregated passenger demand:", error);
@@ -100,6 +146,73 @@ export const usePassengerDemandStore = create<PassengerDemandStoreState>(
             isLoadingHeatmap: false,
             rawAggregatedData: null,
             heatmapData: null,
+          });
+        }
+      },
+      fetchPassengerDemand: async (
+        simulationId: number,
+        forceRefresh = false
+      ) => {
+        if (!simulationId) return;
+
+        const now = Date.now();
+        const lastFetched = get().lastFetched;
+
+        // Cache for 5 minutes (300000 ms) unless force refresh
+        if (lastFetched && now - lastFetched < 300000 && !forceRefresh) {
+          console.log("Using cached passenger demand data");
+          return;
+        }
+
+        set({ isLoading: true, error: null });
+        try {
+          const response = await fetch(
+            GET_PASSENGER_DEMAND_ENDPOINT(simulationId)
+          );
+
+          if (!response.ok) {
+            throw new Error(
+              `Error fetching passenger demand: ${response.statusText}`
+            );
+          }
+
+          const rawData = await response.json();
+
+          // Transform the raw data from backend format to the format expected by components
+          const transformedData: PassengerDemandEntry[] = rawData.map(
+            (item: RawPassengerDemandEntry) => {
+              // Split the "Route" field to get origin and destination IDs
+              const [originId, destId] = item.Route.split("-").map((id) =>
+                parseInt(id, 10)
+              );
+
+              return {
+                SCHEME_TYPE: item.SchemeType || "REGULAR",
+                TRIP_TYPE: item["Trip Type"] as "DIRECT" | "TRANSFER",
+                ORIGIN_STATION_ID: originId,
+                DESTINATION_STATION_ID: destId,
+                PASSENGER_COUNT: item.Passengers,
+                WAIT_TIME: item["Wait Time (s)"],
+                TRAVEL_TIME: item["Travel Time (s)"],
+                ARRIVAL_TIME_AT_ORIGIN: item["Demand Time"],
+              };
+            }
+          );
+
+          set({
+            passengerDemand: transformedData,
+            isLoading: false,
+            lastFetched: now,
+          });
+
+          console.log(
+            `Transformed ${rawData.length} passenger demand entries for visualization`
+          );
+        } catch (error: any) {
+          console.error("Failed to fetch passenger demand:", error);
+          set({
+            error: error.message || "Failed to load passenger demand data",
+            isLoading: false,
           });
         }
       },
@@ -175,12 +288,21 @@ export const usePassengerDemandStore = create<PassengerDemandStoreState>(
               })),
             };
           })
-          .filter((series) => series.data.length > 0); // Filter out origins with no data for this period/scheme
+          .filter((series) => series.data.length > 0); // Filter out origins with no data
 
         set({ heatmapData: transformedData });
       },
       reset: () => {
-        set(initialState);
+        set({
+          heatmapData: null,
+          rawAggregatedData: null,
+          isLoadingHeatmap: false,
+          heatmapError: null,
+          passengerDemand: [],
+          isLoading: false,
+          error: null,
+          lastFetched: null,
+        });
       },
     },
   })
@@ -190,8 +312,12 @@ export const usePassengerDemandStore = create<PassengerDemandStoreState>(
 // or when station configuration changes (for names)
 useSimulationStore.subscribe((state, prevState) => {
   const { loadedSimulationId, simulationSettings } = state;
-  const { fetchAggregatedPassengerDemand, setStationNames, reset } =
-    usePassengerDemandStore.getState().actions;
+  const {
+    fetchAggregatedPassengerDemand,
+    fetchPassengerDemand,
+    setStationNames,
+    reset,
+  } = usePassengerDemandStore.getState().actions;
 
   if (
     loadedSimulationId &&
@@ -206,7 +332,9 @@ useSimulationStore.subscribe((state, prevState) => {
       }));
       setStationNames(stationNameMapping);
     }
+    // Fetch both types of data
     fetchAggregatedPassengerDemand(loadedSimulationId);
+    fetchPassengerDemand(loadedSimulationId);
   } else if (
     simulationSettings?.stations &&
     simulationSettings.stations !== prevState.simulationSettings?.stations

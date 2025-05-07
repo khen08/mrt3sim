@@ -1539,11 +1539,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
           // Base transform (should be okay)
           const groupTransform = `translate(${train.x}, ${train.y}) rotate(${train.rotation})`;
 
-          // Get current/next station IDs (should be okay)
-          let currentStationId = null;
-          // ... (rest of station ID logic) ...
           let nextStationId = null;
-          // ... (rest of station ID logic) ...
 
           // Skip logic (should be okay)
           const willSkipNextStation =

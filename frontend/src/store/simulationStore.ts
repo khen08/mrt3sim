@@ -160,7 +160,7 @@ export interface AggregatedDemandData {
   };
 }
 
-export const useSimulationStore = create<SimulationState>((set) => ({
+export const useSimulationStore = create<SimulationState>((set, get) => ({
   // Initial state
   simulationSettings: null,
   activeSimulationSettings: null,

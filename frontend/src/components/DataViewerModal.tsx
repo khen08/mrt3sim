@@ -20,8 +20,6 @@ import {
   IconUsers,
   IconChartBar,
   IconSearch,
-  IconChevronLeft,
-  IconChevronRight,
   IconLoader2,
 } from "@tabler/icons-react";
 import {
@@ -32,16 +30,10 @@ import {
   PaginationState,
 } from "@tanstack/react-table";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useDataViewer, useModalStore } from "@/store/modalStore";
-import PassengerHeatmapTab from "./PassengerHeatmapTab";
+import { MetricsTab, MetricsSummaryTab } from "./metrics";
+import { useAPIStore } from "@/store/apiStore";
 
 // Updated Timetable columns definition with the specified fields
 const timetableColumns: ColumnDef<any>[] = [
@@ -330,217 +322,6 @@ const timetableColumns: ColumnDef<any>[] = [
   },
 ];
 
-// Passenger Demand columns definition
-const passengerDemandColumns: ColumnDef<any>[] = [
-  {
-    accessorKey: "Route",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-left w-full justify-start"
-        >
-          Route
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
-    size: 150,
-    minSize: 120,
-    maxSize: 200,
-  },
-  {
-    accessorKey: "Passengers",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-right w-full justify-end"
-        >
-          Passengers
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
-    cell: ({ row }: { row: Row<any> }) => {
-      const value = row.getValue("Passengers");
-      if (typeof value === "number") {
-        return <div className="text-right">{value.toLocaleString()}</div>;
-      }
-      return <div className="text-right">{String(value)}</div>;
-    },
-    size: 120,
-    minSize: 100,
-    maxSize: 150,
-  },
-  {
-    accessorKey: "Demand Time",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-right w-full justify-end"
-        >
-          Demand Time
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
-    size: 130,
-    minSize: 110,
-    maxSize: 160,
-  },
-  {
-    accessorKey: "Boarding Time",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-right w-full justify-end"
-        >
-          Boarding Time
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
-    size: 140,
-    minSize: 120,
-    maxSize: 170,
-  },
-  {
-    accessorKey: "Wait Time (s)",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-right w-full justify-end"
-        >
-          Wait Time (s)
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
-    cell: ({ row }: { row: Row<any> }) => {
-      const value = row.getValue("Wait Time (s)");
-      if (typeof value === "number") {
-        return <div className="text-right">{value.toLocaleString()}s</div>;
-      }
-      return <div className="text-right">{String(value)}</div>;
-    },
-    size: 130,
-    minSize: 110,
-    maxSize: 150,
-  },
-  {
-    accessorKey: "Travel Time (s)",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-right w-full justify-end"
-        >
-          Travel Time (s)
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
-    cell: ({ row }: { row: Row<any> }) => {
-      const value = row.getValue("Travel Time (s)");
-      if (typeof value === "number") {
-        return <div className="text-right">{value.toLocaleString()}s</div>;
-      }
-      return <div className="text-right">{String(value)}</div>;
-    },
-    size: 140,
-    minSize: 120,
-    maxSize: 160,
-  },
-];
-
 // Metrics placeholder columns
 const metricsColumns: ColumnDef<any>[] = [
   {
@@ -715,18 +496,34 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
     (): ColumnDef<any>[] => timetableColumns,
     []
   );
-  const passengerDemandColumnsMemo = useMemo(
-    (): ColumnDef<any>[] => passengerDemandColumns,
-    []
-  );
   const metricsColumnsMemo = useMemo(
     (): ColumnDef<any>[] => metricsColumns,
     []
   );
 
-  // Determine if modal should show content or loading/empty state
-  const showContent = !isLoading && !error && hasAnyDataForTab;
-  const showNoDataMessage = !isLoading && !error && !hasAnyDataForTab;
+  // Get API actions
+  const fetchSimulationMetrics = useAPIStore(
+    (state) => state.fetchSimulationMetrics
+  );
+
+  // Fetch metrics data when tab is selected
+  useEffect(() => {
+    if (isOpen && activeTabId === "metrics" && loadedSimulationId !== null) {
+      // Check if we already have metrics data
+      const currentMetricsData = rawData["metrics"] || [];
+      if (currentMetricsData.length === 0 && !isLoading) {
+        // Only fetch if we don't have data and aren't already loading
+        fetchSimulationMetrics(loadedSimulationId);
+      }
+    }
+  }, [
+    isOpen,
+    activeTabId,
+    loadedSimulationId,
+    rawData,
+    isLoading,
+    fetchSimulationMetrics,
+  ]);
 
   return (
     // Use store action for closing
@@ -754,26 +551,23 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
           >
             <TabsList className="grid w-full grid-cols-3 flex-shrink-0">
               {" "}
-              {/* Prevent list from shrinking */}
+              {/* Changed from grid-cols-3 to grid-cols-4 */}
               <TabsTrigger value="timetable" className="flex items-center">
                 <IconClock className="mr-2 h-4 w-4" />
                 <span>Timetable</span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="passengerDemand"
-                className="flex items-center"
-              >
-                <IconUsers className="mr-2 h-4 w-4" />
-                <span>Passenger Demand</span>
               </TabsTrigger>
               <TabsTrigger value="metrics" className="flex items-center">
                 <IconChartBar className="mr-2 h-4 w-4" />
                 <span>Metrics</span>
               </TabsTrigger>
+              <TabsTrigger value="metricsSummary" className="flex items-center">
+                <IconChartBar className="mr-2 h-4 w-4" />
+                <span>Metrics Summary</span>
+              </TabsTrigger>
             </TabsList>
 
             {/* Search Input & Reset Sort Button Container */}
-            {activeTabId !== "passengerDemand" && (
+            {activeTabId === "timetable" && (
               <div className="relative my-4 flex items-center gap-2 flex-shrink-0">
                 <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
                   <IconSearch className="h-4 w-4 text-muted-foreground" />
@@ -853,43 +647,17 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
               </TabsContent>
 
               <TabsContent
-                value="passengerDemand"
-                className="pt-2 flex-1 overflow-hidden flex flex-col h-full mt-0"
-              >
-                <PassengerHeatmapTab />
-              </TabsContent>
-
-              <TabsContent
                 value="metrics"
                 className="pt-2 flex-1 overflow-hidden flex flex-col h-full mt-0"
               >
-                {isLoading ? (
-                  renderSkeleton
-                ) : error ? (
-                  <div className="py-8 text-center text-red-500">
-                    Error: {error}
-                  </div>
-                ) : !hasAnyDataForTab ? (
-                  <div className="py-8 text-center text-muted-foreground">
-                    Metrics data not available for this simulation.
-                  </div>
-                ) : (
-                  <div className="flex-1 flex flex-col h-full">
-                    <DataTable
-                      columns={metricsColumnsMemo}
-                      data={currentPageData} // Pass computed data (will be empty if not loaded)
-                      sorting={sorting}
-                      setSorting={setSorting}
-                      rowSelection={rowSelection}
-                      setRowSelection={setRowSelection}
-                      pageIndex={pagination.pageIndex}
-                      pageSize={pagination.pageSize}
-                      pageCount={pageCount}
-                      onPaginationChange={handlePaginationChange}
-                      tableHeight="350px" // Add fixed height for scrolling
-                    />
-                  </div>
-                )}
+                <MetricsTab />
+              </TabsContent>
+
+              <TabsContent
+                value="metricsSummary"
+                className="pt-2 flex-1 overflow-auto h-full mt-0"
+              >
+                <MetricsSummaryTab />
               </TabsContent>
             </div>
           </Tabs>
