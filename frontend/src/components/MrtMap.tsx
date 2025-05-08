@@ -68,6 +68,7 @@ import {
   TRAIN_COLOR_NB_STOPPED_REGULAR,
   TRAIN_COLOR_SB_STOPPED_REGULAR,
 } from "@/lib/constants"; // Import layout constants
+import { cn } from "@/lib/utils";
 
 // Type for the raw station config data passed as a prop
 interface StationConfigData {
@@ -1828,7 +1829,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
         `}
         </style>
         <div
-          className={`relative w-full h-full overflow-hidden ${THEME.background}`}
+          className={`relative w-full h-full overflow-hidden ${THEME.background} mrt-map-container`}
         >
           {/* Sim Time & Metadata Display */}
           <div

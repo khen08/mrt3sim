@@ -30,7 +30,7 @@ function DataViewerButtonComponent() {
   return (
     <Button
       variant="outline"
-      className="w-full justify-start text-left"
+      className="w-full justify-start text-left data-viewer-button"
       onClick={() => {
         setDataViewerModalOpen(true);
         openModal();

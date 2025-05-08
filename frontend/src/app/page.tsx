@@ -74,6 +74,8 @@ import { useFileStore } from "@/store/fileStore";
 import { DataViewerButton } from "@/components/DataViewerButton";
 import { DataViewerModal } from "@/components/DataViewerModal";
 import { SimulationNameDialog } from "@/components/SimulationNameDialog";
+import TourManager from "@/components/tour/TourManager";
+import { useTourStore } from "@/store/tourStore";
 
 // Define props for the LoadingPlaceholder component
 interface LoadingPlaceholderProps {
@@ -284,6 +286,10 @@ export default function Home() {
   );
   const runSimulation = useAPIStore((state: any) => state.runSimulation);
   const loadSimulation = useAPIStore((state: any) => state.loadSimulation);
+
+  // Add tour store
+  const startTour = useTourStore((state: any) => state.startTour);
+  const resetTour = useTourStore((state: any) => state.resetTour);
 
   const { toast } = useToast();
   const mrtMapRef = useRef<MrtMapHandle>(null);
@@ -572,6 +578,20 @@ export default function Home() {
     setClearConfirmOpen(false);
   };
 
+  // Handle train icon click in the sidebar to start the tour
+  const handleTrainIconClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Reset and start the tour with the appropriate section
+    resetTour();
+    if (simulationResult) {
+      startTour(2); // Start section 2 if a simulation is loaded
+    } else {
+      startTour(1); // Start section 1 if no simulation is loaded
+    }
+  };
+
   // Determine what to show in the main content area
   const hasResults = !!simulationResult && simulationResult.length > 0;
   const showInitialState = !isMapLoading && !hasResults;
@@ -822,7 +842,12 @@ export default function Home() {
           <>
             <div className="p-4 border-b flex justify-between items-center">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 flex items-center">
-                <IconTrain className="mr-2 text-mrt-blue" size={24} />
+                <IconTrain
+                  className="mr-2 text-mrt-blue cursor-pointer hover:text-mrt-blue/80 transition-colors"
+                  size={24}
+                  onClick={handleTrainIconClick}
+                  title="Start guided tour"
+                />
                 MRT-3 Simulation
               </h2>
               <DarkModeToggle />
@@ -885,7 +910,7 @@ export default function Home() {
 
                 <Button
                   variant="outline"
-                  className="w-full justify-start text-left"
+                  className="w-full justify-start text-left history-button"
                   onClick={() => {
                     if (!hasFetchedInitialHistory) {
                       console.log(
@@ -1010,6 +1035,9 @@ export default function Home() {
 
       {/* Add the Simulation Name Dialog */}
       <SimulationNameDialog />
+
+      {/* Add TourManager component */}
+      <TourManager />
     </main>
   );
 }

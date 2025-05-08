@@ -230,7 +230,7 @@ const CsvUpload = ({
   const showErrorState = validationStatus === "invalid";
 
   return (
-    <div className="w-full">
+    <div className="space-y-4 csv-upload-area">
       <input
         type="file"
         ref={fileInputRef}

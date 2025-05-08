@@ -360,7 +360,12 @@ const SimulationController = ({
   };
 
   return (
-    <div className={cn("bg-card rounded-lg border shadow-sm p-4", className)}>
+    <div
+      className={cn(
+        "bg-card rounded-lg border shadow-sm p-4 simulation-controller",
+        className
+      )}
+    >
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-md font-medium mr-4 text-card-foreground">
           Simulation Control

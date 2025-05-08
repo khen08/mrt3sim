@@ -249,3 +249,110 @@
 .Toastify__toast--error {
   border-left: 4px solid var(--destructive);
 }
+
+/* Tour highlight effect */
+.tour-highlight {
+  position: relative;
+  z-index: 1000;
+  box-shadow: 0 0 0 4px rgba(255, 215, 0, 0.7), 0 0 0 8px rgba(255, 215, 0, 0.3);
+  border: 3px solid #ffd700 !important;
+  border-radius: 4px;
+  transition: all 0.3s ease-in-out;
+  pointer-events: auto !important;
+}
+
+.tour-highlight::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Speech bubble styles */
+.speech-bubble {
+  position: absolute;
+  background-color: var(--card);
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  border: 3px solid var(--primary);
+  max-width: 350px;
+  z-index: 1001;
+  pointer-events: auto;
+  transition: all 0.3s ease;
+  color: var(--card-foreground);
+}
+
+.speech-bubble::after {
+  content: "";
+  position: absolute;
+  width: 25px;
+  height: 25px;
+  background-color: var(--card);
+  border-right: 3px solid var(--primary);
+  border-bottom: 3px solid var(--primary);
+  z-index: -1;
+}
+
+/* Position variants for the speech bubble tail */
+.speech-bubble.tail-left::after {
+  top: 50px;
+  left: -13px;
+  transform: rotate(135deg);
+}
+
+/* We'll use tail-left for consistency */
+.speech-bubble.tail-right::after {
+  top: 30px;
+  right: -13px;
+  transform: rotate(-45deg);
+}
+
+.speech-bubble.tail-top::after {
+  top: -13px;
+  left: 30px;
+  transform: rotate(45deg);
+}
+
+.speech-bubble.tail-bottom::after {
+  bottom: -13px;
+  left: 30px;
+  transform: rotate(225deg);
+}
+
+/* Tour mascot container styling */
+.mascot-container {
+  position: absolute;
+  z-index: 1002;
+  filter: drop-shadow(2px 4px 6px rgba(0, 0, 0, 0.3));
+  transition: all 0.3s ease;
+}
+
+/* Tour overlay */
+.tour-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  z-index: 900;
+}
+
+/* Welcome backdrop overlay */
+.tour-backdrop-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 998;
+  pointer-events: auto;
+}

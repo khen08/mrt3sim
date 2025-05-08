@@ -237,7 +237,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
     simulatePassengers && !simulationInput.filename && !nextRunFilename;
 
   return (
-    <Card className="mb-4 relative">
+    <Card className="simulation-settings mb-4 relative">
       {/* Loading overlay */}
       {isSimulating && (
         <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded-md">

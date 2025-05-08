@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { useMetricsStore } from "@/store/metricsStore";
+import { useMetricsStore, useHasMetrics } from "@/store/metricsStore";
 import { useSimulationStore } from "@/store/simulationStore";
 import { usePassengerDemandStore } from "@/store/passengerDemandStore";
 import {
@@ -27,6 +28,8 @@ import {
   IconTimeline,
   IconBoxMultiple,
   IconLoader2,
+  IconInfoCircle,
+  IconSettings,
 } from "@tabler/icons-react";
 import {
   Select,
@@ -69,6 +72,9 @@ const MetricsTab: React.FC = () => {
   const loadedSimulationId = useSimulationStore(
     (state) => state.loadedSimulationId
   );
+  const simulatePassengers = useSimulationStore(
+    (state) => state.simulatePassengers
+  );
   const {
     fetchMetrics,
     isLoading: metricsLoading,
@@ -77,6 +83,7 @@ const MetricsTab: React.FC = () => {
   } = useMetricsStore();
   const currentRawMetrics = useCurrentRawMetrics();
   const currentProcessedMetrics = useCurrentProcessedMetrics();
+  const hasMetrics = useHasMetrics();
   const {
     actions: passengerDemandActions,
     isLoading: demandLoading,
@@ -112,8 +119,10 @@ const MetricsTab: React.FC = () => {
       console.log(
         `MetricsTab: Fetching data for simulation ID ${loadedSimulationId}`
       );
-      // Fetch metrics (Zustand store will handle caching internally later)
-      fetchMetrics(loadedSimulationId);
+      // Only fetch metrics if passenger simulation is enabled
+      if (simulatePassengers) {
+        fetchMetrics(loadedSimulationId);
+      }
       // Fetch passenger demand (Zustand store already has caching)
       passengerDemandActions.fetchPassengerDemand(loadedSimulationId);
 
@@ -128,7 +137,12 @@ const MetricsTab: React.FC = () => {
         passengerDemandActions.setStationNames(stationData);
       }
     }
-  }, [loadedSimulationId, fetchMetrics, passengerDemandActions]);
+  }, [
+    loadedSimulationId,
+    fetchMetrics,
+    passengerDemandActions,
+    simulatePassengers,
+  ]);
 
   const isLoading = metricsLoading || demandLoading;
   const error = metricsError || demandError;
@@ -146,7 +160,7 @@ const MetricsTab: React.FC = () => {
       },
       {
         key: "journeyComposition",
-        title: "Journey Time Breakdown",
+        title: "Journey Time Composition",
         description:
           "View the composition of total journey time (wait vs. travel) for each scheme.",
         icon: IconStack2,
@@ -249,6 +263,56 @@ const MetricsTab: React.FC = () => {
     (item) => item.key === selectedChartKey
   );
 
+  // Check if we need to show the no metrics message
+  const showNoMetricsMessage =
+    !isLoading && !hasMetrics && loadedSimulationId !== null;
+
+  // If there are no metrics available and we're not loading, show a message
+  if (showNoMetricsMessage) {
+    return (
+      <div className="h-full flex-col overflow-hidden p-4 md:p-6 w-full metrics-container">
+        <Alert className="mb-4">
+          <IconInfoCircle className="h-5 w-5" />
+          <AlertTitle>No Metrics Available</AlertTitle>
+          <AlertDescription className="mt-2">
+            <p>
+              Metrics are only available for simulations that include passenger
+              data. This simulation was run with the "Simulate Passenger Flow"
+              option disabled.
+            </p>
+            <p className="mt-2">To view metrics:</p>
+            <ul className="list-disc list-inside mt-1 ml-2">
+              <li>
+                Create a new simulation with "Simulate Passenger Flow" enabled
+                in the settings
+              </li>
+              <li>Upload a passenger data CSV file</li>
+              <li>Run the simulation to generate passenger-based metrics</li>
+            </ul>
+            <p className="mt-2 flex items-center gap-1">
+              <IconSettings size={16} className="inline" />
+              You can find this setting in the Simulation Settings panel.
+            </p>
+          </AlertDescription>
+        </Alert>
+
+        {/* You can still show train-specific data, station statistics, or other non-passenger metrics here */}
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>Train Operations Data</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p>
+              While passenger metrics are not available, you can still view
+              operational data like train movements and schedules in the
+              "Timetable" tab of the Data Viewer.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -295,7 +359,7 @@ const MetricsTab: React.FC = () => {
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden p-4 md:p-6 w-full">
+    <div className="h-full flex flex-col overflow-hidden p-4 md:p-6 w-full metrics-container">
       {selectedChart ? (
         <div className="flex flex-col h-full">
           <div className="mb-4 flex items-center justify-between gap-4">

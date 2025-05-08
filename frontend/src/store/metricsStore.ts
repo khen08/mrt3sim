@@ -35,6 +35,9 @@ interface MetricsStore {
   // Processed data for charts, now keyed by simulationId
   processedMetrics: Record<number, ProcessedMetrics | null>;
 
+  // Track which simulations have metrics data available
+  hasMetrics: Record<number, boolean>;
+
   // UI state
   isLoading: boolean;
   error: string | null;
@@ -49,6 +52,7 @@ interface MetricsStore {
 const initialState = {
   rawMetricsData: {},
   processedMetrics: {},
+  hasMetrics: {},
   isLoading: false,
   error: null,
   lastFetchedMetrics: {},
@@ -63,6 +67,15 @@ export const useMetricsStore = create<MetricsStore>((set, get) => ({
     const now = Date.now();
     const lastFetchedTime = get().lastFetchedMetrics[simulationId];
     const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+    const hasMetricsStatus = get().hasMetrics[simulationId];
+
+    // If we already know this simulation has no metrics, don't keep trying
+    if (hasMetricsStatus === false && !forceRefresh) {
+      console.log(
+        `Simulation ID ${simulationId} has no metrics data available.`
+      );
+      return;
+    }
 
     if (
       !forceRefresh &&
@@ -87,6 +100,22 @@ export const useMetricsStore = create<MetricsStore>((set, get) => ({
         GET_SIMULATION_METRICS_ENDPOINT(simulationId)
       );
 
+      if (response.status === 404) {
+        // Handle 404 as a special case - simulation has no metrics data
+        console.log(
+          `No metrics data available for simulation ID: ${simulationId}`
+        );
+        set((state) => ({
+          hasMetrics: {
+            ...state.hasMetrics,
+            [simulationId]: false,
+          },
+          isLoading: false,
+          error: null, // Clear any previous errors
+        }));
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(`Error fetching metrics: ${response.statusText}`);
       }
@@ -96,6 +125,10 @@ export const useMetricsStore = create<MetricsStore>((set, get) => ({
         rawMetricsData: {
           ...state.rawMetricsData,
           [simulationId]: data,
+        },
+        hasMetrics: {
+          ...state.hasMetrics,
+          [simulationId]: true,
         },
         isLoading: false,
         lastFetchedMetrics: {
@@ -199,4 +232,12 @@ export const useCurrentRawMetrics = () => {
   const allRawMetrics = useMetricsStore((state) => state.rawMetricsData);
   if (loadedSimId === null) return null;
   return allRawMetrics[loadedSimId] || [];
+};
+
+// Selector to check if the current simulation has metrics
+export const useHasMetrics = () => {
+  const loadedSimId = useSimulationStore((state) => state.loadedSimulationId);
+  const hasMetrics = useMetricsStore((state) => state.hasMetrics);
+  if (loadedSimId === null) return false;
+  return hasMetrics[loadedSimId] || false;
 };
