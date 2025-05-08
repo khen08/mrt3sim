@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import ReactECharts from "echarts-for-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -51,22 +51,23 @@ export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
     );
   }
 
-  // Process data for trip type comparison
-  const prepareTripTypeData = () => {
+  // Process data for scheme type comparison with stacked trip types
+  const prepareStackedData = () => {
     console.log(
-      "Processing trip type data from",
+      "Processing stacked trip type data from",
       passengerDemand.length,
       "entries"
     );
+
     // Data structure to hold aggregated values
     const data = {
-      DIRECT: {
-        REGULAR: { sum: 0, count: 0 },
-        "SKIP-STOP": { sum: 0, count: 0 },
+      REGULAR: {
+        DIRECT: { sum: 0, count: 0 },
+        TRANSFER: { sum: 0, count: 0 },
       },
-      TRANSFER: {
-        REGULAR: { sum: 0, count: 0 },
-        "SKIP-STOP": { sum: 0, count: 0 },
+      "SKIP-STOP": {
+        DIRECT: { sum: 0, count: 0 },
+        TRANSFER: { sum: 0, count: 0 },
       },
     };
 
@@ -101,62 +102,59 @@ export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
       }
 
       // Ensure the data structure exists
-      if (!data[tripType]) {
-        data[tripType] = {
-          REGULAR: { sum: 0, count: 0 },
-          "SKIP-STOP": { sum: 0, count: 0 },
+      if (!data[scheme]) {
+        data[scheme] = {
+          DIRECT: { sum: 0, count: 0 },
+          TRANSFER: { sum: 0, count: 0 },
         };
       }
 
-      if (!data[tripType][scheme]) {
-        data[tripType][scheme] = { sum: 0, count: 0 };
+      if (!data[scheme][tripType]) {
+        data[scheme][tripType] = { sum: 0, count: 0 };
       }
 
       if (selectedMetric === "PASSENGER_COUNT") {
-        data[tripType][scheme].sum += entry.PASSENGER_COUNT || 0;
-        data[tripType][scheme].count += 1;
+        data[scheme][tripType].sum += entry.PASSENGER_COUNT || 0;
+        data[scheme][tripType].count += 1;
       } else {
         const value = entry[selectedMetric];
         if (typeof value === "number") {
-          data[tripType][scheme].sum += value;
-          data[tripType][scheme].count += 1;
+          data[scheme][tripType].sum += value;
+          data[scheme][tripType].count += 1;
         }
       }
     });
 
-    console.log("Aggregated trip type data:", data);
+    console.log("Aggregated stacked data:", data);
 
     // Calculate final values
     const result = {
-      DIRECT: {
-        REGULAR:
+      REGULAR: {
+        DIRECT:
           selectedMetric === "PASSENGER_COUNT"
-            ? data["DIRECT"]["REGULAR"].sum
-            : data["DIRECT"]["REGULAR"].count > 0
-            ? data["DIRECT"]["REGULAR"].sum / data["DIRECT"]["REGULAR"].count
+            ? data.REGULAR.DIRECT.sum
+            : data.REGULAR.DIRECT.count > 0
+            ? data.REGULAR.DIRECT.sum / data.REGULAR.DIRECT.count
             : 0,
-        "SKIP-STOP":
+        TRANSFER:
           selectedMetric === "PASSENGER_COUNT"
-            ? data["DIRECT"]["SKIP-STOP"].sum
-            : data["DIRECT"]["SKIP-STOP"].count > 0
-            ? data["DIRECT"]["SKIP-STOP"].sum /
-              data["DIRECT"]["SKIP-STOP"].count
+            ? data.REGULAR.TRANSFER.sum
+            : data.REGULAR.TRANSFER.count > 0
+            ? data.REGULAR.TRANSFER.sum / data.REGULAR.TRANSFER.count
             : 0,
       },
-      TRANSFER: {
-        REGULAR:
+      "SKIP-STOP": {
+        DIRECT:
           selectedMetric === "PASSENGER_COUNT"
-            ? data["TRANSFER"]["REGULAR"].sum
-            : data["TRANSFER"]["REGULAR"].count > 0
-            ? data["TRANSFER"]["REGULAR"].sum /
-              data["TRANSFER"]["REGULAR"].count
+            ? data["SKIP-STOP"].DIRECT.sum
+            : data["SKIP-STOP"].DIRECT.count > 0
+            ? data["SKIP-STOP"].DIRECT.sum / data["SKIP-STOP"].DIRECT.count
             : 0,
-        "SKIP-STOP":
+        TRANSFER:
           selectedMetric === "PASSENGER_COUNT"
-            ? data["TRANSFER"]["SKIP-STOP"].sum
-            : data["TRANSFER"]["SKIP-STOP"].count > 0
-            ? data["TRANSFER"]["SKIP-STOP"].sum /
-              data["TRANSFER"]["SKIP-STOP"].count
+            ? data["SKIP-STOP"].TRANSFER.sum
+            : data["SKIP-STOP"].TRANSFER.count > 0
+            ? data["SKIP-STOP"].TRANSFER.sum / data["SKIP-STOP"].TRANSFER.count
             : 0,
       },
     };
@@ -164,7 +162,7 @@ export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
     return result;
   };
 
-  const tripTypeData = prepareTripTypeData();
+  const stackedData = prepareStackedData();
 
   // Dynamic text color based on theme
   const isDarkMode =
@@ -175,9 +173,22 @@ export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
   const legendColor = isDarkMode ? "#CCCCCC" : "#555555";
 
   const getOption = () => {
+    const metricLabel =
+      selectedMetric === "PASSENGER_COUNT"
+        ? "Passenger Count"
+        : "Time (minutes)";
+
+    const formatValue = (value: number) => {
+      if (selectedMetric === "PASSENGER_COUNT") {
+        return value.toLocaleString();
+      } else {
+        return (value / 60).toFixed(2) + " min";
+      }
+    };
+
     const option = {
       title: {
-        text: "Trip Type Metrics",
+        text: `Trip Distribution by Scheme Type (${metricLabel})`,
         left: "center",
         textStyle: {
           color: textColor,
@@ -190,25 +201,36 @@ export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
           type: "shadow",
         },
         formatter: (params: any) => {
-          let result = `<div>${params[0].axisValue} Trips</div>`;
+          const schemeName = params[0].axisValue;
+          let total = 0;
+          let result = `<div style="font-weight:bold">${schemeName} Scheme</div>`;
 
+          // Calculate total for percentage
           params.forEach((param: any) => {
-            const value =
-              selectedMetric === "PASSENGER_COUNT"
-                ? param.value.toLocaleString()
-                : (param.value / 60).toFixed(2) + "min";
+            total += param.value;
+          });
+
+          // Build tooltip content
+          params.forEach((param: any) => {
+            const value = param.value;
+            const percentage =
+              total > 0 ? ((value / total) * 100).toFixed(1) : "0.0";
 
             result += `<div style="display:flex;justify-content:space-between;gap:20px">
-              <span style="font-weight:bold;color:${param.color}">${param.seriesName}:</span>
-              <span>${value}</span>
+              <span style="color:${param.color}">${param.seriesName}:</span>
+              <span>${formatValue(value)} (${percentage}%)</span>
             </div>`;
           });
+
+          result += `<div style="margin-top:5px;border-top:1px solid #ccc;padding-top:5px">
+            <span>Total: ${formatValue(total)}</span>
+          </div>`;
 
           return result;
         },
       },
       legend: {
-        data: ["Regular", "Skip-Stop"],
+        data: ["Direct Trips", "Transfer Trips"],
         bottom: 0,
         textStyle: {
           color: legendColor,
@@ -223,46 +245,55 @@ export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
       },
       xAxis: {
         type: "category",
-        data: ["Direct", "Transfer"],
+        data: ["Regular", "Skip-Stop"],
         axisTick: { alignWithLabel: true },
         axisLabel: { color: axisColor },
         axisLine: { lineStyle: { color: axisColor } },
       },
       yAxis: {
         type: "value",
-        name:
-          selectedMetric === "PASSENGER_COUNT"
-            ? "Passenger Count"
-            : "Time (minutes)",
+        name: metricLabel,
         nameLocation: "middle",
         nameTextStyle: { color: textColor },
         nameGap: 50,
-        axisLabel: { color: axisColor },
+        axisLabel: {
+          color: axisColor,
+          formatter: (value: number) => {
+            return selectedMetric === "PASSENGER_COUNT"
+              ? value.toLocaleString()
+              : (value / 60).toFixed(1);
+          },
+        },
         splitLine: { lineStyle: { color: isDarkMode ? "#444444" : "#EEEEEE" } },
         axisLine: { lineStyle: { color: axisColor } },
         axisTick: { lineStyle: { color: axisColor } },
       },
       series: [
         {
-          name: "Regular",
+          name: "Direct Trips",
           type: "bar",
-          data: [
-            tripTypeData["DIRECT"]["REGULAR"],
-            tripTypeData["TRANSFER"]["REGULAR"],
-          ],
+          stack: "total",
+          emphasis: {
+            focus: "series",
+          },
+          data: [stackedData.REGULAR.DIRECT, stackedData["SKIP-STOP"].DIRECT],
           itemStyle: {
-            color: "#0066CC",
+            color: "#4CAF50", // Green for direct trips
           },
         },
         {
-          name: "Skip-Stop",
+          name: "Transfer Trips",
           type: "bar",
+          stack: "total",
+          emphasis: {
+            focus: "series",
+          },
           data: [
-            tripTypeData["DIRECT"]["SKIP-STOP"],
-            tripTypeData["TRANSFER"]["SKIP-STOP"],
+            stackedData.REGULAR.TRANSFER,
+            stackedData["SKIP-STOP"].TRANSFER,
           ],
           itemStyle: {
-            color: "#9E2B25",
+            color: "#FF5722", // Orange for transfer trips
           },
         },
       ],

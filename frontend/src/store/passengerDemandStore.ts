@@ -83,7 +83,6 @@ interface PassengerDemandStoreState {
   lastFetched: number | null; // Timestamp for caching
 
   actions: {
-    fetchAggregatedPassengerDemand: (simulationId: number) => Promise<void>;
     fetchPassengerDemand: (
       simulationId: number,
       forceRefresh?: boolean
@@ -93,6 +92,7 @@ interface PassengerDemandStoreState {
     setStationNames: (stations: { id: number; name: string }[]) => void;
     processHeatmapData: () => void; // Helper to transform raw data
     reset: () => void;
+    fetchSimulationMetrics: (simulationId: number) => Promise<void>;
   };
 }
 
@@ -122,32 +122,6 @@ export const usePassengerDemandStore = create<PassengerDemandStoreState>(
           return acc;
         }, {} as Record<string, string>);
         set({ stationNames: names });
-      },
-      fetchAggregatedPassengerDemand: async (simulationId: number) => {
-        if (!simulationId) return;
-        set({ isLoadingHeatmap: true, heatmapError: null });
-        try {
-          const apiStore = useAPIStore.getState();
-          const data = await apiStore.fetchAggregatedPassengerDemand(
-            simulationId
-          );
-
-          // Store the data in our store if it exists
-          if (data) {
-            set({ rawAggregatedData: data, isLoadingHeatmap: false });
-            get().actions.processHeatmapData();
-          } else {
-            set({ isLoadingHeatmap: false });
-          }
-        } catch (error: any) {
-          console.error("Failed to fetch aggregated passenger demand:", error);
-          set({
-            heatmapError: error.message || "Failed to load heatmap data",
-            isLoadingHeatmap: false,
-            rawAggregatedData: null,
-            heatmapData: null,
-          });
-        }
       },
       fetchPassengerDemand: async (
         simulationId: number,
@@ -304,6 +278,9 @@ export const usePassengerDemandStore = create<PassengerDemandStoreState>(
           lastFetched: null,
         });
       },
+      fetchSimulationMetrics: async (simulationId: number) => {
+        // Implementation of fetchSimulationMetrics
+      },
     },
   })
 );
@@ -312,12 +289,8 @@ export const usePassengerDemandStore = create<PassengerDemandStoreState>(
 // or when station configuration changes (for names)
 useSimulationStore.subscribe((state, prevState) => {
   const { loadedSimulationId, simulationSettings } = state;
-  const {
-    fetchAggregatedPassengerDemand,
-    fetchPassengerDemand,
-    setStationNames,
-    reset,
-  } = usePassengerDemandStore.getState().actions;
+  const { fetchPassengerDemand, setStationNames, reset } =
+    usePassengerDemandStore.getState().actions;
 
   if (
     loadedSimulationId &&
@@ -332,9 +305,10 @@ useSimulationStore.subscribe((state, prevState) => {
       }));
       setStationNames(stationNameMapping);
     }
-    // Fetch both types of data
-    fetchAggregatedPassengerDemand(loadedSimulationId);
-    fetchPassengerDemand(loadedSimulationId);
+    // Re-process heatmap data if raw data exists, as station names might have changed labels
+    if (usePassengerDemandStore.getState().rawAggregatedData) {
+      usePassengerDemandStore.getState().actions.processHeatmapData();
+    }
   } else if (
     simulationSettings?.stations &&
     simulationSettings.stations !== prevState.simulationSettings?.stations

@@ -11,7 +11,7 @@ export const initialHistorySorting: SortingState = [
 ];
 const initialHistoryPagination: PaginationState = {
   pageIndex: 0,
-  pageSize: 10, // Default page size
+  pageSize: 8, // Default page size
 };
 const initialHistoryRowSelection: RowSelectionState = {};
 

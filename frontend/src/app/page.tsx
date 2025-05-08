@@ -39,7 +39,7 @@ import { parseTime, formatTime } from "@/lib/timeUtils";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn } from "@/lib/utils";
+import { cn, formatFileName } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
 import { DarkModeToggle } from "@/components/DarkModeToggle";
 import SimulationHistoryModal from "@/components/SimulationHistoryModal";
@@ -84,16 +84,30 @@ interface LoadingPlaceholderProps {
 const LoadingPlaceholder: React.FC<LoadingPlaceholderProps> = ({
   message = "Loading...",
 }) => {
+  // Create a more descriptive message for loading simulations
+  const detailMessage = message.includes("Running")
+    ? "Please wait while we generate the simulation..."
+    : message.includes("Processing")
+    ? "Please wait while we process the simulation data..."
+    : message.includes("Loading existing")
+    ? "Please wait while we restore the selected simulation..."
+    : "Please wait while we load the simulation data...";
+
   return (
     <div className="flex-grow flex flex-col items-center justify-center text-muted-foreground p-4 space-y-4">
-      <IconLoader2 className="h-12 w-12 animate-spin text-mrt-blue" />
-      <p className="text-lg font-medium">{message}</p>
+      <div className="bg-card/90 backdrop-blur-sm rounded-lg p-8 shadow-xl flex flex-col items-center border-2 border-mrt-blue">
+        <IconLoader2 className="h-20 w-20 animate-spin text-mrt-blue mb-6" />
+        <p className="text-2xl font-bold text-card-foreground">{message}</p>
+        <p className="text-lg text-muted-foreground mt-3">{detailMessage}</p>
+      </div>
     </div>
   );
 };
 
 // Define a placeholder component inline
 const FileReadyPlaceholder = ({ fileName }: { fileName: string }) => {
+  const displayFileName = formatFileName(fileName);
+
   return (
     <div className="flex-grow flex flex-col items-center justify-center p-4 space-y-4">
       <Card className="w-full max-w-lg text-center">
@@ -102,8 +116,8 @@ const FileReadyPlaceholder = ({ fileName }: { fileName: string }) => {
             <IconCheck className="mr-2" size={24} /> File Ready
           </CardTitle>
           <CardDescription>
-            <span className="font-medium">{fileName}</span> is validated and
-            ready.
+            <span className="font-medium">{displayFileName}</span> is validated
+            and ready.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -563,60 +577,65 @@ export default function Home() {
   const showInitialState = !isMapLoading && !hasResults;
   const uploadSource = useFileStore((state: any) => state.uploadSource);
 
-  // **Updated Conditions**
+  // Only show CsvUpload in main area when NO simulation is loaded
+  // This is a critical condition - must be strictly enforced
   const showCsvUploadCard =
+    !loadedSimulationId && // NEVER show when simulation is loaded
     simulatePassengers &&
     !hasResults &&
     !nextRunFilename &&
-    validationStatus !== "valid" && // Only show if file isn't valid yet
+    validationStatus !== "valid" &&
     uploadSource !== "settings-change";
 
-  const showPassengerDisabledCard = !simulatePassengers && !hasResults;
+  const showPassengerDisabledCard =
+    !simulatePassengers && !hasResults && !loadedSimulationId;
 
   // **New Condition**
   const showFileReadyPlaceholder =
+    !loadedSimulationId && // Only show when no simulation is loaded
     simulatePassengers &&
     !hasResults &&
     !isMapLoading &&
-    validationStatus === "valid" && // Show when file is valid
-    uploadedFileName; // And a file name exists
+    validationStatus === "valid" &&
+    uploadedFileName;
 
   // --- Define content for the main area ---
   let mainContent: ReactNode;
 
-  if (isMapLoading) {
-    mainContent = <LoadingPlaceholder message="Processing simulation..." />;
+  // Even more aggressively check for any loading state to ensure spinner shows
+  const isAnyLoading =
+    isLoading ||
+    isSimulating ||
+    isMapLoading ||
+    useSimulationStore.getState().isLoading ||
+    useSimulationStore.getState().isSimulating ||
+    useSimulationStore.getState().isMapLoading;
+
+  if (isAnyLoading) {
+    // Show different loading messages based on the loading state
+    let loadingMessage = "Loading...";
+
+    // Make the conditions completely separate to avoid any potential nesting issues
+    if (
+      loadedSimulationId &&
+      (isSimulating || useSimulationStore.getState().isSimulating)
+    ) {
+      loadingMessage = "Loading existing simulation...";
+    } else if (isSimulating || useSimulationStore.getState().isSimulating) {
+      loadingMessage = "Running simulation...";
+    } else if (isMapLoading || useSimulationStore.getState().isMapLoading) {
+      loadingMessage = "Processing simulation data...";
+    }
+
+    mainContent = (
+      <LoadingPlaceholder
+        key={`loading-${loadingMessage}`}
+        message={loadingMessage}
+      />
+    );
   } else if (hasResults) {
     mainContent = (
       <div className="flex-1 flex flex-col overflow-y-auto px-4">
-        {/* Only show notification card for inherited simulations with passenger sim enabled but missing file */}
-        {loadedSimulationId !== null &&
-          simulationInput.filename === null &&
-          simulatePassengers &&
-          uploadSource !== "settings-change" &&
-          !nextRunFilename && (
-            <Card className="border-dashed border-amber-500 bg-amber-50 dark:bg-amber-950/50">
-              <CardHeader>
-                <CardTitle className="text-amber-700 dark:text-amber-300 flex items-center">
-                  <IconUpload className="mr-2" /> Passenger Data Required
-                </CardTitle>
-                <CardDescription className="text-amber-600 dark:text-amber-400">
-                  You've enabled passenger simulation for a run that didn't
-                  originally include passenger data. Please upload a CSV file to
-                  use for the next simulation run.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <CsvUpload
-                  onFileSelect={(file, backendFilename) =>
-                    setNextRunFilename(backendFilename)
-                  }
-                  initialFileName={nextRunFilename}
-                />
-              </CardContent>
-            </Card>
-          )}
-
         {/* Map takes remaining space */}
         <div className="mt-2 flex-1 min-h-0">
           <MrtMap
@@ -927,12 +946,21 @@ export default function Home() {
                     !simulationInput.filename &&
                     !nextRunFilename)
                 }
-                className="w-full bg-mrt-blue hover:bg-blue-700 text-white h-12 text-lg font-semibold border-2 border-gray-300 dark:border-transparent shadow-md hover:shadow-lg"
+                className={cn(
+                  "w-full bg-mrt-blue hover:bg-blue-700 text-white h-12 text-lg font-semibold border-2 border-gray-300 dark:border-transparent shadow-md hover:shadow-lg",
+                  (isSimulating || isMapLoading) && "bg-mrt-blue/70 relative"
+                )}
               >
                 {isSimulating || isMapLoading ? (
                   <>
-                    <IconLoader2 className="mr-2 h-5 w-5 animate-spin" />{" "}
-                    {isSimulating ? "Running Simulation..." : "Loading Data..."}
+                    <div className="absolute inset-0 bg-mrt-blue/20 backdrop-blur-[1px] flex items-center justify-center">
+                      <IconLoader2 className="mr-2 h-5 w-5 animate-spin" />
+                      <span>
+                        {isSimulating
+                          ? "Running Simulation..."
+                          : "Loading Data..."}
+                      </span>
+                    </div>
                   </>
                 ) : (
                   <>

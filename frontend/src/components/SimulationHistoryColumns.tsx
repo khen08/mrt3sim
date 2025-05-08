@@ -3,12 +3,60 @@
 import { ColumnDef } from "@tanstack/react-table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { ArrowUpDown, Search, ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowUp, ArrowDown } from "lucide-react";
+import { IconLoader2 } from "@tabler/icons-react";
 import { Badge } from "@/components/ui/badge";
 // import { SimulationRun } from "@/lib/bindings"; // Path will be corrected later
+import { useState } from "react";
+import { SimulationConfigDialog } from "./SimulationConfigDialog";
+import { useAPIStore } from "@/store/apiStore";
+import { formatFileName } from "@/lib/utils";
+import { useSimulationStore } from "@/store/simulationStore";
 
 // Type alias for clarity
 type HistoryEntry = SimulationHistoryEntry;
+
+// Custom compact header component for consistency with DataViewerModal
+const CompactColumnHeader = ({
+  column,
+  title,
+  alignment = "left",
+}: {
+  column: any;
+  title: string;
+  alignment?: "left" | "right" | "center";
+}) => {
+  return (
+    <div
+      onClick={column.getToggleSortingHandler()}
+      className={`flex items-center font-medium cursor-pointer w-full select-none ${
+        alignment === "right"
+          ? "justify-end"
+          : alignment === "center"
+          ? "justify-center"
+          : "justify-start"
+      }`}
+    >
+      <div className="flex items-center whitespace-nowrap">
+        <span>{title}</span>
+        {column.getIsSorted() && (
+          <>
+            {column.getIsSorted() === "asc" ? (
+              <ArrowUp className="h-3 w-3 ml-1" />
+            ) : (
+              <ArrowDown className="h-3 w-3 ml-1" />
+            )}
+            {column.getSortIndex() > 0 && (
+              <span className="text-[10px] font-medium ml-0.5 text-yellow-500">
+                ({column.getSortIndex() + 1})
+              </span>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export const columns = (
   onLoadSimulation: (simulationId: number) => void,
@@ -26,7 +74,7 @@ export const columns = (
         }
         onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
         aria-label="Select all"
-        className="translate-y-[2px]"
+        className="mx-auto"
       />
     ),
     cell: ({ row }) => (
@@ -34,90 +82,44 @@ export const columns = (
         checked={row.getIsSelected()}
         onCheckedChange={(value) => row.toggleSelected(!!value)}
         aria-label="Select row"
-        className="translate-y-[2px]"
+        className="mx-auto"
       />
     ),
     enableSorting: false,
     enableHiding: false,
+    size: 40,
+    minSize: 40,
+    maxSize: 40,
+    meta: {
+      alignment: "center",
+    },
   },
   // Data Columns
   {
     accessorKey: "SIMULATION_ID",
-    header: ({ column }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
-        >
-          ID
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
-    cell: ({ row }) => (
-      <div className="flex items-center">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="mr-2 h-7 w-7"
-          onClick={() => {
-            console.log("View details for:", row.original.SIMULATION_ID);
-          }}
-        >
-          <Search className="h-4 w-4" />
-        </Button>
-        <div className="w-[50px] text-center font-medium">
-          {row.getValue("SIMULATION_ID")}
-        </div>
-      </div>
+    header: ({ column }) => (
+      <CompactColumnHeader column={column} title="ID" alignment="center" />
     ),
+    cell: ({ row }) => (
+      <div className="text-center">{row.getValue("SIMULATION_ID")}</div>
+    ),
+    size: 60,
+    minSize: 60,
+    maxSize: 60,
+    meta: {
+      alignment: "center",
+    },
   },
   {
-    accessorKey: "NAME", // Assuming backend saves it as NAME
-    header: ({ column }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
-        >
-          Name
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
+    accessorKey: "NAME",
+    header: ({ column }) => (
+      <CompactColumnHeader column={column} title="Name" alignment="left" />
+    ),
     cell: ({ row }) => {
       const name = row.getValue("NAME") as string | null;
       return (
         <div
-          className="w-[180px] truncate font-medium"
+          className="truncate font-medium text-left"
           title={name ?? "Unnamed"}
         >
           {name || (
@@ -126,34 +128,18 @@ export const columns = (
         </div>
       );
     },
+    size: 180,
+    minSize: 180,
+    maxSize: 180,
+    meta: {
+      alignment: "left",
+    },
   },
   {
     accessorKey: "CREATED_AT",
-    header: ({ column }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
-        >
-          Created
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
+    header: ({ column }) => (
+      <CompactColumnHeader column={column} title="Created" alignment="center" />
+    ),
     cell: ({ row }) => {
       const dateStr = row.getValue("CREATED_AT") as string;
       let formattedDate = "Invalid Date";
@@ -167,128 +153,105 @@ export const columns = (
           hour12: true,
         });
       } catch (e) {}
-      return <div className="w-[170px]">{formattedDate}</div>;
+      return <div className="text-center">{formattedDate}</div>;
+    },
+    size: 170,
+    minSize: 170,
+    maxSize: 170,
+    meta: {
+      alignment: "center",
     },
   },
   {
     accessorKey: "PASSENGER_DATA_FILE",
-    header: "Input File",
+    header: ({ column }) => (
+      <CompactColumnHeader
+        column={column}
+        title="Input File"
+        alignment="left"
+      />
+    ),
     cell: ({ row }) => {
       const filename = row.getValue("PASSENGER_DATA_FILE") as string | null;
       if (filename) {
+        const displayFilename = formatFileName(filename);
         return (
-          <div className="truncate max-w-[200px]" title={filename}>
-            {filename}
+          <div className="truncate text-left" title={filename}>
+            {displayFilename}
           </div>
         );
       } else {
         return (
-          <span className="text-xs text-muted-foreground italic">
+          <span className="text-xs text-muted-foreground italic text-left">
             N/A (Train Only)
           </span>
         );
       }
     },
+    size: 200,
+    minSize: 200,
+    maxSize: 200,
+    meta: {
+      alignment: "left",
+    },
   },
   {
     accessorKey: "START_TIME",
-    header: ({ column }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
-        >
-          Simulation Start Time
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
+    header: ({ column }) => (
+      <CompactColumnHeader
+        column={column}
+        title="Simulation Start"
+        alignment="center"
+      />
+    ),
     cell: ({ row }) => {
       const dateTimeStr = row.getValue("START_TIME") as string;
       const timePart = dateTimeStr.split(" ")[1] || "--:--:--";
-      return <div className="w-[140px] font-mono text-center">{timePart}</div>;
+      return <div className="text-center font-mono">{timePart}</div>;
+    },
+    size: 140,
+    minSize: 140,
+    maxSize: 140,
+    meta: {
+      alignment: "center",
     },
   },
   {
     accessorKey: "END_TIME",
-    header: ({ column }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group"
-        >
-          Simulation End Time
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
+    header: ({ column }) => (
+      <CompactColumnHeader
+        column={column}
+        title="Simulation End"
+        alignment="center"
+      />
+    ),
     cell: ({ row }) => {
       const dateTimeStr = row.getValue("END_TIME") as string;
       const timePart = dateTimeStr.split(" ")[1] || "--:--:--";
-      return <div className="w-[140px] font-mono text-center">{timePart}</div>;
+      return <div className="text-center font-mono">{timePart}</div>;
+    },
+    size: 140,
+    minSize: 140,
+    maxSize: 140,
+    meta: {
+      alignment: "center",
     },
   },
   {
     accessorKey: "TOTAL_RUN_TIME_SECONDS",
-    header: ({ column }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-right w-full justify-end"
-        >
-          Duration
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
+    header: ({ column }) => (
+      <CompactColumnHeader column={column} title="Duration" alignment="right" />
+    ),
     cell: ({ row }) => {
       const amount = parseFloat(row.getValue("TOTAL_RUN_TIME_SECONDS"));
       const formatted = amount.toFixed(2) + "s";
-      return (
-        <div className="w-[100px] text-right font-medium">{formatted}</div>
-      );
+      return <div className="text-right font-medium">{formatted}</div>;
+    },
+    size: 100,
+    minSize: 100,
+    maxSize: 100,
+    meta: {
+      alignment: "right",
     },
   },
   // Actions Column (Load Button)
@@ -298,19 +261,88 @@ export const columns = (
     cell: ({ row }) => {
       const simulation = row.original;
       const isCurrentlyLoaded = simulation.SIMULATION_ID === loadedSimulationId;
+      const [showConfigDialog, setShowConfigDialog] = useState(false);
+      const [config, setConfig] = useState<any>(null);
+      const [isLoadingConfig, setIsLoadingConfig] = useState(false);
+      const apiStore = useAPIStore();
+
+      const handleShowConfig = async () => {
+        setShowConfigDialog(true);
+        setIsLoadingConfig(true);
+        try {
+          const configData = await apiStore.fetchSimulationConfig(
+            simulation.SIMULATION_ID
+          );
+          if (configData) {
+            setConfig({
+              ...configData,
+              simulationId: simulation.SIMULATION_ID,
+              passengerDataFile: simulation.PASSENGER_DATA_FILE,
+              simulatePassengers: !!simulation.PASSENGER_DATA_FILE,
+            });
+          } else {
+            throw new Error("Failed to load configuration");
+          }
+        } catch (error) {
+          console.error("Error loading simulation config:", error);
+          // Show a toast here if needed
+        } finally {
+          setIsLoadingConfig(false);
+        }
+      };
+
+      const handleConfirmLoad = () => {
+        setShowConfigDialog(false);
+        // Force UI to show loading state immediately
+        useSimulationStore.getState().setIsLoading(true);
+        useSimulationStore.getState().setIsMapLoading(true);
+        useSimulationStore.getState().setIsSimulating(true);
+        // Use a small timeout to ensure React renders the loading state before proceeding
+        setTimeout(() => {
+          onLoadSimulation(simulation.SIMULATION_ID);
+        }, 50);
+      };
 
       return (
-        <div className="w-[80px] text-center">
+        <div className="text-center">
           <Button
             variant={isCurrentlyLoaded ? "secondary" : "cta"}
             size="sm"
-            onClick={() => onLoadSimulation(simulation.SIMULATION_ID)}
+            onClick={(e) => {
+              // Stop event propagation to prevent row selection
+              e.stopPropagation();
+              handleShowConfig();
+            }}
             disabled={isCurrentlyLoaded || isSimulating}
+            className={isSimulating ? "relative" : ""}
           >
-            {isCurrentlyLoaded ? "Loaded" : "Load"}
+            {isSimulating ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-mrt-blue/20 backdrop-blur-[1px] rounded-md">
+                <IconLoader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                <span className="text-xs">Loading...</span>
+              </div>
+            ) : isCurrentlyLoaded ? (
+              "Loaded"
+            ) : (
+              "Load"
+            )}
           </Button>
+
+          <SimulationConfigDialog
+            isOpen={showConfigDialog}
+            onClose={() => setShowConfigDialog(false)}
+            onConfirm={handleConfirmLoad}
+            config={config}
+            isLoading={isLoadingConfig}
+          />
         </div>
       );
+    },
+    size: 80,
+    minSize: 80,
+    maxSize: 80,
+    meta: {
+      alignment: "center",
     },
   },
 ];

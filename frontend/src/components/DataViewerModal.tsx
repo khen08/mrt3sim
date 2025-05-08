@@ -34,291 +34,219 @@ import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useDataViewer, useModalStore } from "@/store/modalStore";
 import { MetricsTab, MetricsSummaryTab } from "./metrics";
 import { useAPIStore } from "@/store/apiStore";
+import { PEAK_HOURS } from "@/lib/constants";
+
+// Custom compact header component for better overflow handling
+const CompactColumnHeader = ({
+  column,
+  title,
+  alignment = "left",
+}: {
+  column: Column<any, unknown>;
+  title: string;
+  alignment?: "left" | "right" | "center";
+}) => {
+  const sortIndex = column.getSortIndex();
+  const sortDirection = column.getIsSorted();
+
+  return (
+    <div
+      onClick={column.getToggleSortingHandler()}
+      className={`flex items-center font-medium cursor-pointer w-full select-none ${
+        alignment === "right"
+          ? "justify-end"
+          : alignment === "center"
+          ? "justify-center"
+          : "justify-start"
+      }`}
+    >
+      <div className="flex items-center whitespace-nowrap">
+        <span>{title}</span>
+        {column.getIsSorted() && (
+          <>
+            {column.getIsSorted() === "asc" ? (
+              <ArrowUp className="h-3 w-3 ml-1" />
+            ) : (
+              <ArrowDown className="h-3 w-3 ml-1" />
+            )}
+            {column.getSortIndex() > 0 && (
+              <span className="text-[10px] font-medium ml-0.5 text-yellow-500">
+                ({column.getSortIndex() + 1})
+              </span>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // Updated Timetable columns definition with the specified fields
 const timetableColumns: ColumnDef<any>[] = [
   {
     accessorKey: "SCHEME_TYPE",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-left w-full justify-start"
-        >
-          Scheme Type
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
+    header: ({ column }: { column: Column<any, unknown> }) => (
+      <CompactColumnHeader column={column} title="Scheme Type" />
+    ),
     size: 120,
-    minSize: 100,
-    maxSize: 150,
+    minSize: 120,
+    maxSize: 120,
+    meta: {
+      alignment: "left",
+    },
   },
   {
     accessorKey: "TRAIN_ID",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-right w-full justify-end"
-        >
-          Train ID
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
-    size: 100,
+    header: ({ column }) => (
+      <CompactColumnHeader
+        column={column}
+        title="Train ID"
+        alignment="center"
+      />
+    ),
+    cell: ({ row }) => (
+      <div className="text-center">{row.getValue("TRAIN_ID")}</div>
+    ),
+    size: 80,
     minSize: 80,
-    maxSize: 120,
+    maxSize: 80,
+    meta: {
+      alignment: "center",
+    },
   },
   {
     accessorKey: "TRAIN_SERVICE_TYPE",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-left w-full justify-start"
-        >
-          Train Service Type
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
+    header: ({ column }) => (
+      <CompactColumnHeader
+        column={column}
+        title="Train Service Type"
+        alignment="center"
+      />
+    ),
+    cell: ({ row }) => (
+      <div className="text-center">{row.getValue("TRAIN_SERVICE_TYPE")}</div>
+    ),
+    size: 140,
+    minSize: 140,
+    maxSize: 140,
+    meta: {
+      alignment: "center",
     },
-    size: 150,
-    minSize: 120,
-    maxSize: 180,
   },
   {
     accessorKey: "STATION_ID",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-right w-full justify-end"
-        >
-          Station ID
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
+    header: ({ column }) => (
+      <CompactColumnHeader
+        column={column}
+        title="Station ID"
+        alignment="center"
+      />
+    ),
+    cell: ({ row }) => (
+      <div className="text-center">{row.getValue("STATION_ID")}</div>
+    ),
     size: 100,
-    minSize: 80,
-    maxSize: 120,
+    minSize: 100,
+    maxSize: 100,
+    meta: {
+      alignment: "center",
+    },
   },
   {
     accessorKey: "DIRECTION",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-left w-full justify-start"
-        >
-          Direction
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
+    header: ({ column }) => (
+      <CompactColumnHeader
+        column={column}
+        title="Direction"
+        alignment="center"
+      />
+    ),
+    cell: ({ row }) => (
+      <div className="text-center">{row.getValue("DIRECTION")}</div>
+    ),
     size: 120,
-    minSize: 100,
-    maxSize: 150,
+    minSize: 120,
+    maxSize: 120,
+    meta: {
+      alignment: "center",
+    },
   },
   {
     accessorKey: "TRAIN_STATUS",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-left w-full justify-start"
-        >
-          Train Status
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
+    header: ({ column }) => (
+      <CompactColumnHeader
+        column={column}
+        title="Train Status"
+        alignment="center"
+      />
+    ),
+    cell: ({ row }) => (
+      <div className="text-center">{row.getValue("TRAIN_STATUS")}</div>
+    ),
     size: 120,
-    minSize: 100,
-    maxSize: 150,
+    minSize: 120,
+    maxSize: 120,
+    meta: {
+      alignment: "center",
+    },
   },
   {
     accessorKey: "ARRIVAL_TIME",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-right w-full justify-end"
-        >
-          Arrival Time
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
+    header: ({ column }) => (
+      <CompactColumnHeader
+        column={column}
+        title="Arrival Time"
+        alignment="center"
+      />
+    ),
+    cell: ({ row }) => (
+      <div className="text-center">{row.getValue("ARRIVAL_TIME")}</div>
+    ),
     size: 120,
-    minSize: 100,
-    maxSize: 150,
+    minSize: 120,
+    maxSize: 120,
+    meta: {
+      alignment: "center",
+    },
   },
   {
     accessorKey: "DEPARTURE_TIME",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-right w-full justify-end"
-        >
-          Departure Time
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
+    header: ({ column }) => (
+      <CompactColumnHeader
+        column={column}
+        title="Departure Time"
+        alignment="center"
+      />
+    ),
+    cell: ({ row }) => (
+      <div className="text-center">{row.getValue("DEPARTURE_TIME")}</div>
+    ),
     size: 140,
-    minSize: 120,
-    maxSize: 160,
+    minSize: 140,
+    maxSize: 140,
+    meta: {
+      alignment: "center",
+    },
   },
   {
     accessorKey: "TRAVEL_TIME_SECONDS",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-right w-full justify-end"
-        >
-          Travel Time (s)
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
-    cell: ({ row }: { row: Row<any> }) => {
+    header: ({ column }) => (
+      <CompactColumnHeader
+        column={column}
+        title="Travel Time (s)"
+        alignment="center"
+      />
+    ),
+    cell: ({ row }) => {
       const value = row.getValue("TRAVEL_TIME_SECONDS");
-      return <div>{value ? `${value}s` : "N/A"}</div>;
+      return <div className="text-center">{value ? `${value}s` : "N/A"}</div>;
     },
-    size: 130,
-    minSize: 110,
-    maxSize: 150,
+    size: 120,
+    minSize: 120,
+    maxSize: 120,
+    meta: {
+      alignment: "center",
+    },
   },
 ];
 
@@ -326,62 +254,21 @@ const timetableColumns: ColumnDef<any>[] = [
 const metricsColumns: ColumnDef<any>[] = [
   {
     accessorKey: "metric",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-left w-full justify-start"
-        >
-          Metric
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
+    header: ({ column }: { column: Column<any, unknown> }) => (
+      <CompactColumnHeader column={column} title="Metric" />
+    ),
     size: 200,
     minSize: 180,
     maxSize: 300,
+    meta: {
+      alignment: "left",
+    },
   },
   {
     accessorKey: "value",
-    header: ({ column }: { column: Column<any, unknown> }) => {
-      const sortIndex = column.getSortIndex();
-      const sortDirection = column.getIsSorted();
-      return (
-        <Button
-          variant="ghost"
-          onClick={column.getToggleSortingHandler()}
-          className="p-0 hover:bg-transparent group text-right w-full justify-end"
-        >
-          Value
-          {sortDirection && sortIndex !== -1 && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground group-hover:text-accent-foreground">
-              ({sortIndex + 1})
-            </span>
-          )}
-          {sortDirection === "asc" ? (
-            <ArrowUp className="ml-1 h-3 w-3 text-primary" />
-          ) : sortDirection === "desc" ? (
-            <ArrowDown className="ml-1 h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50 group-hover:text-accent-foreground" />
-          )}
-        </Button>
-      );
-    },
+    header: ({ column }: { column: Column<any, unknown> }) => (
+      <CompactColumnHeader column={column} title="Value" alignment="right" />
+    ),
     cell: ({ row }: { row: Row<any> }) => {
       const value = row.getValue("value");
       // For numeric values, add right alignment and formatting
@@ -393,6 +280,9 @@ const metricsColumns: ColumnDef<any>[] = [
     size: 300,
     minSize: 200,
     maxSize: 500,
+    meta: {
+      alignment: "right",
+    },
   },
 ];
 
@@ -415,12 +305,14 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
     currentPageData,
     pageCount,
     totalItems,
+    peakHourFilter, // Get from store
 
     // Actions
     setActiveTabId,
     setSearchQuery,
     setSorting,
     setPagination,
+    setPeakHourFilter, // Get from store
     resetViewState,
   } = useDataViewer();
 
@@ -579,12 +471,49 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
                   onChange={(e) => handleSearchChange(e.target.value)}
                   className="pl-10 pr-4 flex-grow"
                 />
-                {/* Add Reset Sort Button for DataViewerModal */}
+
+                {/* Add Peak Hour Filter */}
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm font-medium whitespace-nowrap">
+                    Peak Filter:
+                  </span>
+                  <div className="flex border rounded-md overflow-hidden">
+                    <Button
+                      type="button"
+                      variant={peakHourFilter === "ALL" ? "default" : "outline"}
+                      size="sm"
+                      className="rounded-none px-3"
+                      onClick={() => setPeakHourFilter("ALL")}
+                    >
+                      All
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={peakHourFilter === "AM" ? "default" : "outline"}
+                      size="sm"
+                      className="rounded-none border-l px-3"
+                      onClick={() => setPeakHourFilter("AM")}
+                    >
+                      AM
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={peakHourFilter === "PM" ? "default" : "outline"}
+                      size="sm"
+                      className="rounded-none border-l px-3"
+                      onClick={() => setPeakHourFilter("PM")}
+                    >
+                      PM
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Reset Sort Button */}
                 {sorting && sorting.length > 0 && (
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setSorting([])} // Reset to empty array for no sort
+                    onClick={() => setSorting([])}
                     className="text-xs h-9 ml-2 flex-shrink-0"
                   >
                     Reset Sort
@@ -595,8 +524,8 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
 
             {/* Tab Content Area - Add relative positioning for overlay */}
             <div className="relative flex-1 overflow-hidden flex flex-col min-h-0 h-[50vh]">
-              {/* Loading Overlay */}
-              {isLoading && (
+              {/* Loading Overlay - Only show for timetable tab, not metrics tabs */}
+              {isLoading && activeTabId === "timetable" && (
                 <div className="absolute inset-0 bg-background/80 flex flex-col items-center justify-center z-10">
                   <IconLoader2 className="h-8 w-8 animate-spin text-primary mb-2" />
                   <p className="text-sm text-muted-foreground">
@@ -608,17 +537,24 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
               {/* Tab Content (will be visually behind overlay when loading) */}
               <TabsContent
                 value="timetable"
-                className="pt-2 flex-1 overflow-hidden flex flex-col h-full mt-0" // Added h-full and mt-0
+                className="pt-2 flex-1 overflow-hidden flex flex-col h-full mt-0"
               >
                 {isLoading ? (
-                  renderSkeleton
+                  // Use placeholder div while loading overlay is active, instead of skeleton
+                  <div className="flex-1 flex items-center justify-center">
+                    {/* Spinner is now in the overlay */}
+                  </div>
                 ) : error ? (
                   <div className="py-8 text-center text-red-500">
                     Error: {error}
                   </div>
                 ) : !hasAnyDataForTab ? (
-                  <div className="py-8 text-center text-muted-foreground">
-                    No data loaded for this tab.
+                  // Show spinner and message when not loading but no data exists yet
+                  <div className="flex-1 flex flex-col items-center justify-center">
+                    <IconLoader2 className="h-6 w-6 animate-spin text-muted-foreground mb-2" />
+                    <p className="text-sm text-muted-foreground">
+                      Waiting for simulation data...
+                    </p>
                   </div>
                 ) : currentPageData.length === 0 &&
                   searchQuery.trim() !== "" ? (
@@ -629,19 +565,46 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
                   <div className="flex-1 flex flex-col h-full">
                     {" "}
                     {/* Allow table to grow */}
-                    <DataTable
-                      columns={memoizedTimetableColumns}
-                      data={currentPageData} // Use computed page data
-                      sorting={sorting} // Use store state
-                      setSorting={setSorting} // Use store action
-                      rowSelection={rowSelection} // Keep local row selection
-                      setRowSelection={setRowSelection}
-                      pageIndex={pagination.pageIndex} // Use store state
-                      pageSize={pagination.pageSize} // Use store state
-                      pageCount={pageCount} // Use computed value
-                      onPaginationChange={handlePaginationChange} // Use wrapper handler
-                      tableHeight="350px" // Add fixed height for scrolling
-                    />
+                    <div className="relative flex-1 overflow-hidden">
+                      {isLoading && !hasAnyDataForTab ? (
+                        renderSkeleton
+                      ) : hasDisplayData ? (
+                        <>
+                          <DataTable
+                            columns={memoizedTimetableColumns}
+                            data={currentPageData}
+                            sorting={sorting}
+                            setSorting={setSorting}
+                            rowSelection={rowSelection}
+                            setRowSelection={setRowSelection}
+                            pageIndex={pagination.pageIndex}
+                            pageSize={pagination.pageSize}
+                            pageCount={pageCount}
+                            onPaginationChange={handlePaginationChange}
+                            hideRowsPerPage={false}
+                            hideRowSelectionCount={true}
+                            tableHeight="350px"
+                          />
+
+                          {/* Add filter info when a peak filter is active */}
+                          {peakHourFilter !== "ALL" && (
+                            <div className="text-xs text-muted-foreground p-2 text-center bg-muted/30 rounded-md mt-2">
+                              <span className="font-medium">
+                                {peakHourFilter} Peak Filter Active:
+                              </span>{" "}
+                              {peakHourFilter === "AM"
+                                ? `Showing ${totalItems} records between ${PEAK_HOURS.AM.start} and ${PEAK_HOURS.AM.end}`
+                                : `Showing ${totalItems} records between ${PEAK_HOURS.PM.start} and ${PEAK_HOURS.PM.end}`}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="p-4 text-center text-muted-foreground">
+                          No data available. Try changing your filters or
+                          loading simulation data.
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </TabsContent>

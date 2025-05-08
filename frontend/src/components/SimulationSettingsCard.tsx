@@ -26,6 +26,7 @@ import {
   IconFile,
   IconReplace,
   IconRotateClockwise,
+  IconLoader2,
 } from "@tabler/icons-react";
 import {
   Tooltip,
@@ -35,7 +36,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
 import React, { useRef } from "react";
-import { cn } from "@/lib/utils";
+import { cn, formatFileName } from "@/lib/utils";
 import { useSimulationStore } from "@/store/simulationStore";
 import { useFileStore } from "@/store/fileStore";
 import { useAPIStore } from "@/store/apiStore";
@@ -56,6 +57,18 @@ interface SimulationSettings {
     distance: number;
     scheme?: "AB" | "A" | "B";
   }[];
+  servicePeriods: ServicePeriodConfig[];
+}
+
+// Define the ServicePeriod interface to match the backend structure
+interface ServicePeriodConfig {
+  NAME: string;
+  START_HOUR: number;
+  TRAIN_COUNT: number;
+  REGULAR_HEADWAY?: number;
+  SKIP_STOP_HEADWAY?: number;
+  REGULAR_LOOP_TIME_MINUTES?: number;
+  SKIP_STOP_LOOP_TIME_MINUTES?: number;
 }
 
 // Define interface for the simulation settings passed as props
@@ -172,12 +185,48 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
   const handleSimulatePassengersToggle = (checked: boolean) => {
     setSimulatePassengers(checked);
 
-    // If enabling passenger simulation but no file is selected
-    if (checked && !simulationInput.filename && !nextRunFilename) {
-      // Provide user feedback with a toast notification
+    // If enabling passenger simulation
+    if (checked) {
+      // If simulation is loaded and has existing passenger file
+      if (loadedSimulationId && simulationInput.filename) {
+        // Make sure fileStore has proper data to show "inherited" file
+        useFileStore.setState({
+          uploadedFileName: simulationInput.filename,
+          uploadStatus: {
+            success: true,
+            message: "Inherited from loaded simulation",
+          },
+          validationStatus: "valid",
+          uploadSource: "settings-change",
+        });
+
+        useFileStore.getState().updateFileMetadata({
+          isInherited: true,
+          simulationId: loadedSimulationId,
+          isRequired: false,
+        });
+
+        toast({
+          title: "Passenger Simulation Enabled",
+          description: `Using inherited file: ${simulationInput.filename}`,
+          variant: "default",
+        });
+      }
+      // If no file is selected yet
+      else if (!nextRunFilename) {
+        toast({
+          title: "Passenger Simulation Enabled",
+          description: "Please select a CSV file for passenger data.",
+          variant: "default",
+        });
+      }
+    } else {
+      // If disabling passenger simulation, keep the file reference for later
+      // but update UI to show it's not being used
       toast({
-        title: "Passenger Simulation Enabled",
-        description: "Please select a CSV file for passenger data.",
+        title: "Passenger Simulation Disabled",
+        description:
+          "Train simulation will run without passenger boarding/alighting.",
         variant: "default",
       });
     }
@@ -188,7 +237,17 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
     simulatePassengers && !simulationInput.filename && !nextRunFilename;
 
   return (
-    <Card className="mb-4">
+    <Card className="mb-4 relative">
+      {/* Loading overlay */}
+      {isSimulating && (
+        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded-md">
+          <IconLoader2 className="h-10 w-10 animate-spin text-mrt-blue mb-4" />
+          <p className="text-center font-medium">
+            Loading simulation settings...
+          </p>
+        </div>
+      )}
+
       <CardHeader>
         {/* Wrap title and add toggle icon */}
         <div className="flex items-center justify-between">
@@ -269,34 +328,25 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
           </TooltipProvider>
         </div>
 
-        {/* -- Inserted Selected File Info Card -- */}
-        {hasResults && simulatePassengers && (
+        {/* Conditionally show file information card only if a simulation is loaded AND passenger simulation is enabled */}
+        {simulatePassengers && loadedSimulationId !== null && (
           <Card
             className={cn(
-              "p-3 mb-4",
+              "mt-2 p-2",
               needsFileUpload
-                ? "border-amber-300 bg-amber-50 dark:bg-amber-950/50"
-                : "border-blue-300 bg-blue-50 dark:bg-blue-950/50"
+                ? "border-amber-400 dark:border-amber-700"
+                : "border-blue-400 dark:border-blue-700"
             )}
           >
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2 overflow-hidden">
-                <IconFile
-                  size={20}
-                  className={cn(
-                    "flex-shrink-0",
-                    needsFileUpload
-                      ? "text-amber-600 dark:text-amber-400"
-                      : "text-blue-600 dark:text-blue-400"
-                  )}
-                />
-                <div className="flex flex-col overflow-hidden">
+            <div className="flex items-start gap-2 justify-between">
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-col">
                   <span
                     className={cn(
-                      "text-sm font-medium truncate",
+                      "text-xs uppercase font-semibold mb-0.5",
                       needsFileUpload
-                        ? "text-amber-800 dark:text-amber-200"
-                        : "text-blue-800 dark:text-blue-200"
+                        ? "text-amber-700 dark:text-amber-300"
+                        : "text-blue-700 dark:text-blue-300"
                     )}
                   >
                     {needsFileUpload
@@ -313,7 +363,11 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   >
                     {needsFileUpload
                       ? "No file selected yet"
-                      : simulationInput.filename}
+                      : formatFileName(
+                          simulationInput.filename ||
+                            nextRunFilename ||
+                            "Unknown file"
+                        )}
                   </span>
                   <span
                     className={cn(
@@ -325,9 +379,11 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   >
                     {needsFileUpload
                       ? "Please select a file to proceed with passenger simulation"
-                      : loadedSimulationId && nextRunFilename === null
+                      : loadedSimulationId &&
+                        simulationInput.filename &&
+                        !nextRunFilename
                       ? "Inherited from loaded simulation"
-                      : nextRunFilename !== null
+                      : nextRunFilename
                       ? "Newly uploaded file"
                       : "From previous run"}
                   </span>
@@ -343,6 +399,11 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (file) {
+                      // Enable passenger simulation when selecting a file
+                      if (!simulatePassengers) {
+                        setSimulatePassengers(true);
+                      }
+
                       // Use the uploadFile function from fileStore with settings-change source
                       const result = await useFileStore
                         .getState()
@@ -351,15 +412,10 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                         // Set the next run filename directly without changing UI
                         setNextRunFilename(result.filename);
 
-                        // Make sure to preserve the simulatePassengers state if it was true
-                        if (!simulatePassengers) {
-                          setSimulatePassengers(true);
-                        }
-
                         // Update the file selection state for the next run (but not the current UI)
                         handleFileSelect(file, result.filename);
 
-                        // Notify the user with a toast instead of changing the UI
+                        // Notify the user with a toast
                         toast({
                           title: "File Changed Successfully",
                           description: `New file "${file.name}" will be used for the next simulation run.`,
@@ -580,6 +636,102 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                 </p>
               </div>
             </div>
+
+            {/* Service Periods Settings */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-semibold">
+                  Service Periods
+                </Label>
+                <TooltipProvider delayDuration={100}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <IconInfoCircle
+                        size={16}
+                        className="text-muted-foreground ml-1 cursor-help"
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="max-w-[250px]">
+                        Define the train service periods throughout the day.
+                        Each period has a starting hour and how many trains
+                        should be in service.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+
+              <div className="border rounded-md">
+                <div className="grid grid-cols-12 gap-4 mb-2 font-medium text-xs sticky top-0 z-10 bg-card px-4 py-2 border-b">
+                  <div className="col-span-6">Period Name</div>
+                  <div className="col-span-3">Start Hour</div>
+                  <div className="col-span-3">Train Count</div>
+                </div>
+                <div className="px-2 pt-2 pb-4 max-h-[250px] overflow-y-auto">
+                  {simulationSettings.servicePeriods &&
+                    simulationSettings.servicePeriods.map((period, index) => (
+                      <div
+                        key={`period-${index}`}
+                        className="grid grid-cols-12 gap-4 items-center mb-2 text-xs"
+                      >
+                        <div className="col-span-6">
+                          <Input
+                            value={period.NAME}
+                            disabled={true}
+                            className="h-7 text-xs"
+                          />
+                        </div>
+                        <div className="col-span-3">
+                          <Input
+                            type="number"
+                            min="0"
+                            max="23"
+                            value={period.START_HOUR}
+                            onChange={(e) => {
+                              const updatedPeriods = [
+                                ...simulationSettings.servicePeriods,
+                              ];
+                              updatedPeriods[index] = {
+                                ...period,
+                                START_HOUR: parseInt(e.target.value, 10) || 0,
+                              };
+                              updateSimulationSetting(
+                                "servicePeriods",
+                                updatedPeriods
+                              );
+                            }}
+                            disabled={isSimulating}
+                            className="h-7 text-xs"
+                          />
+                        </div>
+                        <div className="col-span-3">
+                          <Input
+                            type="number"
+                            min="1"
+                            value={period.TRAIN_COUNT}
+                            onChange={(e) => {
+                              const updatedPeriods = [
+                                ...simulationSettings.servicePeriods,
+                              ];
+                              updatedPeriods[index] = {
+                                ...period,
+                                TRAIN_COUNT: parseInt(e.target.value, 10) || 1,
+                              };
+                              updateSimulationSetting(
+                                "servicePeriods",
+                                updatedPeriods
+                              );
+                            }}
+                            disabled={isSimulating}
+                            className="h-7 text-xs"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
           </TabsContent>
 
           {/* Station Settings Tab */}
@@ -589,23 +741,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
               <Label className="text-base font-semibold">
                 Station Management
               </Label>
-              {/* Skip-Stop Toggle - Moved here */}
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="useSkipStop"
-                  checked={isSkipStop}
-                  onCheckedChange={(checked: boolean) =>
-                    toggleSkipStop(checked)
-                  }
-                  disabled={isSimulating}
-                />
-                <label
-                  htmlFor="useSkipStop"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                >
-                  Change Skip-Stop Pattern
-                </label>
-              </div>
+              {/* Skip-Stop Toggle removed */}
             </div>
 
             <div className="border rounded-md flex-grow">
@@ -634,10 +770,10 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                         {index + 1}
                       </div>
                       <div className="col-span-5">{station.name}</div>
-                      {/* New scheme selector */}
+                      {/* Modified scheme selector - always enabled */}
                       <div className="col-span-6">
                         <Select
-                          disabled={!isSkipStop || isSimulating}
+                          disabled={isSimulating}
                           value={station.scheme || "AB"}
                           onValueChange={(value) =>
                             updateStationScheme(
@@ -666,8 +802,8 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                           onChange={(e) =>
                             updateStationDistance(index, Number(e.target.value))
                           }
-                          // Disable first station and if simulating
-                          disabled={index === 0 || isSimulating}
+                          // Disable all distance inputs
+                          disabled={true}
                           className="h-7 text-xs"
                         />
                       </div>

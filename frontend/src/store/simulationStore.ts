@@ -353,18 +353,23 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       };
     }),
 
-  resetSimulation: () =>
-    set((state) => ({
+  resetSimulation: () => {
+    set({
       simulationResult: null,
-      loadedSimulationId: null,
-      nextRunFilename: null,
-      simulationTime: PEAK_HOURS[state.selectedPeak].start,
-      isSimulationRunning: false,
-      simulationName: "Untitled Simulation",
-      isSimulationNameDialogOpen: false,
-      // Reset aggregated demand state as well
+      loadedServicePeriodsData: null,
+      passengerArrivalData: null,
+      passengerDistributionData: null,
       aggregatedPassengerDemand: null,
-      selectedTimePeriod: "FULL_SERVICE",
-      isAggregatedDemandLoading: false,
-    })),
+      loadedSimulationId: null,
+      simulationInput: { filename: null, config: null },
+      nextRunFilename: null,
+      isSimulationRunning: false,
+      isLoading: false,
+      isSimulating: false,
+      isMapLoading: false,
+      apiError: null,
+      // Don't reset simulatePassengers checkbox state during reset
+      // This will be explicitly set based on whether passenger data exists
+    });
+  },
 }));

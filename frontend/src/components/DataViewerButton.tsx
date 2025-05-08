@@ -4,7 +4,6 @@ import { IconTable } from "@tabler/icons-react";
 import { useUIStore } from "@/store/uiStore";
 import { useSimulationStore } from "@/store/simulationStore";
 import { useModalStore } from "@/store/modalStore";
-import { cn } from "@/lib/utils";
 
 function DataViewerButtonComponent() {
   // Get the setter from the UI store
@@ -12,7 +11,7 @@ function DataViewerButtonComponent() {
     (state: any) => state.setDataViewerModalOpen
   );
   // Get the open action from the modal store
-  const openModal = useModalStore((state) => state.openModal);
+  const openModal = useModalStore((state) => state.actions.openModal);
   const loadedSimulationId = useSimulationStore(
     (state: any) => state.loadedSimulationId
   );

@@ -64,6 +64,46 @@ export function SimulationHistoryModal({
   const { toast } = useToast();
   const { deleteSimulations } = useAPIStore(); // Get the delete action from the store
 
+  // Override to ensure both simulations and pagination state are in sync
+  React.useEffect(() => {
+    // Force pageSize to 8 and reset to first page if pageSize doesn't match
+    if (historyPagination.pageSize !== 8) {
+      setHistoryPagination({
+        pageIndex: 0,
+        pageSize: 8,
+      });
+    }
+  }, [historyPagination.pageSize, setHistoryPagination]);
+
+  // Always slice data to display exactly 8 rows for current page
+  const displayData = React.useMemo(() => {
+    const startIndex = historyPagination.pageIndex * 8;
+    // Add a page-specific id to each row to make selection work correctly across pages
+    return simulations.slice(startIndex, startIndex + 8).map((sim, index) => ({
+      ...sim,
+      // Add a unique ID property that combines page and row index
+      __uniquePageRowId: `page${historyPagination.pageIndex}_row${index}`,
+    }));
+  }, [simulations, historyPagination.pageIndex]);
+
+  // Create a wrapper for pagination that fixes pageSize to 8
+  const handlePaginationChange = React.useCallback(
+    (updater: React.SetStateAction<PaginationState>) => {
+      // Clear row selection when changing pages
+      setHistoryRowSelection({});
+
+      if (typeof updater === "function") {
+        setHistoryPagination((prev) => {
+          const updated = updater(prev);
+          return { ...updated, pageSize: 8 }; // Force 8 rows
+        });
+      } else {
+        setHistoryPagination({ ...updater, pageSize: 8 }); // Force 8 rows
+      }
+    },
+    [setHistoryPagination, setHistoryRowSelection]
+  );
+
   // Memoize columns definition to prevent re-creation on every render
   // Pass onLoadSimulation, loadedSimulationId, AND isSimulating into the columns definition
   const tableColumns = React.useMemo(
@@ -81,15 +121,27 @@ export function SimulationHistoryModal({
   // Function to handle the delete API call - Refactored to use apiStore
   const handleDeleteSelectedSimulations = async () => {
     const selectedIndices = Object.keys(historyRowSelection);
+
+    // Create a map of all simulations with their unique IDs
+    const simulationMap = React.useMemo(() => {
+      const map = new Map();
+      simulations.forEach((sim, index) => {
+        const pageIndex = Math.floor(index / 8);
+        const rowIndex = index % 8;
+        const uniqueId = `page${pageIndex}_row${rowIndex}`;
+        map.set(uniqueId, sim.SIMULATION_ID);
+      });
+      return map;
+    }, [simulations]);
+
+    // Map the selected unique IDs to their actual simulation IDs
     const selectedIds = selectedIndices
-      .map((index) => {
-        const simIndex = parseInt(index, 10);
-        // Add boundary check
-        if (simIndex >= 0 && simIndex < simulations.length) {
-          return simulations[simIndex].SIMULATION_ID;
+      .map((uniqueId) => {
+        if (simulationMap.has(uniqueId)) {
+          return simulationMap.get(uniqueId);
         } else {
-          console.error("Invalid index found in rowSelection:", index);
-          return null; // Or handle error appropriately
+          console.error("Invalid unique ID found in rowSelection:", uniqueId);
+          return null;
         }
       })
       .filter((id): id is number => id !== null); // Filter out nulls and type guard
@@ -146,9 +198,9 @@ export function SimulationHistoryModal({
         }
       }}
     >
-      <DialogContent className="!max-w-fit">
+      <DialogContent className="!max-w-fit max-h-[80vh] flex flex-col">
         {" "}
-        {/* Adjusted width */}
+        {/* Adjusted width and height */}
         <DialogHeader>
           <DialogTitle>Simulation History</DialogTitle>
           <DialogDescription>
@@ -167,9 +219,6 @@ export function SimulationHistoryModal({
             Reset Sort
           </Button>
         )}
-        {/* Wrap table in ScrollArea for responsiveness */}
-        {/* <ScrollArea className="h-[400px] w-full pr-4"> */}
-        {/* Replaced old Table with DataTable */}
         {isLoading ? (
           <div className="h-[400px] flex items-center justify-center">
             <IconLoader className="inline-block animate-spin mr-2" /> Loading
@@ -180,26 +229,26 @@ export function SimulationHistoryModal({
             No simulation history found.
           </div>
         ) : (
-          <DataTable
-            columns={tableColumns}
-            data={simulations}
-            // Pass state and setters from uiStore
-            rowSelection={historyRowSelection}
-            setRowSelection={setHistoryRowSelection}
-            sorting={historySorting}
-            setSorting={setHistorySorting}
-            // --- Pass Pagination Props from uiStore ---
-            pageIndex={historyPagination.pageIndex}
-            pageSize={historyPagination.pageSize}
-            pageCount={Math.ceil(
-              simulations.length / historyPagination.pageSize
-            )}
-            onPaginationChange={setHistoryPagination}
-            // --- End Pagination Props ---
-            hideRowsPerPage={true} // Hide the rows per page selector
-          />
+          <div className="flex-1 overflow-hidden flex flex-col">
+            <DataTable
+              columns={tableColumns}
+              data={displayData}
+              // Pass state and setters from uiStore
+              rowSelection={historyRowSelection}
+              setRowSelection={setHistoryRowSelection}
+              sorting={historySorting}
+              setSorting={setHistorySorting}
+              // --- Pass Pagination Props from uiStore ---
+              pageIndex={historyPagination.pageIndex}
+              pageSize={8} // Force 8 rows per page
+              pageCount={Math.ceil(simulations.length / 8)}
+              onPaginationChange={handlePaginationChange}
+              // --- End Pagination Props ---
+              hideRowsPerPage={true} // Hide the rows per page selector
+              tableHeight="auto" // Set auto height to remove scrolling
+            />
+          </div>
         )}
-        {/* </ScrollArea> */}
         <DialogFooter className="sm:justify-between">
           {" "}
           {/* Adjust footer layout */}

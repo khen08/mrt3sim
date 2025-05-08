@@ -411,7 +411,7 @@ def get_simulation_config(simulation_id):
 def get_aggregated_demand(simulation_id):
     """
     Aggregates passenger demand for a simulation by O-D pair,
-    categorized into Full Service, AM Peak (7-9), and PM Peak (17-20),
+    categorized into Full Service, AM Peak (7-9), and PM Peak (17-19),
     and further broken down by scheme type, using Prisma ORM.
     """
     print(f"[ROUTE:/SIMULATIONS/<id>/AGGREGATED_DEMAND_ORM] STARTING AGGREGATION FOR SIMULATION ID: {simulation_id}")
@@ -454,8 +454,8 @@ def get_aggregated_demand(simulation_id):
                 current_am_peak_count = aggregated_counts["AM_PEAK"][scheme].get(od_pair, 0)
                 aggregated_counts["AM_PEAK"][scheme][od_pair] = current_am_peak_count + pass_count
 
-            # --- Aggregate for PM_PEAK (17:00 - 19:59) ---
-            if arrival_time and 17 <= arrival_time.hour < 20:
+            # --- Aggregate for PM_PEAK (17:00 - 18:59) ---
+            if arrival_time and 17 <= arrival_time.hour < 19:
                 current_pm_peak_count = aggregated_counts["PM_PEAK"][scheme].get(od_pair, 0)
                 aggregated_counts["PM_PEAK"][scheme][od_pair] = current_pm_peak_count + pass_count
         

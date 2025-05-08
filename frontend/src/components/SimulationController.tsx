@@ -75,7 +75,9 @@ const SimulationController = ({
   className, // Destructure className
 }: SimulationControllerProps) => {
   // Use Zustand store
-  const simulationTime = useSimulationStore((state: any) => state.simulationTime);
+  const simulationTime = useSimulationStore(
+    (state: any) => state.simulationTime
+  );
   const isSimulationRunning = useSimulationStore(
     (state: any) => state.isSimulationRunning
   );
@@ -85,7 +87,9 @@ const SimulationController = ({
   const setIsSimulationRunning = useSimulationStore(
     (state: any) => state.setIsSimulationRunning
   );
-  const selectedScheme = useSimulationStore((state: any) => state.selectedScheme);
+  const selectedScheme = useSimulationStore(
+    (state: any) => state.selectedScheme
+  );
   const setSelectedScheme = useSimulationStore(
     (state: any) => state.setSelectedScheme
   );
@@ -415,7 +419,7 @@ const SimulationController = ({
                   isFullDayView && "cursor-not-allowed" // Add not-allowed cursor when disabled
                 )}
               >
-                PM Peak (5-8)
+                PM Peak (5-7)
               </Label>
             </div>
           </RadioGroup>

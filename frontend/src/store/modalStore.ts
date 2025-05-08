@@ -2,8 +2,18 @@ import { create } from "zustand";
 import { SortingState, PaginationState } from "@tanstack/react-table"; // Import types
 import { filter, sort, paginate } from "@/store/modalStoreUtils"; // Assume utility functions exist
 import { useSimulationStore } from "./simulationStore"; // To get simulationResult
+import { useAPIStore } from "@/store/apiStore"; // To get fetch functions
+import { useMemo } from "react";
+import { PEAK_HOURS } from "@/lib/constants"; // Import peak hour constants
+import { parseTime } from "@/lib/timeUtils"; // Import time parsing utility
 
-export type TabId = "timetable" | "passengerDemand" | "metrics";
+export type TabId =
+  | "timetable"
+  | "passengerDemand"
+  | "metrics"
+  | "metricsSummary";
+
+export type PeakHourFilter = "ALL" | "AM" | "PM";
 
 // Define the full data structure (adjust 'any' as needed)
 // Example for timetable, others might differ
@@ -23,22 +33,21 @@ interface TimetableEntry {
 
 type RawData = Record<TabId, any[]>; // Store raw data per tab
 
-interface ModalState {
-  // Modal state
+// Type for the state part of ModalState
+interface ModalStateProperties {
   isModalOpen: boolean;
   activeTabId: TabId;
-
-  // Data state
-  rawData: RawData; // Store the full, raw data per tab
+  rawData: RawData;
   isLoading: boolean;
   error: string | null;
-
-  // View state
   searchQuery: string;
   sorting: SortingState;
   pagination: PaginationState;
+  peakHourFilter: PeakHourFilter;
+  lastLoadedSimulationId: number | null; // Track the simulation ID associated with current data
+}
 
-  // Actions
+interface ModalActions {
   openModal: (initialTab?: TabId) => void;
   closeModal: () => void;
   setActiveTabId: (tabId: TabId) => void;
@@ -54,14 +63,14 @@ interface ModalState {
       | PaginationState
       | ((old: PaginationState) => PaginationState)
   ) => void;
-  resetViewState: () => void; // Reset search, sort, pagination
+  setPeakHourFilter: (filter: PeakHourFilter) => void;
+  resetViewState: () => void;
+  resetData: () => void; // New action to reset data but keep UI state
+  setLastLoadedSimulationId: (id: number | null) => void;
+}
 
-  // Selectors (accessible via get() or directly if returned)
-  getFilteredData: () => any[];
-  getSortedData: () => any[];
-  getCurrentPageData: () => any[];
-  getPageCount: () => number;
-  getTotalItems: () => number;
+interface ModalState extends ModalStateProperties {
+  actions: ModalActions;
 }
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -71,199 +80,221 @@ const initialPagination: PaginationState = {
   pageSize: DEFAULT_PAGE_SIZE,
 };
 
-const initialState = {
+const initialPaginationState: PaginationState = { pageIndex: 0, pageSize: 10 };
+
+const initialStateProperties: ModalStateProperties = {
   isModalOpen: false,
-  activeTabId: "timetable" as TabId,
+  activeTabId: "timetable",
   rawData: {
-    // Initialize with empty arrays
     timetable: [],
     passengerDemand: [],
     metrics: [],
+    metricsSummary: [],
   },
   isLoading: false,
   error: null,
   searchQuery: "",
-  sorting: [] as SortingState,
-  pagination: initialPagination,
+  sorting: [],
+  pagination: initialPaginationState,
+  peakHourFilter: "ALL", // Default to ALL
+  lastLoadedSimulationId: null,
 };
 
 // Create the store
-export const useModalStore = create<ModalState>((set, get) => {
-  // --- Helper function to safely get current raw data ---
-  const getCurrentRawData = () => {
-    const { activeTabId, rawData } = get();
-    return rawData[activeTabId] || [];
-  };
+export const useModalStore = create<ModalState>((set, get) => ({
+  ...initialStateProperties,
+  actions: {
+    openModal: (initialTab: TabId = "timetable") => {
+      // Don't reset view state - keep existing data
+      set({ isModalOpen: true, activeTabId: initialTab });
 
-  // --- Memoized Selectors ---
-  // These are defined here to access get() and recompute automatically on state change
-  const getFilteredData = () => {
-    const data = getCurrentRawData();
-    const query = get().searchQuery;
-    // console.log(`Filtering ${data.length} items with query: "${query}"`);
-    return filter(data, query); // Use utility function
-  };
+      const simulationId = useSimulationStore.getState().loadedSimulationId;
+      if (simulationId) {
+        const apiStore = useAPIStore.getState();
+        // Only fetch if we don't already have data
+        const currentTabData = get().rawData[initialTab] || [];
+        if (currentTabData.length === 0) {
+          set({ isLoading: true });
 
-  const getSortedData = () => {
-    const data = getFilteredData(); // Use filtered data
-    const currentSorting = get().sorting;
-    // console.log(`Sorting ${data.length} items with state:`, currentSorting);
-    return sort(data, currentSorting); // Use utility function
-  };
-
-  const getCurrentPageData = () => {
-    const data = getSortedData(); // Use sorted data
-    const { pageIndex, pageSize } = get().pagination;
-    // console.log(`Paginating ${data.length} items: Page ${pageIndex}, Size ${pageSize}`);
-    return paginate(data, pageIndex, pageSize); // Use utility function
-  };
-
-  const getTotalItems = () => {
-    // Count after filtering and sorting (before pagination)
-    return getSortedData().length;
-  };
-
-  const getPageCount = () => {
-    const total = getTotalItems();
-    const { pageSize } = get().pagination;
-    return Math.ceil(total / pageSize);
-  };
-
-  // --- State and Actions ---
-  return {
-    ...initialState,
-
-    // Actions
-    openModal: (initialTab = "timetable") => {
+          if (initialTab === "timetable") apiStore.fetchTimetable(simulationId);
+          if (initialTab === "passengerDemand")
+            apiStore.fetchPassengerDemand(simulationId);
+          if (initialTab === "metrics")
+            apiStore.fetchSimulationMetrics(simulationId);
+        }
+      }
+    },
+    closeModal: () => {
+      set({ isModalOpen: false });
+      // Don't reset data on close - we'll keep it cached
+    },
+    setActiveTabId: (tabId: TabId) => {
+      // When switching tabs, only reset the search, sorting, and pagination
+      // Don't reset data or filter settings
       set({
-        isModalOpen: true,
-        activeTabId: initialTab,
-        // Optionally reset view state on open, or keep it persistent
-        // ...initialState // Uncomment to fully reset on open
-      });
-      // Potentially trigger initial data fetch here if rawData is empty for the tab
-      const simState = useSimulationStore.getState();
-      const currentData = get().rawData[initialTab];
-      if (
-        initialTab === "timetable" &&
-        (!currentData || currentData.length === 0) &&
-        simState.simulationResult
-      ) {
-        get().setRawData(initialTab, simState.simulationResult);
-      }
-      // TODO: Add logic to fetch passenger demand / metrics if needed
-    },
-    closeModal: () => set({ isModalOpen: false }),
-
-    setActiveTabId: (tabId) => {
-      set((state) => ({
         activeTabId: tabId,
-        pagination: { ...state.pagination, pageIndex: 0 }, // Reset page index on tab change
-        searchQuery: "", // Optionally reset search on tab change
-        sorting: [], // Optionally reset sorting on tab change
-        error: null, // Clear errors
-        isLoading: false, // Reset loading
-      }));
-      // Potentially trigger data fetch if needed for the new tab
-      const simState = useSimulationStore.getState();
-      const currentData = get().rawData[tabId];
-      if (
-        tabId === "timetable" &&
-        (!currentData || currentData.length === 0) &&
-        simState.simulationResult
-      ) {
-        get().setRawData(tabId, simState.simulationResult);
+        searchQuery: "",
+        sorting: [],
+        pagination: initialPaginationState,
+      });
+      const simulationId = useSimulationStore.getState().loadedSimulationId;
+      if (simulationId) {
+        const currentRawData = get().rawData[tabId] || [];
+        if (currentRawData.length === 0 && !get().isLoading) {
+          set({ isLoading: true });
+          const apiStore = useAPIStore.getState();
+          if (tabId === "timetable") apiStore.fetchTimetable(simulationId);
+          if (tabId === "passengerDemand")
+            apiStore.fetchPassengerDemand(simulationId);
+          if (tabId === "metrics")
+            apiStore.fetchSimulationMetrics(simulationId);
+        }
       }
     },
-
-    setRawData: (tabId, data) => {
+    setRawData: (tabId: TabId, data: any[]) =>
       set((state) => ({
-        rawData: {
-          ...state.rawData,
-          [tabId]: data || [], // Ensure it's always an array
-        },
-        isLoading: false, // Assume loading finished when data is set
+        rawData: { ...state.rawData, [tabId]: data },
+        isLoading: false,
         error: null,
-      }));
-    },
-
-    setIsLoading: (loading) => set({ isLoading: loading }),
-    setError: (error) => set({ error: error, isLoading: false }),
-
-    setSearchQuery: (query) => {
-      set((state) => ({
+      })),
+    setIsLoading: (loading: boolean) => set({ isLoading: loading }),
+    setError: (error: string | null) => set({ error, isLoading: false }),
+    setSearchQuery: (query: string) =>
+      set({
         searchQuery: query,
-        pagination: { ...state.pagination, pageIndex: 0 }, // Reset page index
-      }));
-    },
-
-    setSorting: (sortingUpdater) => {
+        pagination: { ...get().pagination, pageIndex: 0 },
+      }),
+    setSorting: (sortingUpdater) =>
       set((state) => ({
         sorting:
           typeof sortingUpdater === "function"
             ? sortingUpdater(state.sorting)
             : sortingUpdater,
-        pagination: { ...state.pagination, pageIndex: 0 }, // Reset page index
-      }));
-    },
-
-    setPagination: (paginationUpdater) => {
+      })),
+    setPagination: (paginationUpdater) =>
       set((state) => ({
         pagination:
           typeof paginationUpdater === "function"
             ? paginationUpdater(state.pagination)
             : paginationUpdater,
-      }));
-    },
-
+      })),
+    setPeakHourFilter: (filter: PeakHourFilter) =>
+      set({
+        peakHourFilter: filter,
+        pagination: { ...get().pagination, pageIndex: 0 }, // Reset to first page when filter changes
+      }),
     resetViewState: () => {
+      // Only resets the view UI state, not the raw data
       set({
         searchQuery: "",
         sorting: [],
-        pagination: initialPagination,
+        pagination: initialPaginationState,
+        peakHourFilter: "ALL",
         error: null,
         isLoading: false,
       });
     },
+    resetData: () => {
+      // Reset both view state and data
+      set({
+        rawData: {
+          timetable: [],
+          passengerDemand: [],
+          metrics: [],
+          metricsSummary: [],
+        },
+        searchQuery: "",
+        sorting: [],
+        pagination: initialPaginationState,
+        peakHourFilter: "ALL",
+        error: null,
+        isLoading: false,
+      });
+    },
+    setLastLoadedSimulationId: (id: number | null) => {
+      // If the simulation ID changes, we should reset our data
+      const currentId = get().lastLoadedSimulationId;
+      if (id !== currentId) {
+        // Clear data when simulation changes
+        get().actions.resetData();
+      }
+      set({ lastLoadedSimulationId: id });
+    },
+  },
+}));
 
-    // Expose selectors directly on the store object
-    getFilteredData,
-    getSortedData,
-    getCurrentPageData,
-    getPageCount,
-    getTotalItems,
-  };
-});
+// Filter function for peak hours
+const filterByPeakHours = (data: any[], peakFilter: PeakHourFilter): any[] => {
+  if (peakFilter === "ALL") return data;
+
+  const peakRange = PEAK_HOURS[peakFilter === "AM" ? "AM" : "PM"];
+  const startSeconds = parseTime(peakRange.start);
+  const endSeconds = parseTime(peakRange.end);
+
+  return data.filter((entry) => {
+    // For timetable data, check arrival or departure time
+    if (entry.ARRIVAL_TIME || entry.DEPARTURE_TIME) {
+      const timeToCheck = entry.ARRIVAL_TIME || entry.DEPARTURE_TIME;
+      const entrySeconds = parseTime(timeToCheck);
+      return entrySeconds >= startSeconds && entrySeconds <= endSeconds;
+    }
+    return true; // Include entries without time data
+  });
+};
 
 // --- Custom hook for convenience ---
 export const useDataViewer = () => {
-  const state = useModalStore();
+  const store = useModalStore();
+  const actions = store.actions;
 
-  // Return state and computed values needed by the component
+  const filteredData = useMemo(() => {
+    // First apply peak hour filter
+    const currentRawData = store.rawData[store.activeTabId] || [];
+    const peakHourFiltered =
+      store.activeTabId === "timetable"
+        ? filterByPeakHours(currentRawData, store.peakHourFilter)
+        : currentRawData;
+
+    // Then apply search filter
+    if (!store.searchQuery) return peakHourFiltered;
+    return filter(peakHourFiltered, store.searchQuery);
+  }, [
+    store.rawData,
+    store.activeTabId,
+    store.searchQuery,
+    store.peakHourFilter, // Add dependency on peak hour filter
+  ]);
+
+  const sortedData = useMemo(() => {
+    return sort(filteredData, store.sorting);
+  }, [filteredData, store.sorting]);
+
+  const currentPageData = useMemo(() => {
+    return paginate(
+      sortedData,
+      store.pagination.pageIndex,
+      store.pagination.pageSize
+    );
+  }, [sortedData, store.pagination]);
+
+  const pageCount = useMemo(() => {
+    return Math.ceil(sortedData.length / store.pagination.pageSize);
+  }, [sortedData, store.pagination.pageSize]);
+
+  const totalItems = useMemo(() => sortedData.length, [sortedData]);
+
   return {
-    // State
-    isModalOpen: state.isModalOpen,
-    activeTabId: state.activeTabId,
-    isLoading: state.isLoading,
-    error: state.error,
-    searchQuery: state.searchQuery,
-    sorting: state.sorting,
-    pagination: state.pagination,
-
-    // Computed/Selected Data
-    currentPageData: state.getCurrentPageData(),
-    pageCount: state.getPageCount(),
-    totalItems: state.getTotalItems(),
-
-    // Actions (bound)
-    openModal: state.openModal,
-    closeModal: state.closeModal,
-    setActiveTabId: state.setActiveTabId,
-    setSearchQuery: state.setSearchQuery,
-    setSorting: state.setSorting,
-    setPagination: state.setPagination,
-    resetViewState: state.resetViewState,
-    // Add fetchDataForTab if/when implemented
+    activeTabId: store.activeTabId,
+    isLoading: store.isLoading,
+    error: store.error,
+    searchQuery: store.searchQuery,
+    sorting: store.sorting,
+    pagination: store.pagination,
+    peakHourFilter: store.peakHourFilter, // Expose the filter
+    currentPageData,
+    pageCount,
+    totalItems,
+    ...actions, // Spread all actions
   };
 };
 

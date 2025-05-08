@@ -2,7 +2,7 @@
 
 export const PEAK_HOURS = {
   AM: { start: "07:00:00", end: "09:00:00" },
-  PM: { start: "17:00:00", end: "20:00:00" },
+  PM: { start: "17:00:00", end: "19:00:00" },
 };
 
 export const FULL_DAY_HOURS = {

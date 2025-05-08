@@ -289,6 +289,7 @@ export const useFileStore = create<FileState>((set, get) => ({
     }
   },
 
+  // Reset file state completely
   resetFileState: () =>
     set({
       uploadedFileObject: null,

@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   IconUpload,
   IconX,
@@ -14,15 +15,18 @@ import { toast } from "@/components/ui/use-toast";
 import { SAMPLE_CSV_PATH, SAMPLE_CSV_FILENAME } from "@/lib/constants";
 import { useFileStore } from "@/store/fileStore";
 import { useSimulationStore } from "@/store/simulationStore";
+import { cn, formatFileName } from "@/lib/utils";
 
 interface CsvUploadProps {
   onFileSelect: (file: File | null, backendFilename: string | null) => void;
   initialFileName?: string | null;
+  inSettingsCard?: boolean;
 }
 
 const CsvUpload = ({
   onFileSelect,
   initialFileName = null,
+  inSettingsCard = false,
 }: CsvUploadProps) => {
   // State from Zustand store
   const {
@@ -56,12 +60,14 @@ const CsvUpload = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // If this component shouldn't show its UI, return null
+  // If this should be hidden in main content view (not in settings card)
   if (
-    uploadSource === "settings-change" ||
-    nextRunFilename !== null ||
-    (loadedSimulationId !== null && !simulatePassengers)
+    !inSettingsCard &&
+    (loadedSimulationId !== null || // Don't show in main content if simulation loaded
+      uploadSource === "settings-change" ||
+      nextRunFilename !== null)
   ) {
+    // Always return null in main content if simulation is loaded
     return null;
   }
 
@@ -290,7 +296,7 @@ const CsvUpload = ({
               <IconCheck size={24} className="text-green-600" />
               <div>
                 <p className="text-sm font-medium text-green-800">
-                  {uploadedFileName}
+                  {formatFileName(uploadedFileName)}
                 </p>
                 <p className="text-xs text-green-700">
                   File validated successfully.
@@ -317,7 +323,9 @@ const CsvUpload = ({
               <IconAlertCircle size={24} className="text-red-600" />
               <div>
                 <p className="text-sm font-medium text-red-800">
-                  {uploadedFileName || "Invalid File"}
+                  {uploadedFileName
+                    ? formatFileName(uploadedFileName)
+                    : "Invalid File"}
                 </p>
                 <p className="text-xs text-red-700">
                   Validation failed. Please fix the issues below.

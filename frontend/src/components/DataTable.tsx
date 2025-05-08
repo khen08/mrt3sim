@@ -11,6 +11,7 @@ import {
   useReactTable,
   RowSelectionState,
   PaginationState,
+  ColumnMeta,
 } from "@tanstack/react-table";
 
 import {
@@ -31,6 +32,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  ArrowUp,
+  ArrowDown,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+
+// Add this to extend the ColumnMeta type with our custom properties
+declare module "@tanstack/react-table" {
+  interface ColumnMeta<TData extends unknown, TValue> {
+    alignment?: "left" | "center" | "right";
+  }
+}
 
 // Empty array constant to avoid creating new empty array references
 const EMPTY_ARRAY: any[] = [];
@@ -47,6 +64,7 @@ interface DataTableProps<TData, TValue> {
   pageCount: number;
   onPaginationChange: (updater: React.SetStateAction<PaginationState>) => void;
   hideRowsPerPage?: boolean;
+  hideRowSelectionCount?: boolean;
   tableHeight?: string | number;
 }
 
@@ -62,6 +80,7 @@ export function DataTable<TData, TValue>({
   pageCount,
   onPaginationChange,
   hideRowsPerPage = false,
+  hideRowSelectionCount = false,
   tableHeight = "400px",
 }: DataTableProps<TData, TValue>) {
   const tableData = React.useMemo(() => {
@@ -74,6 +93,11 @@ export function DataTable<TData, TValue>({
       pageSize,
     }),
     [pageIndex, pageSize]
+  );
+
+  const selectedRows = React.useMemo(
+    () => Object.keys(rowSelection || {}),
+    [rowSelection]
   );
 
   const table = useReactTable({
@@ -100,6 +124,8 @@ export function DataTable<TData, TValue>({
       return false;
     },
     manualPagination: true,
+    getRowId: (row: any) =>
+      row.__uniquePageRowId || row.id || String(tableData.indexOf(row)),
   });
 
   return (
@@ -113,23 +139,43 @@ export function DataTable<TData, TValue>({
                   const columnDef = header.column.columnDef;
                   const width = columnDef.size ?? "auto";
                   const minWidth = columnDef.minSize ?? 80;
+                  const alignment =
+                    (columnDef.meta?.alignment as string) || "center";
+
+                  // Special styling for checkbox column
+                  const isCheckboxColumn = columnDef.id === "select";
 
                   return (
                     <TableHead
                       key={header.id}
-                      className="whitespace-nowrap p-0 text-center"
+                      className={cn(
+                        "p-0 relative select-none",
+                        isCheckboxColumn && "p-0"
+                      )}
                       style={{
                         width: width === "auto" ? undefined : width,
                         minWidth,
                         maxWidth: columnDef.maxSize,
                       }}
                     >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
+                      {header.isPlaceholder ? null : (
+                        <div
+                          className={`flex items-center px-2 py-1 h-10 ${
+                            alignment === "right"
+                              ? "justify-end"
+                              : alignment === "center"
+                              ? "justify-center"
+                              : "justify-start"
+                          }`}
+                        >
+                          <div className="flex items-center gap-1 whitespace-nowrap">
+                            {flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </TableHead>
                   );
                 })}
@@ -141,26 +187,45 @@ export function DataTable<TData, TValue>({
 
       <ScrollArea
         className="w-full relative overflow-auto"
-        style={{ height: tableHeight }}
+        style={{ height: tableHeight === "auto" ? undefined : tableHeight }}
       >
-        <div className="h-full overflow-auto">
-          <Table className="min-w-full">
-            <TableBody className="overflow-auto">
-              {table.getRowModel().rows?.length ? (
-                table.getRowModel().rows.map((row) => (
+        <Table>
+          <TableBody>
+            {data && data.length > 0 ? (
+              table.getRowModel().rows.map((row) => {
+                return (
                   <TableRow
                     key={row.id}
-                    data-state={row.getIsSelected() && "selected"}
+                    data-state={row.getIsSelected() ? "selected" : undefined}
+                    className={
+                      selectedRows?.includes(row.id) ? "bg-muted/50" : undefined
+                    }
+                    onClick={() => {
+                      row.toggleSelected(!row.getIsSelected());
+                    }}
                   >
                     {row.getVisibleCells().map((cell) => {
                       const columnDef = cell.column.columnDef;
                       const width = columnDef.size ?? "auto";
                       const minWidth = columnDef.minSize ?? 80;
+                      const alignment =
+                        (columnDef.meta?.alignment as string) || "center";
+
+                      // Special styling for checkbox column
+                      const isCheckboxColumn = columnDef.id === "select";
 
                       return (
                         <TableCell
                           key={cell.id}
-                          className="whitespace-nowrap py-2 px-3 text-center"
+                          className={cn(
+                            "whitespace-nowrap py-2 px-3",
+                            isCheckboxColumn && "p-0",
+                            alignment === "right"
+                              ? "text-right"
+                              : alignment === "center"
+                              ? "text-center"
+                              : "text-left"
+                          )}
                           style={{
                             width: width === "auto" ? undefined : width,
                             minWidth,
@@ -175,106 +240,120 @@ export function DataTable<TData, TValue>({
                       );
                     })}
                   </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell
-                    colSpan={columns.length}
-                    className="h-24 text-center"
-                  >
-                    No results.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-        <ScrollBar orientation="horizontal" />
+                );
+              })
+            ) : (
+              <TableRow>
+                <TableCell
+                  colSpan={columns.length}
+                  className="h-24 text-center"
+                >
+                  No results.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       </ScrollArea>
 
-      <div className="flex items-center justify-between p-2 border-t">
-        <div className="flex items-center space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.setPageIndex(0)}
-            disabled={!table.getCanPreviousPage()}
-          >
-            {"<<"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            {"<"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            {">"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-            disabled={!table.getCanNextPage()}
-          >
-            {">>"}
-          </Button>
-        </div>
-        <div className="flex items-center space-x-2 text-sm">
-          <div>Page</div>
-          <strong>
-            {table.getState().pagination.pageIndex + 1} of{" "}
-            {table.getPageCount()}
-          </strong>
-        </div>
-        <div className="flex items-center space-x-2">
-          <span className="text-sm">Go to page:</span>
-          <Input
-            type="number"
-            defaultValue={table.getState().pagination.pageIndex + 1}
-            onChange={(e) => {
-              const page = e.target.value ? Number(e.target.value) - 1 : 0;
-              table.setPageIndex(page);
-            }}
-            className="w-16 h-8 text-sm"
-            min={1}
-            max={table.getPageCount()}
-          />
-        </div>
-        {!hideRowsPerPage && (
-          <div className="flex items-center space-x-2">
-            <Select
-              value={`${table.getState().pagination.pageSize}`}
-              onValueChange={(value) => {
-                table.setPageSize(Number(value));
-              }}
-            >
-              <SelectTrigger className="h-8 w-[70px] text-sm">
-                <SelectValue
-                  placeholder={table.getState().pagination.pageSize}
-                />
-              </SelectTrigger>
-              <SelectContent side="top">
-                {[10, 20, 30, 40, 50].map((size) => (
-                  <SelectItem key={size} value={`${size}`}>
-                    {size}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span className="text-sm text-muted-foreground">Rows per page</span>
+      <div className="flex items-center justify-end p-4">
+        {!hideRowSelectionCount && (
+          <div className="flex-1 text-sm text-muted-foreground">
+            {table.getSelectedRowModel().rows.length > 0 && (
+              <div>
+                {table.getSelectedRowModel().rows.length} of {data?.length || 0}{" "}
+                row(s) selected.
+              </div>
+            )}
           </div>
         )}
-        <div className="text-sm text-muted-foreground">
-          {table.getFilteredSelectedRowModel().rows.length} of{" "}
-          {table.getFilteredRowModel().rows.length} row(s) selected.
+        <div className="flex items-center space-x-6 lg:space-x-8">
+          {!hideRowsPerPage && (
+            <div className="flex items-center space-x-2">
+              <p className="text-sm font-medium">Rows per page</p>
+              <Select
+                value={`${pageSize}`}
+                onValueChange={(value) => {
+                  onPaginationChange({
+                    pageIndex: 0,
+                    pageSize: Number(value),
+                  });
+                }}
+              >
+                <SelectTrigger className="h-8 w-[70px]">
+                  <SelectValue placeholder={pageSize} />
+                </SelectTrigger>
+                <SelectContent side="top">
+                  {[10, 20, 30, 40, 50].map((pageSize) => (
+                    <SelectItem key={pageSize} value={`${pageSize}`}>
+                      {pageSize}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="flex w-[100px] items-center justify-center text-sm font-medium">
+            Page {pageIndex + 1} of {Math.max(1, pageCount)}
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              className="hidden h-8 w-8 p-0 lg:flex"
+              onClick={() => {
+                onPaginationChange({
+                  pageIndex: 0,
+                  pageSize,
+                });
+              }}
+              disabled={pageIndex === 0}
+            >
+              <span className="sr-only">Go to first page</span>
+              <ChevronsLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              className="h-8 w-8 p-0"
+              onClick={() => {
+                onPaginationChange({
+                  pageIndex: pageIndex - 1,
+                  pageSize,
+                });
+              }}
+              disabled={pageIndex === 0}
+            >
+              <span className="sr-only">Go to previous page</span>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              className="h-8 w-8 p-0"
+              onClick={() => {
+                onPaginationChange({
+                  pageIndex: pageIndex + 1,
+                  pageSize,
+                });
+              }}
+              disabled={pageIndex === pageCount - 1}
+            >
+              <span className="sr-only">Go to next page</span>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              className="hidden h-8 w-8 p-0 lg:flex"
+              onClick={() => {
+                onPaginationChange({
+                  pageIndex: pageCount - 1,
+                  pageSize,
+                });
+              }}
+              disabled={pageIndex === pageCount - 1}
+            >
+              <span className="sr-only">Go to last page</span>
+              <ChevronsRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
     </div>
