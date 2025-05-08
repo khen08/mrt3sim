@@ -35,6 +35,7 @@ import { useDataViewer, useModalStore } from "@/store/modalStore";
 import { MetricsTab, MetricsSummaryTab } from "./metrics";
 import { useAPIStore } from "@/store/apiStore";
 import { PEAK_HOURS } from "@/lib/constants";
+import { useHasMetrics } from "@/store/metricsStore";
 
 // Custom compact header component for better overflow handling
 const CompactColumnHeader = ({
@@ -398,10 +399,28 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
     (state) => state.fetchSimulationMetrics
   );
 
+  // Check if simulation has passenger data and metrics
+  const hasMetrics = useHasMetrics();
+
+  // Check if we're simulating passengers
+  const simulatePassengers = useSimulationStore(
+    (state) => state.simulatePassengers
+  );
+
   // Fetch metrics data when tab is selected
   useEffect(() => {
-    if (isOpen && activeTabId === "metrics" && loadedSimulationId !== null) {
-      // Check if we already have metrics data
+    if (
+      isOpen &&
+      activeTabId === "metrics" &&
+      loadedSimulationId !== null &&
+      simulatePassengers
+    ) {
+      // Check if we already have metrics data and if we know this simulation has no metrics
+      if (hasMetrics === false) {
+        // Don't fetch if we know there are no metrics
+        return;
+      }
+
       const currentMetricsData = rawData["metrics"] || [];
       if (currentMetricsData.length === 0 && !isLoading) {
         // Only fetch if we don't have data and aren't already loading
@@ -415,7 +434,20 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
     rawData,
     isLoading,
     fetchSimulationMetrics,
+    simulatePassengers,
+    hasMetrics,
   ]);
+
+  // If metrics tabs are selected but we know there are no metrics, switch to timetable tab
+  useEffect(() => {
+    if (
+      (activeTabId === "metrics" || activeTabId === "metricsSummary") &&
+      hasMetrics === false &&
+      isOpen
+    ) {
+      setActiveTabId("timetable");
+    }
+  }, [activeTabId, hasMetrics, isOpen, setActiveTabId]);
 
   return (
     // Use store action for closing
@@ -441,21 +473,32 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
             onValueChange={handleTabChange}
             className="w-full flex flex-col flex-1 overflow-hidden" // Added flex classes
           >
-            <TabsList className="grid w-full grid-cols-3 flex-shrink-0">
-              {" "}
-              {/* Changed from grid-cols-3 to grid-cols-4 */}
+            <TabsList
+              className={`grid w-full ${
+                hasMetrics === false ? "grid-cols-1" : "grid-cols-3"
+              } flex-shrink-0`}
+            >
               <TabsTrigger value="timetable" className="flex items-center">
                 <IconClock className="mr-2 h-4 w-4" />
                 <span>Timetable</span>
               </TabsTrigger>
-              <TabsTrigger value="metrics" className="flex items-center">
-                <IconChartBar className="mr-2 h-4 w-4" />
-                <span>Metrics</span>
-              </TabsTrigger>
-              <TabsTrigger value="metricsSummary" className="flex items-center">
-                <IconChartBar className="mr-2 h-4 w-4" />
-                <span>Metrics Summary</span>
-              </TabsTrigger>
+
+              {/* Only show metrics tabs if passenger data exists */}
+              {hasMetrics !== false && (
+                <>
+                  <TabsTrigger value="metrics" className="flex items-center">
+                    <IconChartBar className="mr-2 h-4 w-4" />
+                    <span>Metrics</span>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="metricsSummary"
+                    className="flex items-center"
+                  >
+                    <IconChartBar className="mr-2 h-4 w-4" />
+                    <span>Metrics Summary</span>
+                  </TabsTrigger>
+                </>
+              )}
             </TabsList>
 
             {/* Search Input & Reset Sort Button Container */}
