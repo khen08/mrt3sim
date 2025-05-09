@@ -5,8 +5,10 @@ import Image from "next/image";
 import { TourStep, useTourStore } from "@/store/tourStore";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { TextEffect } from "@/components/motion-primitives/text-effect";
+import { TextRoll } from "@/components/motion-primitives/text-roll";
 
-const TourSpeechBubble: React.FC = () => {
+const TourSpeechBubble = () => {
   const {
     isActive,
     currentSection,
@@ -22,6 +24,9 @@ const TourSpeechBubble: React.FC = () => {
   const speechBubbleRef = useRef<HTMLDivElement>(null);
   const mascotRef = useRef<HTMLDivElement>(null);
   const [overlayVisible, setOverlayVisible] = useState(false);
+
+  // Add key state to force animation reset
+  const [animationKey, setAnimationKey] = useState(0);
 
   // Get the current steps array based on section
   const steps = currentSection === 1 ? getActiveSection1Steps() : section2Steps;
@@ -164,6 +169,18 @@ const TourSpeechBubble: React.FC = () => {
     };
   }, [isActive, currentStep, endTour]);
 
+  // Handle next step animation reset
+  const handleNextStep = () => {
+    setAnimationKey((prev) => prev + 1); // Update key to force animation restart
+    nextStep();
+  };
+
+  // Handle previous step animation reset
+  const handlePrevStep = () => {
+    setAnimationKey((prev) => prev + 1); // Update key to force animation restart
+    prevStep();
+  };
+
   if (!isActive || !currentStep) {
     return null;
   }
@@ -183,11 +200,27 @@ const TourSpeechBubble: React.FC = () => {
       {/* Speech Bubble - now using theme-aware styles */}
       <div ref={speechBubbleRef} className="speech-bubble tail-left">
         <div className="flex flex-col">
-          <h3 className="text-lg font-bold text-primary mb-2">
+          {/* Use TextRoll for title with 3D flip animation */}
+          <TextRoll
+            key={`title-${animationKey}-${currentStepIndex}`}
+            className="text-lg font-bold text-primary mb-2"
+            duration={0.2}
+          >
             {currentStep.title}
-          </h3>
+          </TextRoll>
 
-          <p className="text-base mb-4">{currentStep.content}</p>
+          {/* Use TextEffect for content with a fade-in animation */}
+          <TextEffect
+            key={`content-${animationKey}-${currentStepIndex}`}
+            as="p"
+            className="text-base mb-4"
+            preset="fade"
+            per="word"
+            delay={0.3}
+            speedReveal={1}
+          >
+            {currentStep.content}
+          </TextEffect>
 
           <div className="flex justify-between items-center mt-auto">
             <div className="text-sm text-muted-foreground">
@@ -195,12 +228,16 @@ const TourSpeechBubble: React.FC = () => {
             </div>
             <div className="flex items-center gap-2">
               {currentStepIndex > 0 && (
-                <Button variant="outline" onClick={prevStep} className="px-3">
+                <Button
+                  variant="outline"
+                  onClick={handlePrevStep}
+                  className="px-3"
+                >
                   Back
                 </Button>
               )}
               <Button
-                onClick={nextStep}
+                onClick={handleNextStep}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground px-4"
               >
                 {currentStepIndex === steps.length - 1 ? "Finish" : "Next"}

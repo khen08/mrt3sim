@@ -76,6 +76,7 @@ import { DataViewerModal } from "@/components/DataViewerModal";
 import { SimulationNameDialog } from "@/components/SimulationNameDialog";
 import TourManager from "@/components/tour/TourManager";
 import { useTourStore } from "@/store/tourStore";
+import { TextShimmer } from "@/components/motion-primitives/text-shimmer";
 
 // Define props for the LoadingPlaceholder component
 interface LoadingPlaceholderProps {
@@ -99,8 +100,21 @@ const LoadingPlaceholder: React.FC<LoadingPlaceholderProps> = ({
     <div className="flex-grow flex flex-col items-center justify-center text-muted-foreground p-4 space-y-4">
       <div className="bg-card/90 backdrop-blur-sm rounded-lg p-8 shadow-xl flex flex-col items-center border-2 border-mrt-blue">
         <IconLoader2 className="h-20 w-20 animate-spin text-mrt-blue mb-6" />
-        <p className="text-2xl font-bold text-card-foreground">{message}</p>
-        <p className="text-lg text-muted-foreground mt-3">{detailMessage}</p>
+        <TextShimmer
+          as="p"
+          className="text-2xl font-bold text-card-foreground"
+          duration={2.5}
+        >
+          {message}
+        </TextShimmer>
+        <TextShimmer
+          as="p"
+          className="text-lg text-muted-foreground mt-3"
+          duration={2}
+          spread={1.5}
+        >
+          {detailMessage}
+        </TextShimmer>
       </div>
     </div>
   );
@@ -856,7 +870,9 @@ export default function Home() {
               {isLoading && !simulationSettings && (
                 <div className="flex justify-center items-center p-4">
                   <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
-                  <span>Loading default settings...</span>
+                  <TextShimmer as="span" duration={1.5}>
+                    Loading default settings...
+                  </TextShimmer>
                 </div>
               )}
 
@@ -980,11 +996,11 @@ export default function Home() {
                   <>
                     <div className="absolute inset-0 bg-mrt-blue/20 backdrop-blur-[1px] flex items-center justify-center">
                       <IconLoader2 className="mr-2 h-5 w-5 animate-spin" />
-                      <span>
+                      <TextShimmer as="span" duration={1.8}>
                         {isSimulating
                           ? "Running Simulation..."
                           : "Loading Data..."}
-                      </span>
+                      </TextShimmer>
                     </div>
                   </>
                 ) : (

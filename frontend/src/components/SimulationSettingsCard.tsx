@@ -41,6 +41,7 @@ import { useSimulationStore } from "@/store/simulationStore";
 import { useFileStore } from "@/store/fileStore";
 import { useAPIStore } from "@/store/apiStore";
 import { toast } from "@/components/ui/use-toast";
+import { TextShimmer } from "@/components/motion-primitives/text-shimmer";
 
 // Define SimulationSettings type locally (copied from page.tsx)
 interface SimulationSettings {
@@ -242,9 +243,13 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
       {isSimulating && (
         <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded-md">
           <IconLoader2 className="h-10 w-10 animate-spin text-mrt-blue mb-4" />
-          <p className="text-center font-medium">
+          <TextShimmer
+            as="p"
+            className="text-center font-medium"
+            duration={1.5}
+          >
             Loading simulation settings...
-          </p>
+          </TextShimmer>
         </div>
       )}
 

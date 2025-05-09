@@ -49,6 +49,8 @@ import {
   Type,
   Clock,
 } from "lucide-react";
+import { TextShimmer } from "@/components/motion-primitives/text-shimmer";
+import { Tilt } from "@/components/motion-primitives/tilt";
 
 type TimeDistMetricType = "WAIT_TIME" | "TRAVEL_TIME";
 type TimeDistBreakdownType = "SCHEME_TYPE" | "TRIP_TYPE";
@@ -317,7 +319,9 @@ const MetricsTab: React.FC = () => {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-        <span className="ml-3">Loading metrics data...</span>
+        <TextShimmer as="span" className="ml-3" duration={1.8}>
+          Loading metrics data...
+        </TextShimmer>
       </div>
     );
   }
@@ -558,24 +562,29 @@ const MetricsTab: React.FC = () => {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 overflow-y-auto flex-grow pb-4">
             {chartGalleryItems.map((item) => (
-              <Card
+              <Tilt
                 key={item.key}
-                className="hover:shadow-lg transition-shadow cursor-pointer flex flex-col h-full"
-                onClick={() => setSelectedChartKey(item.key)}
-                data-testid={item.dataTestId}
+                rotationFactor={8}
+                springOptions={{ stiffness: 100, damping: 10 }}
               >
-                <CardHeader className="flex-shrink-0">
-                  <div className="flex items-center mb-2">
-                    <item.icon className="h-6 w-6 mr-3 text-primary" />
-                    <CardTitle className="text-lg">{item.title}</CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="flex-grow">
-                  <p className="text-sm text-muted-foreground">
-                    {item.description}
-                  </p>
-                </CardContent>
-              </Card>
+                <Card
+                  className="hover:shadow-lg transition-shadow cursor-pointer flex flex-col h-full"
+                  onClick={() => setSelectedChartKey(item.key)}
+                  data-testid={item.dataTestId}
+                >
+                  <CardHeader className="flex-shrink-0">
+                    <div className="flex items-center mb-2">
+                      <item.icon className="h-6 w-6 mr-3 text-primary" />
+                      <CardTitle className="text-lg">{item.title}</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="flex-grow">
+                    <p className="text-sm text-muted-foreground">
+                      {item.description}
+                    </p>
+                  </CardContent>
+                </Card>
+              </Tilt>
             ))}
           </div>
         </>

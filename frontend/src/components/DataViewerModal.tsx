@@ -36,6 +36,7 @@ import { MetricsTab, MetricsSummaryTab } from "./metrics";
 import { useAPIStore } from "@/store/apiStore";
 import { PEAK_HOURS } from "@/lib/constants";
 import { useHasMetrics } from "@/store/metricsStore";
+import { TextShimmer } from "@/components/motion-primitives/text-shimmer";
 
 // Custom compact header component for better overflow handling
 const CompactColumnHeader = ({
@@ -571,9 +572,13 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
               {isLoading && activeTabId === "timetable" && (
                 <div className="absolute inset-0 bg-background/80 flex flex-col items-center justify-center z-10">
                   <IconLoader2 className="h-8 w-8 animate-spin text-primary mb-2" />
-                  <p className="text-sm text-muted-foreground">
+                  <TextShimmer
+                    as="p"
+                    className="text-sm text-muted-foreground"
+                    duration={1.5}
+                  >
                     Loading data...
-                  </p>
+                  </TextShimmer>
                 </div>
               )}
 
@@ -595,9 +600,13 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
                   // Show spinner and message when not loading but no data exists yet
                   <div className="flex-1 flex flex-col items-center justify-center">
                     <IconLoader2 className="h-6 w-6 animate-spin text-muted-foreground mb-2" />
-                    <p className="text-sm text-muted-foreground">
+                    <TextShimmer
+                      as="p"
+                      className="text-sm text-muted-foreground"
+                      duration={1.5}
+                    >
                       Waiting for simulation data...
-                    </p>
+                    </TextShimmer>
                   </div>
                 ) : currentPageData.length === 0 &&
                   searchQuery.trim() !== "" ? (
