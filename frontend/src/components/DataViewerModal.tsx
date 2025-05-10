@@ -307,14 +307,14 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
     currentPageData,
     pageCount,
     totalItems,
-    peakHourFilter, // Get from store
+    peakHourFilter,
 
     // Actions
     setActiveTabId,
     setSearchQuery,
     setSorting,
     setPagination,
-    setPeakHourFilter, // Get from store
+    setPeakHourFilter,
     resetViewState,
   } = useDataViewer();
 
@@ -340,13 +340,11 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
   // Reset view state when the modal is closed or simulation changes
   useEffect(() => {
     if (!isOpen) {
-      // Reset view state when modal closes
-      // Delay slightly to avoid visual glitch if store updates before animation
-      // setTimeout(resetViewState, 150);
-    } else {
-      // Reset view state if simulation ID changes while modal is open
-      resetViewState();
-      setRowSelection({}); // Also reset local row selection
+      // Don't reset the view state when modal closes
+      // We want to preserve state between modal openings
+    } else if (loadedSimulationId) {
+      // Reset row selection on simulation ID change
+      setRowSelection({});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, loadedSimulationId]); // Depend on isOpen and loadedSimulationId
@@ -354,7 +352,8 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
   // Event Handlers using store actions
   const handleTabChange = (value: string) => {
     setActiveTabId(value as TabId);
-    setRowSelection({}); // Reset local row selection on tab change
+    // Reset local row selection on tab change
+    setRowSelection({});
   };
 
   const handleSearchChange = (value: string) => {

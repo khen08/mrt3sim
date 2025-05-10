@@ -33,6 +33,14 @@ interface TimetableEntry {
 
 type RawData = Record<TabId, any[]>; // Store raw data per tab
 
+// Structure to store tab-specific UI state
+interface TabState {
+  searchQuery: string;
+  sorting: SortingState;
+  pagination: PaginationState;
+  peakHourFilter: PeakHourFilter;
+}
+
 // Type for the state part of ModalState
 interface ModalStateProperties {
   isModalOpen: boolean;
@@ -40,10 +48,8 @@ interface ModalStateProperties {
   rawData: RawData;
   isLoading: boolean;
   error: string | null;
-  searchQuery: string;
-  sorting: SortingState;
-  pagination: PaginationState;
-  peakHourFilter: PeakHourFilter;
+  // Track state per tab
+  tabState: Record<TabId, TabState>;
   lastLoadedSimulationId: number | null; // Track the simulation ID associated with current data
 }
 
@@ -82,6 +88,14 @@ const initialPagination: PaginationState = {
 
 const initialPaginationState: PaginationState = { pageIndex: 0, pageSize: 10 };
 
+// Initial state for a single tab
+const createInitialTabState = (): TabState => ({
+  searchQuery: "",
+  sorting: [],
+  pagination: initialPaginationState,
+  peakHourFilter: "ALL",
+});
+
 const initialStateProperties: ModalStateProperties = {
   isModalOpen: false,
   activeTabId: "timetable",
@@ -93,10 +107,13 @@ const initialStateProperties: ModalStateProperties = {
   },
   isLoading: false,
   error: null,
-  searchQuery: "",
-  sorting: [],
-  pagination: initialPaginationState,
-  peakHourFilter: "ALL", // Default to ALL
+  // Initialize state for each tab
+  tabState: {
+    timetable: createInitialTabState(),
+    passengerDemand: createInitialTabState(),
+    metrics: createInitialTabState(),
+    metricsSummary: createInitialTabState(),
+  },
   lastLoadedSimulationId: null,
 };
 
@@ -105,7 +122,7 @@ export const useModalStore = create<ModalState>((set, get) => ({
   ...initialStateProperties,
   actions: {
     openModal: (initialTab: TabId = "timetable") => {
-      // Don't reset view state - keep existing data
+      // Just open the modal but don't reset the tab's state
       set({ isModalOpen: true, activeTabId: initialTab });
 
       const simulationId = useSimulationStore.getState().loadedSimulationId;
@@ -125,18 +142,13 @@ export const useModalStore = create<ModalState>((set, get) => ({
       }
     },
     closeModal: () => {
+      // Just close the modal without resetting any state
       set({ isModalOpen: false });
-      // Don't reset data on close - we'll keep it cached
     },
     setActiveTabId: (tabId: TabId) => {
-      // When switching tabs, only reset the search, sorting, and pagination
-      // Don't reset data or filter settings
-      set({
-        activeTabId: tabId,
-        searchQuery: "",
-        sorting: [],
-        pagination: initialPaginationState,
-      });
+      // Just switch active tab without resetting its state
+      set({ activeTabId: tabId });
+
       const simulationId = useSimulationStore.getState().loadedSimulationId;
       if (simulationId) {
         const currentRawData = get().rawData[tabId] || [];
@@ -160,42 +172,90 @@ export const useModalStore = create<ModalState>((set, get) => ({
     setIsLoading: (loading: boolean) => set({ isLoading: loading }),
     setError: (error: string | null) => set({ error, isLoading: false }),
     setSearchQuery: (query: string) =>
-      set({
-        searchQuery: query,
-        pagination: { ...get().pagination, pageIndex: 0 },
+      set((state) => {
+        const activeTabId = state.activeTabId;
+        const currentTabState = state.tabState[activeTabId];
+        const newTabState = {
+          ...currentTabState,
+          searchQuery: query,
+          pagination: { ...currentTabState.pagination, pageIndex: 0 },
+        };
+
+        return {
+          tabState: {
+            ...state.tabState,
+            [activeTabId]: newTabState,
+          },
+        };
       }),
     setSorting: (sortingUpdater) =>
-      set((state) => ({
-        sorting:
+      set((state) => {
+        const activeTabId = state.activeTabId;
+        const currentTabState = state.tabState[activeTabId];
+        const newSorting =
           typeof sortingUpdater === "function"
-            ? sortingUpdater(state.sorting)
-            : sortingUpdater,
-      })),
+            ? sortingUpdater(currentTabState.sorting)
+            : sortingUpdater;
+
+        return {
+          tabState: {
+            ...state.tabState,
+            [activeTabId]: {
+              ...currentTabState,
+              sorting: newSorting,
+            },
+          },
+        };
+      }),
     setPagination: (paginationUpdater) =>
-      set((state) => ({
-        pagination:
+      set((state) => {
+        const activeTabId = state.activeTabId;
+        const currentTabState = state.tabState[activeTabId];
+        const newPagination =
           typeof paginationUpdater === "function"
-            ? paginationUpdater(state.pagination)
-            : paginationUpdater,
-      })),
+            ? paginationUpdater(currentTabState.pagination)
+            : paginationUpdater;
+
+        return {
+          tabState: {
+            ...state.tabState,
+            [activeTabId]: {
+              ...currentTabState,
+              pagination: newPagination,
+            },
+          },
+        };
+      }),
     setPeakHourFilter: (filter: PeakHourFilter) =>
-      set({
-        peakHourFilter: filter,
-        pagination: { ...get().pagination, pageIndex: 0 }, // Reset to first page when filter changes
+      set((state) => {
+        const activeTabId = state.activeTabId;
+        const currentTabState = state.tabState[activeTabId];
+
+        return {
+          tabState: {
+            ...state.tabState,
+            [activeTabId]: {
+              ...currentTabState,
+              peakHourFilter: filter,
+              pagination: { ...currentTabState.pagination, pageIndex: 0 },
+            },
+          },
+        };
       }),
     resetViewState: () => {
-      // Only resets the view UI state, not the raw data
-      set({
-        searchQuery: "",
-        sorting: [],
-        pagination: initialPaginationState,
-        peakHourFilter: "ALL",
+      // Reset only the active tab's view state
+      const activeTabId = get().activeTabId;
+      set((state) => ({
+        tabState: {
+          ...state.tabState,
+          [activeTabId]: createInitialTabState(),
+        },
         error: null,
         isLoading: false,
-      });
+      }));
     },
     resetData: () => {
-      // Reset both view state and data
+      // Reset both data and all tab states
       set({
         rawData: {
           timetable: [],
@@ -203,10 +263,12 @@ export const useModalStore = create<ModalState>((set, get) => ({
           metrics: [],
           metricsSummary: [],
         },
-        searchQuery: "",
-        sorting: [],
-        pagination: initialPaginationState,
-        peakHourFilter: "ALL",
+        tabState: {
+          timetable: createInitialTabState(),
+          passengerDemand: createInitialTabState(),
+          metrics: createInitialTabState(),
+          metricsSummary: createInitialTabState(),
+        },
         error: null,
         isLoading: false,
       });
@@ -248,53 +310,65 @@ export const useDataViewer = () => {
   const actions = store.actions;
 
   const filteredData = useMemo(() => {
-    // First apply peak hour filter
+    // Get the current raw data for the active tab
     const currentRawData = store.rawData[store.activeTabId] || [];
+    const activeTabState = store.tabState[store.activeTabId];
+
+    // Apply peak hour filter to timetable data
     const peakHourFiltered =
       store.activeTabId === "timetable"
-        ? filterByPeakHours(currentRawData, store.peakHourFilter)
+        ? filterByPeakHours(currentRawData, activeTabState.peakHourFilter)
         : currentRawData;
 
     // Then apply search filter
-    if (!store.searchQuery) return peakHourFiltered;
-    return filter(peakHourFiltered, store.searchQuery);
-  }, [
-    store.rawData,
-    store.activeTabId,
-    store.searchQuery,
-    store.peakHourFilter, // Add dependency on peak hour filter
-  ]);
+    if (!activeTabState.searchQuery) return peakHourFiltered;
+    return filter(peakHourFiltered, activeTabState.searchQuery);
+  }, [store.rawData, store.activeTabId, store.tabState]);
 
   const sortedData = useMemo(() => {
-    return sort(filteredData, store.sorting);
-  }, [filteredData, store.sorting]);
+    const activeTabState = store.tabState[store.activeTabId];
+    return sort(filteredData, activeTabState.sorting);
+  }, [filteredData, store.activeTabId, store.tabState]);
 
   const currentPageData = useMemo(() => {
+    const activeTabState = store.tabState[store.activeTabId];
     return paginate(
       sortedData,
-      store.pagination.pageIndex,
-      store.pagination.pageSize
+      activeTabState.pagination.pageIndex,
+      activeTabState.pagination.pageSize
     );
-  }, [sortedData, store.pagination]);
+  }, [sortedData, store.activeTabId, store.tabState]);
 
   const pageCount = useMemo(() => {
-    return Math.ceil(sortedData.length / store.pagination.pageSize);
-  }, [sortedData, store.pagination.pageSize]);
+    const activeTabState = store.tabState[store.activeTabId];
+    return Math.ceil(sortedData.length / activeTabState.pagination.pageSize);
+  }, [sortedData, store.activeTabId, store.tabState]);
 
   const totalItems = useMemo(() => sortedData.length, [sortedData]);
 
+  const activeTabState = store.tabState[store.activeTabId];
+
   return {
+    // Base state
+    isModalOpen: store.isModalOpen,
     activeTabId: store.activeTabId,
     isLoading: store.isLoading,
     error: store.error,
-    searchQuery: store.searchQuery,
-    sorting: store.sorting,
-    pagination: store.pagination,
-    peakHourFilter: store.peakHourFilter, // Expose the filter
+
+    // Tab-specific state
+    searchQuery: activeTabState.searchQuery,
+    sorting: activeTabState.sorting,
+    pagination: activeTabState.pagination,
+    peakHourFilter: activeTabState.peakHourFilter,
+
+    // Computed data
     currentPageData,
     pageCount,
     totalItems,
-    ...actions, // Spread all actions
+    filteredData,
+
+    // Actions
+    ...actions,
   };
 };
 

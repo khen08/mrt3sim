@@ -179,6 +179,37 @@ export const TimeSeriesPlot: React.FC<TimeSeriesPlotProps> = ({
   const legendColor = isDarkMode ? "#CCCCCC" : "#555555";
 
   const getOption = () => {
+    // Identify peak hours gaps
+    const amPeakEnd = "09:00";
+    const pmPeakStart = "17:00";
+
+    // Create separate series for AM and PM peaks
+    const regularSeriesAM = [];
+    const regularSeriesPM = [];
+    const skipStopSeriesAM = [];
+    const skipStopSeriesPM = [];
+
+    // Split the data into AM and PM segments
+    for (let i = 0; i < hours.length; i++) {
+      const hour = hours[i];
+      const hourNumeric = parseInt(hour.split(":")[0]);
+
+      // AM peak (before 9:00)
+      if (hourNumeric < 9) {
+        regularSeriesAM.push(regularData[i]);
+        skipStopSeriesAM.push(skipStopData[i]);
+      }
+      // PM peak (17:00 and after)
+      else if (hourNumeric >= 17) {
+        regularSeriesPM.push(regularData[i]);
+        skipStopSeriesPM.push(skipStopData[i]);
+      }
+    }
+
+    // Split hours as well
+    const hoursAM = hours.filter((h) => parseInt(h.split(":")[0]) < 9);
+    const hoursPM = hours.filter((h) => parseInt(h.split(":")[0]) >= 17);
+
     const option = {
       title: {
         text: "Time Series Analysis",
@@ -187,6 +218,12 @@ export const TimeSeriesPlot: React.FC<TimeSeriesPlotProps> = ({
           color: textColor,
           fontSize: 16,
         },
+        subtext:
+          "Note: AM Peak (7-9) and PM Peak (17-19) are shown as separate segments",
+        subtextStyle: {
+          color: textColor,
+          fontSize: 12,
+        },
       },
       tooltip: {
         trigger: "axis",
@@ -194,6 +231,8 @@ export const TimeSeriesPlot: React.FC<TimeSeriesPlotProps> = ({
           let result = `<div>${params[0].axisValue}</div>`;
 
           params.forEach((param: any) => {
+            if (param.value === null || param.value === undefined) return;
+
             const value =
               selectedMetric === "PASSENGER_COUNT"
                 ? param.value.toLocaleString()
@@ -209,7 +248,12 @@ export const TimeSeriesPlot: React.FC<TimeSeriesPlotProps> = ({
         },
       },
       legend: {
-        data: ["Regular", "Skip-Stop"],
+        data: [
+          "Regular (AM)",
+          "Regular (PM)",
+          "Skip-Stop (AM)",
+          "Skip-Stop (PM)",
+        ],
         bottom: 0,
         textStyle: {
           color: legendColor,
@@ -236,6 +280,13 @@ export const TimeSeriesPlot: React.FC<TimeSeriesPlotProps> = ({
         },
         axisLine: { lineStyle: { color: axisColor } },
         axisTick: { lineStyle: { color: axisColor } },
+        axisPointer: {
+          label: {
+            formatter: (params: any) => {
+              return params.value;
+            },
+          },
+        },
       },
       yAxis: {
         type: "value",
@@ -248,35 +299,63 @@ export const TimeSeriesPlot: React.FC<TimeSeriesPlotProps> = ({
         nameGap: 50,
         axisLabel: { color: axisColor },
         splitLine: { lineStyle: { color: isDarkMode ? "#444444" : "#EEEEEE" } },
-        axisLine: { lineStyle: { color: axisColor } },
-        axisTick: { lineStyle: { color: axisColor } },
       },
       series: [
         {
-          name: "Regular",
+          name: "Regular (AM)",
           type: "line",
-          data: regularData,
+          sampling: "average",
+          data: hours.map((h, i) => {
+            const hourNumeric = parseInt(h.split(":")[0]);
+            return hourNumeric < 9 ? regularData[i] : null;
+          }),
+          lineStyle: { color: "#0066CC" },
+          itemStyle: { color: "#0066CC" },
+          connectNulls: false,
           symbol: "circle",
-          symbolSize: 8,
-          lineStyle: {
-            width: 3,
-          },
-          itemStyle: {
-            color: "#0066CC",
-          },
+          symbolSize: 6,
         },
         {
-          name: "Skip-Stop",
+          name: "Regular (PM)",
           type: "line",
-          data: skipStopData,
+          sampling: "average",
+          data: hours.map((h, i) => {
+            const hourNumeric = parseInt(h.split(":")[0]);
+            return hourNumeric >= 17 ? regularData[i] : null;
+          }),
+          lineStyle: { color: "#0066CC", type: "dashed" },
+          itemStyle: { color: "#0066CC" },
+          connectNulls: false,
           symbol: "triangle",
-          symbolSize: 8,
-          lineStyle: {
-            width: 3,
-          },
-          itemStyle: {
-            color: "#9E2B25",
-          },
+          symbolSize: 6,
+        },
+        {
+          name: "Skip-Stop (AM)",
+          type: "line",
+          sampling: "average",
+          data: hours.map((h, i) => {
+            const hourNumeric = parseInt(h.split(":")[0]);
+            return hourNumeric < 9 ? skipStopData[i] : null;
+          }),
+          lineStyle: { color: "#9E2B25" },
+          itemStyle: { color: "#9E2B25" },
+          connectNulls: false,
+          symbol: "circle",
+          symbolSize: 6,
+        },
+        {
+          name: "Skip-Stop (PM)",
+          type: "line",
+          sampling: "average",
+          data: hours.map((h, i) => {
+            const hourNumeric = parseInt(h.split(":")[0]);
+            return hourNumeric >= 17 ? skipStopData[i] : null;
+          }),
+          lineStyle: { color: "#9E2B25", type: "dashed" },
+          itemStyle: { color: "#9E2B25" },
+          connectNulls: false,
+          symbol: "triangle",
+          symbolSize: 6,
         },
       ],
     };
