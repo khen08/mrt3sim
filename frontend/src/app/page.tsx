@@ -751,6 +751,7 @@ export default function Home() {
               simulationTime={simulationTime}
               simulationResult={simulationResult}
               passengerDistributionData={passengerDistributionData}
+              selectedScheme={selectedScheme}
               className={cn(
                 selectedStation !== null &&
                   selectedTrainId === null &&

@@ -64,6 +64,8 @@ interface StationInfoProps {
   // New props for skip-stop pattern
   stationType?: "A" | "B" | "AB" | null;
   className?: string; // Add className prop
+  // Add selectedScheme prop
+  selectedScheme: "REGULAR" | "SKIP-STOP";
 }
 
 const StationInfo = ({
@@ -76,6 +78,8 @@ const StationInfo = ({
   simulationTime,
   simulationResult,
   passengerDistributionData,
+  // Add selectedScheme to destructuring
+  selectedScheme,
 }: StationInfoProps) => {
   // Calculate dynamic data based on props
   const dynamicData = useMemo(() => {
@@ -102,9 +106,11 @@ const StationInfo = ({
       let minFutureArrivalSB_A_Secs = Infinity;
       let minFutureArrivalSB_B_Secs = Infinity;
 
-      // Filter events for the current station
+      // Filter events for the current station AND current scheme
       const stationEvents = simulationResult.filter(
-        (e) => e.STATION_ID === stationId
+        (e) =>
+          e.STATION_ID === stationId &&
+          (!e.SCHEME_TYPE || e.SCHEME_TYPE === selectedScheme)
       );
 
       for (const event of stationEvents) {
@@ -212,7 +218,7 @@ const StationInfo = ({
       boardingSB,
       alightingSB,
     };
-  }, [stationId, simulationTime, simulationResult]);
+  }, [stationId, simulationTime, simulationResult, selectedScheme]);
 
   // Prepare data for the bar chart (hourly distribution)
   const chartData = useMemo(() => {
