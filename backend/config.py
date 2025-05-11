@@ -34,43 +34,43 @@ DEFAULT_SERVICE_PERIODS = [
     {
         'NAME': 'INITIAL',
         'REGULAR_TRAIN_COUNT': 13,
-        'SKIP-STOP_TRAIN_COUNT': 11,
+        'SKIP_STOP_TRAIN_COUNT': 11,
         'START_HOUR': 5,
     },
     {
         'NAME': 'AM PEAK',
         'REGULAR_TRAIN_COUNT': 18,
-        'SKIP-STOP_TRAIN_COUNT': 14,
+        'SKIP_STOP_TRAIN_COUNT': 14,
         'START_HOUR': 7
     },
     {
         'NAME': 'AM TRANSITION',
         'REGULAR_TRAIN_COUNT': 16,
-        'SKIP-STOP_TRAIN_COUNT': 12,
+        'SKIP_STOP_TRAIN_COUNT': 12,
         'START_HOUR': 9
     },
     {
         'NAME': 'BASE',
         'REGULAR_TRAIN_COUNT': 14,
-        'SKIP-STOP_TRAIN_COUNT': 14,
+        'SKIP_STOP_TRAIN_COUNT': 14,
         'START_HOUR': 10
     },
     {
         'NAME': 'PM TRANSITION',
         'REGULAR_TRAIN_COUNT': 16,
-        'SKIP-STOP_TRAIN_COUNT': 12,
+        'SKIP_STOP_TRAIN_COUNT': 12,
         'START_HOUR': 16
     },
     {
         'NAME': 'PM PEAK',
         'REGULAR_TRAIN_COUNT': 18,
-        'SKIP-STOP_TRAIN_COUNT': 14,
+        'SKIP_STOP_TRAIN_COUNT': 14,
         'START_HOUR': 17
     },
     {
         'NAME': 'SERVICE END TRANSITION',
         'REGULAR_TRAIN_COUNT': 11,
-        'SKIP-STOP_TRAIN_COUNT': 11,
+        'SKIP_STOP_TRAIN_COUNT': 11,
         'START_HOUR': 20
     }
 ]
