@@ -1510,25 +1510,6 @@ class Simulation:
 
         print(f"  [MEM:INIT STATIONS] INITIALIZED {len(self.stations)} STATIONS IN MEMORY")
 
-        if not debug and self.scheme_type == self.schemes[0]:
-            stations_for_db = []
-            for station in self.stations:
-                stations_for_db.append({
-                    'SIMULATION_ID': self.simulation_id,
-                    'STATION_ID': station.station_id,
-                    'STATION_NAME': station.name,
-                    'STATION_TYPE': station.station_type,
-                    'IS_TERMINUS': station.is_terminus,
-                    'ZONE_LENGTH': station.zone_length
-                })
-            
-            if stations_for_db:
-                try:
-                    result_count = db.stations.create_many(data=stations_for_db, skip_duplicates=True)
-                    print(f"  [DB:CREATE STATIONS ENTRIES] SUCCESSFULLY BULK INSERTED STATIONS: {result_count} ROWS CREATED")
-                except Exception as db_error:
-                    print(f"  [DB:CREATE STATIONS ENTRIES] FAILED TO BULK INSERT STATIONS: {db_error}")
-
     def _initialize_track_segments(self):
         print("\n[INITIALIZING TRACK SEGMENTS]")
         station_distances = [s["distance"] for s in self.config['stations']]
@@ -1572,24 +1553,6 @@ class Simulation:
 
         print(f"  [MEM:INIT TRACK SEGMENTS] INITIALIZED {len(self.track_segments)} TRACK SEGMENTS IN MEMORY")
 
-        if not debug and self.scheme_type == self.schemes[0]:
-            segments_for_db = []
-            for segment in self.track_segments:
-                segments_for_db.append({
-                    'SIMULATION_ID': self.simulation_id,
-                    'START_STATION_ID': segment.start_station_id,
-                    'END_STATION_ID': segment.end_station_id,
-                    'DISTANCE': segment.distance,
-                    'DIRECTION': segment.direction
-                })
-            
-            if segments_for_db:
-                try:
-                    result_count = db.track_segments.create_many(data=segments_for_db, skip_duplicates=True)
-                    print(f"  [DB:CREATE TRACK SEGMENTS ENTRIES] SUCCESSFULLY BULK INSERTED TRACK SEGMENTS: {result_count} ROWS CREATED")
-                except Exception as db_error:
-                    print(f"  [DB:CREATE TRACK SEGMENTS ENTRIES] FAILED TO BULK INSERT TRACK SEGMENTS: {db_error}")
-
     def _initialize_trains(self):
         print("\n[INITIALIZING TRAINS & TRAIN_SPECS]")
         self.trains.clear()
@@ -1617,42 +1580,6 @@ class Simulation:
                 )
             )
         print(f"  [MEM:INIT TRAINS] INITIALIZED {len(self.trains)} TRAINS IN MEMORY")
-
-        if not debug and self.scheme_type == self.schemes[0]:
-            train_specs_entry_id = None
-            try:
-                train_specs_entry = db.train_specs.create(
-                    data={
-                        'SIMULATION_ID': self.simulation_id,
-                        'SPEC_NAME': 'REGULAR TRAIN',
-                        'MAX_CAPACITY': train_specs_obj.max_capacity,
-                        'CRUISING_SPEED': train_specs_obj.cruising_speed,
-                        'PASSTHROUGH_SPEED': train_specs_obj.passthrough_speed,
-                        'ACCEL_RATE': train_specs_obj.accel_rate,
-                        'DECEL_RATE': train_specs_obj.decel_rate,
-                    }
-                )
-                train_specs_entry_id = train_specs_entry.SPEC_ID
-                print(f"  [DB:CREATE TRAIN_SPECS ENTRY] SUCCESSFULLY CREATED TRAIN SPECS ENTRY IN DB WITH SPEC_ID: {train_specs_entry.SPEC_ID}")
-            except Exception as db_error:
-                print(f"  [DB:CREATE TRAIN_SPECS ENTRY] FAILED TO CREATE ENTRY: {db_error}")
-
-            if train_specs_entry_id: # Proceed only if spec ID was obtained
-                trains_for_db = []
-                for train in self.trains:
-                    trains_for_db.append({
-                        'SIMULATION_ID': self.simulation_id,
-                        'TRAIN_ID': train.train_id,
-                        # 'SERVICE_TYPE': train.service_type, - Deprecated 
-                        'SPEC_ID': train_specs_entry_id # Use the ID from the DB entry
-                    })
-
-                if trains_for_db:
-                    try:
-                        result_count = db.trains.create_many(data=trains_for_db, skip_duplicates=True)
-                        print(f"  [DB:CREATE TRAINS ENTRIES] SUCCESSFULLY BULK INSERTED TRAINS: {result_count} ROWS CREATED")
-                    except Exception as db_error:
-                        print(f"  [DB:CREATE TRAINS ENTRIES] FAILED TO BULK INSERT TRAINS: {db_error}")
 
     def _initialize_service_periods(self, scheme_type):
         print("\n[INITIALIZING SERVICE PERIODS]")
@@ -1918,7 +1845,6 @@ class Simulation:
             self.save_metrics_to_db(travel_time, wait_time, completed_passenger_count)
         
         self.save_timetable_to_db()
-        self.update_train_loop_count()
 
     def save_timetable_to_db(self):
         """Formats timetable entries and bulk inserts them into the TRAIN_MOVEMENTS table."""
@@ -2056,46 +1982,6 @@ class Simulation:
             print(f"  [DB:CREATE SIMULATION_METRICS] SUCCESSFULLY CREATED metrics entry for SIMULATION_ID: {self.simulation_id}, SCHEME: {self.scheme_type}")
         except Exception as db_error:
             print(f"  [DB:CREATE SIMULATION_METRICS] FAILED to create metrics entry in DB: {db_error}")
-
-    def update_train_loop_count(self):
-        """Updates the train loop count in the database for each train."""
-        print(f"\n[UPDATING TRAIN LOOP COUNT FOR SIMULATION_ID: {self.simulation_id}, SCHEME: {self.scheme_type}]")
-        
-        if not self.trains:
-            print("  [UPDATE:TRAIN LOOP COUNT] No trains found in memory to update.")
-            return
-
-        print(f"  [UPDATE:TRAIN LOOP COUNT] Processing {len(self.trains)} trains for scheme {self.scheme_type}.")
-        
-        updated_count = 0
-        failed_count = 0
-        
-        # Assuming the database 'trains' table has a 'LOOP_COUNT' column
-        for train in self.trains:
-            try:
-                # Perform an individual update for each train
-                result = db.trains.update(
-                    where={
-                        'SIMULATION_ID_TRAIN_ID': { # Assuming a composite unique key
-                            'SIMULATION_ID': self.simulation_id,
-                            'TRAIN_ID': train.train_id
-                        }
-                    },
-                    data={
-                        f"{self.scheme_type.replace('-', '_').upper()}_LOOP_COUNT": train.loop_count
-                    }
-                )
-                if result:
-                    updated_count += 1
-                else:
-                    # This might happen if the train wasn't found in the DB for some reason
-                    print(f"  [DB:UPDATE TRAIN LOOP COUNT] WARNING: Update for Train ID {train.train_id} did not return a result (train might not exist in DB).")
-                    failed_count += 1
-            except Exception as db_error:
-                print(f"  [DB:UPDATE TRAIN LOOP COUNT] FAILED to update loop count for Train ID {train.train_id}: {db_error}")
-                failed_count += 1
-
-        print(f"  [UPDATE:TRAIN LOOP COUNT] Update process completed. Updated: {updated_count}, Failed/Skipped: {failed_count}")
 
     def get_station_by_id(self, station_id):
         """Fast O(1) station lookup by ID."""

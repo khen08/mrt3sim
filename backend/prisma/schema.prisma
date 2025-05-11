@@ -15,12 +15,10 @@ datasource db {
   url      = env("DATABASE_URL") // Use the environment variable
 }
 
-// --- Models based on schema.sql --- //
-
 model SIMULATIONS {
   SIMULATION_ID       Int      @id @default(autoincrement())
   NAME                String   @db.VarChar(255)
-  CONFIG              Json     @db.Json // Assumes appropriate JSON structure
+  CONFIG              Json     @db.Json // Contains all infrastructure data (stations, tracks, trains, specs)
   START_TIME          DateTime @db.DateTime
   END_TIME            DateTime @db.DateTime
   DWELL_TIME          Int
@@ -32,97 +30,8 @@ model SIMULATIONS {
 
   // Relations
   metrics         SIMULATION_METRICS[] // Relation to the new metrics table
-  train_specs     TRAIN_SPECS[]
-  stations        STATIONS[]
-  track_segments  TRACK_SEGMENTS[]
-  trains          TRAINS[]
   train_movements TRAIN_MOVEMENTS[]
-  passenger_demand      PASSENGER_DEMAND[]
-}
-
-model TRAIN_SPECS {
-  SPEC_ID           Int     @id @default(autoincrement())
-  SIMULATION_ID     Int
-  SPEC_NAME         String? @db.VarChar(50) // Optional as per SQL (nullable)
-  MAX_CAPACITY      Int
-  CRUISING_SPEED    Float
-  PASSTHROUGH_SPEED Float
-  ACCEL_RATE        Float
-  DECEL_RATE        Float
-
-  // Relation back to SIMULATIONS
-  simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
-
-  // Relation to TRAINS
-  trains TRAINS[]
-
-  // Unique constraint: spec name unique per simulation
-  @@unique([SIMULATION_ID, SPEC_NAME], name: "IDX_SIMULATION_SPEC_NAME")
-  // Composite unique key needed for the foreign key reference from TRAINS
-  @@unique([SIMULATION_ID, SPEC_ID], name: "UNQ_SIMULATION_SPEC_ID")
-}
-
-model STATIONS {
-  SIMULATION_ID  Int
-  STATION_ID     Int
-  STATION_NAME   String  @db.VarChar(255)
-  STATION_TYPE   String  @db.VarChar(10) // A, B, AB
-  IS_TERMINUS    Boolean
-  ZONE_LENGTH    Int
-
-  // Relation back to SIMULATIONS
-  simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
-
-  // Relations for Track Segments
-  track_segments_start TRACK_SEGMENTS[] @relation("SegmentStart")
-  track_segments_end   TRACK_SEGMENTS[] @relation("SegmentEnd")
-
-  // Relations for Train Movements and Passengers
-  train_movements        TRAIN_MOVEMENTS[]
-  passenger_demand_origin      PASSENGER_DEMAND[]      @relation("PassengerDemandOrigin")
-  passenger_demand_destination PASSENGER_DEMAND[]      @relation("PassengerDemandDestination")
-
-  // Composite primary key
-  @@id([SIMULATION_ID, STATION_ID])
-}
-
-model TRACK_SEGMENTS {
-  SIMULATION_ID    Int
-  START_STATION_ID Int
-  END_STATION_ID   Int
-  DIRECTION        String @db.VarChar(10) // northbound, southbound
-  DISTANCE         Float
-
-  // Relation back to SIMULATIONS
-  simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
-
-  // Relations to STATIONS for start and end points
-  start_station STATIONS @relation("SegmentStart", fields: [SIMULATION_ID, START_STATION_ID], references: [SIMULATION_ID, STATION_ID], onDelete: Cascade)
-  end_station   STATIONS @relation("SegmentEnd", fields: [SIMULATION_ID, END_STATION_ID], references: [SIMULATION_ID, STATION_ID], onDelete: Cascade)
-
-  // Composite primary key
-  @@id([SIMULATION_ID, START_STATION_ID, END_STATION_ID, DIRECTION])
-}
-
-model TRAINS {
-  SIMULATION_ID Int
-  TRAIN_ID      Int
-  //SERVICE_TYPE  String @db.VarChar(10) // A, B, AB - Deprecated from core.py will instead re-assign service_types based on previous train's service_type
-  SPEC_ID       Int // Links to TRAIN_SPECS
-  REGULAR_LOOP_COUNT Int @default(0)
-  SKIP_STOP_LOOP_COUNT Int @default(0)
-
-  // Relation back to SIMULATIONS
-  simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
-
-  // Relation to simulation-specific TRAIN_SPECS
-  specs TRAIN_SPECS @relation(fields: [SIMULATION_ID, SPEC_ID], references: [SIMULATION_ID, SPEC_ID], onDelete: Cascade)
-
-  // Relations for Train Movements and Passengers
-  train_movements      TRAIN_MOVEMENTS[]
-
-  // Composite primary key
-  @@id([SIMULATION_ID, TRAIN_ID])
+  passenger_demand PASSENGER_DEMAND[]
 }
 
 model TRAIN_MOVEMENTS {
@@ -145,10 +54,6 @@ model TRAIN_MOVEMENTS {
   // Relation back to SIMULATIONS
   simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
 
-  // Relations to TRAINS and STATIONS
-  train   TRAINS   @relation(fields: [SIMULATION_ID, TRAIN_ID], references: [SIMULATION_ID, TRAIN_ID], onDelete: Cascade)
-  station STATIONS @relation(fields: [SIMULATION_ID, STATION_ID], references: [SIMULATION_ID, STATION_ID], onDelete: Cascade)
-
   @@index([SIMULATION_ID, ARRIVAL_TIME], name: "IDX_TRAIN_MOVEMENTS_TIME")
 }
 
@@ -159,7 +64,6 @@ model PASSENGER_DEMAND {
   DESTINATION_STATION_ID        Int
   ARRIVAL_TIME_AT_ORIGIN        DateTime    @db.DateTime // Time the demand group arrives at the origin
   DEPARTURE_TIME_FROM_ORIGIN    DateTime?   @db.DateTime // Time the demand group departs from the origin
-
   ARRIVAL_TIME_AT_TRANSFER      DateTime?   @db.DateTime // Time the demand group arrives at the transfer station
   DEPARTURE_TIME_FROM_TRANSFER  DateTime?   @db.DateTime // Time the demand group departs from the transfer station
   ARRIVAL_TIME_AT_DESTINATION   DateTime?   @db.DateTime // Time the demand group arrives at the destination
@@ -171,10 +75,6 @@ model PASSENGER_DEMAND {
   // Relation back to SIMULATIONS
   simulation SIMULATIONS @relation(fields: [SIMULATION_ID], references: [SIMULATION_ID], onDelete: Cascade)
 
-  // Relations to STATIONS for origin and destination
-  origin_station      STATIONS @relation("PassengerDemandOrigin", fields: [SIMULATION_ID, ORIGIN_STATION_ID], references: [SIMULATION_ID, STATION_ID], onDelete: Cascade)
-  destination_station STATIONS @relation("PassengerDemandDestination", fields: [SIMULATION_ID, DESTINATION_STATION_ID], references: [SIMULATION_ID, STATION_ID], onDelete: Cascade)
-
   // Composite primary key based on identifying characteristics of demand
   @@id([SIMULATION_ID, SCHEME_TYPE, ARRIVAL_TIME_AT_ORIGIN, ORIGIN_STATION_ID, DESTINATION_STATION_ID])
   @@index([SIMULATION_ID, ORIGIN_STATION_ID], name: "IDX_PASSENGER_DEMAND_ORIGIN")
@@ -182,7 +82,6 @@ model PASSENGER_DEMAND {
   @@index([SIMULATION_ID, SCHEME_TYPE, ORIGIN_STATION_ID, DESTINATION_STATION_ID], name: "IDX_PASSENGER_DEMAND_OD_PAIR")
 }
 
-// --- New Model for Simulation Metrics --- //
 model SIMULATION_METRICS {
   METRIC_ID        Int      @id @default(autoincrement())
   SIMULATION_ID    Int      // Foreign key linking back to SIMULATIONS
