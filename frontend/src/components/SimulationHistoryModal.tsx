@@ -122,17 +122,13 @@ export function SimulationHistoryModal({
   const handleDeleteSelectedSimulations = async () => {
     const selectedIndices = Object.keys(historyRowSelection);
 
-    // Create a map of all simulations with their unique IDs
-    const simulationMap = React.useMemo(() => {
-      const map = new Map();
-      simulations.forEach((sim, index) => {
-        const pageIndex = Math.floor(index / 8);
-        const rowIndex = index % 8;
-        const uniqueId = `page${pageIndex}_row${rowIndex}`;
-        map.set(uniqueId, sim.SIMULATION_ID);
-      });
-      return map;
-    }, [simulations]);
+    const simulationMap = new Map();
+    simulations.forEach((sim, index) => {
+      const pageIndex = Math.floor(index / 8);
+      const rowIndex = index % 8;
+      const uniqueId = `page${pageIndex}_row${rowIndex}`;
+      simulationMap.set(uniqueId, sim.SIMULATION_ID);
+    });
 
     // Map the selected unique IDs to their actual simulation IDs
     const selectedIds = selectedIndices

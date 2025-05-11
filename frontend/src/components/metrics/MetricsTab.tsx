@@ -115,6 +115,8 @@ const MetricsTab: React.FC = () => {
     (state) => state.setSelectedTimePeriod
   );
 
+  const isFullDayView = useSimulationStore((state) => state.isFullDayView);
+
   // Fetch metrics and passenger demand when the component mounts or simulation ID changes
   useEffect(() => {
     if (loadedSimulationId) {
@@ -230,6 +232,7 @@ const MetricsTab: React.FC = () => {
             width={1000}
             selectedMetric={timeSeriesMetric}
             onMetricChange={setTimeSeriesMetric}
+            isFullDayView={isFullDayView}
           />
         ),
         dataTestId: "time-series-card",
@@ -258,6 +261,7 @@ const MetricsTab: React.FC = () => {
       tripTypeMetric,
       selectedHeatmapMetric,
       selectedHeatmapScheme,
+      isFullDayView,
     ]
   );
 
