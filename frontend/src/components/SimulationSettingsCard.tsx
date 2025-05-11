@@ -35,7 +35,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
-import React, { useRef } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { cn, formatFileName } from "@/lib/utils";
 import { useSimulationStore } from "@/store/simulationStore";
 import { useFileStore } from "@/store/fileStore";
@@ -47,10 +47,13 @@ import { TextShimmer } from "@/components/motion-primitives/text-shimmer";
 interface SimulationSettings {
   dwellTime: number;
   turnaroundTime: number;
-  acceleration: number;
-  deceleration: number;
-  cruisingSpeed: number;
-  maxCapacity: number;
+  trainSpecs: {
+    acceleration: number;
+    deceleration: number;
+    cruisingSpeed: number;
+    passthroughSpeed: number;
+    maxCapacity: number;
+  };
   schemeType: "REGULAR" | "SKIP-STOP";
   schemePattern: string[];
   stations: {
@@ -124,6 +127,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
   const uploadStatus = useFileStore((state) => state.uploadStatus);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Store default settings for per-input reset
+  const [defaultSettings, setDefaultSettings] =
+    useState<SimulationSettings | null>(null);
+  useEffect(() => {
+    useAPIStore
+      .getState()
+      .fetchDefaultSettings()
+      .then((defaults) => {
+        if (defaults) setDefaultSettings(defaults);
+      });
+  }, []);
 
   if (!simulationSettings) {
     // Render nothing or a loading indicator if settings are not yet loaded
@@ -273,6 +288,59 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
   // Determine if a passenger data file is needed but missing
   const needsFileUpload =
     simulatePassengers && !simulationInput.filename && !nextRunFilename;
+
+  // Helper to reset a single field to default
+  const handleResetField = (field: string) => {
+    if (!defaultSettings) return;
+    if (["dwellTime", "turnaroundTime"].includes(field)) {
+      updateSimulationSetting(field, (defaultSettings as any)[field]);
+    } else if (
+      [
+        "acceleration",
+        "deceleration",
+        "cruisingSpeed",
+        "passthroughSpeed",
+        "maxCapacity",
+      ].includes(field)
+    ) {
+      updateSimulationSetting("trainSpecs", {
+        ...simulationSettings.trainSpecs,
+        [field]: (defaultSettings.trainSpecs as any)[field],
+      });
+    }
+  };
+
+  // Helper to reset a single service period field
+  const handleResetServicePeriodField = (
+    index: number,
+    field: "REGULAR_TRAIN_COUNT" | "SKIP_STOP_TRAIN_COUNT"
+  ) => {
+    if (!defaultSettings) return;
+    const updatedPeriods = [...simulationSettings.servicePeriods];
+    updatedPeriods[index] = {
+      ...updatedPeriods[index],
+      [field]: defaultSettings.servicePeriods[index][field],
+    };
+    updateSimulationSetting("servicePeriods", updatedPeriods);
+  };
+
+  // Add this helper for station scheme reset:
+  const handleResetStationScheme = (index: number) => {
+    if (!defaultSettings) return;
+    const defaultScheme = defaultSettings.stations[index]?.scheme || "AB";
+    updateStationScheme(index, defaultScheme);
+  };
+
+  // Add this helper for START_HOUR reset:
+  const handleResetServicePeriodStartHour = (index: number) => {
+    if (!defaultSettings) return;
+    const updatedPeriods = [...simulationSettings.servicePeriods];
+    updatedPeriods[index] = {
+      ...updatedPeriods[index],
+      START_HOUR: defaultSettings.servicePeriods[index].START_HOUR,
+    };
+    updateSimulationSetting("servicePeriods", updatedPeriods);
+  };
 
   return (
     <Card className="simulation-settings mb-4 relative">
@@ -559,18 +627,29 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     inputMode="numeric"
                     value={simulationSettings.dwellTime || ""}
                     onChange={handleSettingChange}
-                    className="pr-8 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
                     onFocus={(e) => {
-                      // Clear value when focusing if it's 0
                       if (e.target.value === "0") {
                         e.target.value = "";
                       }
                     }}
                   />
-                  <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
+                  <span className="absolute right-10 top-0 bottom-0 flex items-center pr-2 text-sm text-muted-foreground pointer-events-none">
                     seconds
                   </span>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1"
+                    onClick={() => handleResetField("dwellTime")}
+                    disabled={isSimulating || !defaultSettings}
+                    tabIndex={-1}
+                    aria-label="Reset to default"
+                  >
+                    <IconRotateClockwise size={16} />
+                  </Button>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   Passengers board/alight time
@@ -589,18 +668,29 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     inputMode="numeric"
                     value={simulationSettings.turnaroundTime || ""}
                     onChange={handleSettingChange}
-                    className="pr-8 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
                     onFocus={(e) => {
-                      // Clear value when focusing if it's 0
                       if (e.target.value === "0") {
                         e.target.value = "";
                       }
                     }}
                   />
-                  <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
+                  <span className="absolute right-10 top-0 bottom-0 flex items-center pr-2 text-sm text-muted-foreground pointer-events-none">
                     seconds
                   </span>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1"
+                    onClick={() => handleResetField("turnaroundTime")}
+                    disabled={isSimulating || !defaultSettings}
+                    tabIndex={-1}
+                    aria-label="Reset to default"
+                  >
+                    <IconRotateClockwise size={16} />
+                  </Button>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   Switching directions at endpoints
@@ -623,18 +713,29 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     inputMode="decimal"
                     value={simulationSettings.trainSpecs.acceleration || ""}
                     onChange={handleSettingChange}
-                    className="pr-12 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
                     onFocus={(e) => {
-                      // Clear value when focusing if it's 0
                       if (e.target.value === "0") {
                         e.target.value = "";
                       }
                     }}
                   />
-                  <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
+                  <span className="absolute right-10 top-0 bottom-0 flex items-center pr-2 text-sm text-muted-foreground pointer-events-none">
                     m/s²
                   </span>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1"
+                    onClick={() => handleResetField("acceleration")}
+                    disabled={isSimulating || !defaultSettings}
+                    tabIndex={-1}
+                    aria-label="Reset to default"
+                  >
+                    <IconRotateClockwise size={16} />
+                  </Button>
                 </div>
               </div>
               <div>
@@ -650,18 +751,29 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     inputMode="decimal"
                     value={simulationSettings.trainSpecs.deceleration || ""}
                     onChange={handleSettingChange}
-                    className="pr-12 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
                     onFocus={(e) => {
-                      // Clear value when focusing if it's 0
                       if (e.target.value === "0") {
                         e.target.value = "";
                       }
                     }}
                   />
-                  <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
+                  <span className="absolute right-10 top-0 bottom-0 flex items-center pr-2 text-sm text-muted-foreground pointer-events-none">
                     m/s²
                   </span>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1"
+                    onClick={() => handleResetField("deceleration")}
+                    disabled={isSimulating || !defaultSettings}
+                    tabIndex={-1}
+                    aria-label="Reset to default"
+                  >
+                    <IconRotateClockwise size={16} />
+                  </Button>
                 </div>
               </div>
               <div>
@@ -677,18 +789,29 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     inputMode="numeric"
                     value={simulationSettings.trainSpecs.cruisingSpeed || ""}
                     onChange={handleSettingChange}
-                    className="pr-14 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
                     onFocus={(e) => {
-                      // Clear value when focusing if it's 0
                       if (e.target.value === "0") {
                         e.target.value = "";
                       }
                     }}
                   />
-                  <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
+                  <span className="absolute right-10 top-0 bottom-0 flex items-center pr-2 text-sm text-muted-foreground pointer-events-none">
                     km/h
                   </span>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1"
+                    onClick={() => handleResetField("cruisingSpeed")}
+                    disabled={isSimulating || !defaultSettings}
+                    tabIndex={-1}
+                    aria-label="Reset to default"
+                  >
+                    <IconRotateClockwise size={16} />
+                  </Button>
                 </div>
               </div>
             </div>
@@ -708,18 +831,29 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     inputMode="numeric"
                     value={simulationSettings.trainSpecs.maxCapacity || ""}
                     onChange={handleSettingChange}
-                    className="pr-16 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
                     onFocus={(e) => {
-                      // Clear value when focusing if it's 0
                       if (e.target.value === "0") {
                         e.target.value = "";
                       }
                     }}
                   />
-                  <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
+                  <span className="absolute right-10 top-0 bottom-0 flex items-center pr-2 text-sm text-muted-foreground pointer-events-none">
                     pax
                   </span>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1"
+                    onClick={() => handleResetField("maxCapacity")}
+                    disabled={isSimulating || !defaultSettings}
+                    tabIndex={-1}
+                    aria-label="Reset to default"
+                  >
+                    <IconRotateClockwise size={16} />
+                  </Button>
                 </div>
                 <p className="text-sm text-muted-foreground mt-1">
                   Max passengers per train.
@@ -782,7 +916,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                                   className="h-7 text-xs"
                                 />
                               </div>
-                              <div className="col-span-3">
+                              <div className="col-span-3 relative">
                                 <Input
                                   type="number"
                                   min="0"
@@ -813,10 +947,24 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                                     }
                                   }}
                                   disabled={isSimulating}
-                                  className="h-7 text-xs"
+                                  className="h-7 text-xs pr-10"
                                 />
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1"
+                                  onClick={() =>
+                                    handleResetServicePeriodStartHour(index)
+                                  }
+                                  disabled={isSimulating || !defaultSettings}
+                                  tabIndex={-1}
+                                  aria-label="Reset to default"
+                                >
+                                  <IconRotateClockwise size={14} />
+                                </Button>
                               </div>
-                              <div className="col-span-3">
+                              <div className="col-span-3 relative">
                                 <Input
                                   type="number"
                                   min="1"
@@ -849,8 +997,25 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                                     }
                                   }}
                                   disabled={isSimulating}
-                                  className="h-7 text-xs"
+                                  className="h-7 text-xs pr-10"
                                 />
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1"
+                                  onClick={() =>
+                                    handleResetServicePeriodField(
+                                      index,
+                                      "REGULAR_TRAIN_COUNT"
+                                    )
+                                  }
+                                  disabled={isSimulating || !defaultSettings}
+                                  tabIndex={-1}
+                                  aria-label="Reset to default"
+                                >
+                                  <IconRotateClockwise size={14} />
+                                </Button>
                               </div>
                             </div>
                           )
@@ -880,7 +1045,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                                   className="h-7 text-xs"
                                 />
                               </div>
-                              <div className="col-span-3">
+                              <div className="col-span-3 relative">
                                 <Input
                                   type="number"
                                   min="0"
@@ -911,10 +1076,24 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                                     }
                                   }}
                                   disabled={isSimulating}
-                                  className="h-7 text-xs"
+                                  className="h-7 text-xs pr-10"
                                 />
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1"
+                                  onClick={() =>
+                                    handleResetServicePeriodStartHour(index)
+                                  }
+                                  disabled={isSimulating || !defaultSettings}
+                                  tabIndex={-1}
+                                  aria-label="Reset to default"
+                                >
+                                  <IconRotateClockwise size={14} />
+                                </Button>
                               </div>
-                              <div className="col-span-3">
+                              <div className="col-span-3 relative">
                                 <Input
                                   type="number"
                                   min="1"
@@ -947,8 +1126,25 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                                     }
                                   }}
                                   disabled={isSimulating}
-                                  className="h-7 text-xs"
+                                  className="h-7 text-xs pr-10"
                                 />
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1"
+                                  onClick={() =>
+                                    handleResetServicePeriodField(
+                                      index,
+                                      "SKIP_STOP_TRAIN_COUNT"
+                                    )
+                                  }
+                                  disabled={isSimulating || !defaultSettings}
+                                  tabIndex={-1}
+                                  aria-label="Reset to default"
+                                >
+                                  <IconRotateClockwise size={14} />
+                                </Button>
                               </div>
                             </div>
                           )
@@ -997,7 +1193,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                       </div>
                       <div className="col-span-5">{station.name}</div>
                       {/* Modified scheme selector - always enabled */}
-                      <div className="col-span-6">
+                      <div className="col-span-6 relative flex items-center">
                         <Select
                           disabled={isSimulating}
                           value={station.scheme || "AB"}
@@ -1018,6 +1214,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                             <SelectItem value="B">B</SelectItem>
                           </SelectContent>
                         </Select>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="ml-1 p-1"
+                          onClick={() => handleResetStationScheme(index)}
+                          disabled={isSimulating || !defaultSettings}
+                          tabIndex={-1}
+                          aria-label="Reset to default"
+                        >
+                          <IconRotateClockwise size={14} />
+                        </Button>
                       </div>
                       <div className="col-span-4">
                         <Input
