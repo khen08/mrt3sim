@@ -6,7 +6,7 @@ DEFAULT_STATIONS = [
     {"name": "North Avenue", "distance": 0.0},
     {"name": "Quezon Avenue", "distance": 1.2},
     {"name": "GMA-Kamuning", "distance": 1.1},
-    {"name": "Cubao", "distance": 1.8},
+    {"name": "Araneta Cubao", "distance": 1.8},
     {"name": "Santolan-Annapolis", "distance": 1.5},
     {"name": "Ortigas", "distance": 1.4},
     {"name": "Shaw Boulevard", "distance": 0.9},
@@ -19,7 +19,7 @@ DEFAULT_STATIONS = [
 ]
 
 DEFAULT_SCHEME = ['AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB']
-
+#SAMPLE SCHEME = ["AB", "A", "B", "A", "AB", "A", "B", "A", "B", "A", "B", "A", "AB"]
 # TODO: Add more train specs
 # CURRENT 3-CAR TRAINSET SPECS
 DEFAULT_TRAIN_SPECS = {
@@ -33,44 +33,51 @@ DEFAULT_TRAIN_SPECS = {
 DEFAULT_SERVICE_PERIODS = [
     {
         'NAME': 'INITIAL',
-        'TRAIN_COUNT': 13,
+        'REGULAR_TRAIN_COUNT': 13,
+        'SKIP-STOP_TRAIN_COUNT': 11,
         'START_HOUR': 5,
     },
     {
         'NAME': 'AM PEAK',
-        'TRAIN_COUNT': 18,
+        'REGULAR_TRAIN_COUNT': 18,
+        'SKIP-STOP_TRAIN_COUNT': 14,
         'START_HOUR': 7
     },
     {
         'NAME': 'AM TRANSITION',
-        'TRAIN_COUNT': 16,
+        'REGULAR_TRAIN_COUNT': 16,
+        'SKIP-STOP_TRAIN_COUNT': 12,
         'START_HOUR': 9
     },
     {
         'NAME': 'BASE',
-        'TRAIN_COUNT': 14,
+        'REGULAR_TRAIN_COUNT': 14,
+        'SKIP-STOP_TRAIN_COUNT': 14,
         'START_HOUR': 10
     },
     {
         'NAME': 'PM TRANSITION',
-        'TRAIN_COUNT': 16,
+        'REGULAR_TRAIN_COUNT': 16,
+        'SKIP-STOP_TRAIN_COUNT': 12,
         'START_HOUR': 16
     },
     {
         'NAME': 'PM PEAK',
-        'TRAIN_COUNT': 18,
+        'REGULAR_TRAIN_COUNT': 18,
+        'SKIP-STOP_TRAIN_COUNT': 14,
         'START_HOUR': 17
     },
     {
         'NAME': 'SERVICE END TRANSITION',
-        'TRAIN_COUNT': 11,
+        'REGULAR_TRAIN_COUNT': 11,
+        'SKIP-STOP_TRAIN_COUNT': 11,
         'START_HOUR': 20
     }
 ]
 
 DEFAULT_SETTINGS = {
     "dwellTime": 60,
-    "turnaroundTime": 300,
+    "turnaroundTime": 90,
     "schemeType": "REGULAR",
     "servicePeriods": DEFAULT_SERVICE_PERIODS,
     "schemePattern": DEFAULT_SCHEME,
