@@ -33,11 +33,12 @@ export interface SimulationInput {
 export interface ServicePeriod {
   NAME: string;
   START_HOUR: number;
-  TRAIN_COUNT?: number;
-  REGULAR_HEADWAY: number;
-  SKIP_STOP_HEADWAY: number;
-  REGULAR_LOOP_TIME_MINUTES: number;
-  SKIP_STOP_LOOP_TIME_MINUTES: number;
+  REGULAR_TRAIN_COUNT: number;
+  SKIP_STOP_TRAIN_COUNT: number;
+  REGULAR_HEADWAY?: number;
+  SKIP_STOP_HEADWAY?: number;
+  REGULAR_LOOP_TIME_MINUTES?: number;
+  SKIP_STOP_LOOP_TIME_MINUTES?: number;
 }
 
 // Define the simulation state

@@ -65,7 +65,8 @@ interface SimulationSettings {
 interface ServicePeriodConfig {
   NAME: string;
   START_HOUR: number;
-  TRAIN_COUNT: number;
+  REGULAR_TRAIN_COUNT: number;
+  SKIP_STOP_TRAIN_COUNT: number;
   REGULAR_HEADWAY?: number;
   SKIP_STOP_HEADWAY?: number;
   REGULAR_LOOP_TIME_MINUTES?: number;
@@ -144,12 +145,39 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
       value = e;
     } else if (typeof e === "object" && "target" in e) {
       name = e.target.name;
-      value =
-        e.target.type === "number"
-          ? parseFloat(e.target.value) || 0
-          : e.target.value;
+      const inputValue = e.target.value;
+
+      // For number inputs, handle them differently
+      if (e.target.type === "number") {
+        // Remove leading zeros by converting to string first
+        if (inputValue !== "") {
+          // Parse as number and then back to string to remove leading zeros
+          const numValue = parseFloat(inputValue);
+          if (!isNaN(numValue)) {
+            value = numValue;
+          } else {
+            value = 0;
+          }
+        } else {
+          // Empty input - use 0 for the model but display empty
+          value = 0;
+        }
+      } else {
+        value = inputValue;
+      }
+
       if (["dwellTime", "turnaroundTime"].includes(name)) {
-        value = parseInt(e.target.value, 10) || 0;
+        if (inputValue !== "") {
+          // Parse and remove leading zeros
+          const numValue = parseInt(inputValue, 10);
+          if (!isNaN(numValue)) {
+            value = numValue;
+          } else {
+            value = 0;
+          }
+        } else {
+          value = 0;
+        }
       }
 
       // Handle train specs properties
@@ -162,9 +190,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
           "maxCapacity",
         ].includes(name)
       ) {
-        // Convert maxCapacity to integer
         if (name === "maxCapacity") {
-          value = parseInt(e.target.value, 10) || 0;
+          if (inputValue !== "") {
+            // Parse and remove leading zeros
+            const numValue = parseInt(inputValue, 10);
+            if (!isNaN(numValue)) {
+              value = numValue;
+            } else {
+              value = 0;
+            }
+          } else {
+            value = 0;
+          }
         }
 
         // For train specs, update the nested object
@@ -518,10 +555,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="1"
                     min="0"
-                    value={simulationSettings.dwellTime}
+                    pattern="[1-9][0-9]*"
+                    inputMode="numeric"
+                    value={simulationSettings.dwellTime || ""}
                     onChange={handleSettingChange}
                     className="pr-8 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
+                    onFocus={(e) => {
+                      // Clear value when focusing if it's 0
+                      if (e.target.value === "0") {
+                        e.target.value = "";
+                      }
+                    }}
                   />
                   <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
                     seconds
@@ -540,10 +585,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="1"
                     min="0"
-                    value={simulationSettings.turnaroundTime}
+                    pattern="[1-9][0-9]*"
+                    inputMode="numeric"
+                    value={simulationSettings.turnaroundTime || ""}
                     onChange={handleSettingChange}
                     className="pr-8 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
+                    onFocus={(e) => {
+                      // Clear value when focusing if it's 0
+                      if (e.target.value === "0") {
+                        e.target.value = "";
+                      }
+                    }}
                   />
                   <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
                     seconds
@@ -566,10 +619,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="0.01"
                     min="0"
-                    value={simulationSettings.trainSpecs.acceleration}
+                    pattern="[0-9]*\.?[0-9]*"
+                    inputMode="decimal"
+                    value={simulationSettings.trainSpecs.acceleration || ""}
                     onChange={handleSettingChange}
                     className="pr-12 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
+                    onFocus={(e) => {
+                      // Clear value when focusing if it's 0
+                      if (e.target.value === "0") {
+                        e.target.value = "";
+                      }
+                    }}
                   />
                   <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
                     m/s²
@@ -585,10 +646,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="0.01"
                     min="0"
-                    value={simulationSettings.trainSpecs.deceleration}
+                    pattern="[0-9]*\.?[0-9]*"
+                    inputMode="decimal"
+                    value={simulationSettings.trainSpecs.deceleration || ""}
                     onChange={handleSettingChange}
                     className="pr-12 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
+                    onFocus={(e) => {
+                      // Clear value when focusing if it's 0
+                      if (e.target.value === "0") {
+                        e.target.value = "";
+                      }
+                    }}
                   />
                   <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
                     m/s²
@@ -604,10 +673,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="1"
                     min="0"
-                    value={simulationSettings.trainSpecs.cruisingSpeed}
+                    pattern="[1-9][0-9]*"
+                    inputMode="numeric"
+                    value={simulationSettings.trainSpecs.cruisingSpeed || ""}
                     onChange={handleSettingChange}
                     className="pr-14 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
+                    onFocus={(e) => {
+                      // Clear value when focusing if it's 0
+                      if (e.target.value === "0") {
+                        e.target.value = "";
+                      }
+                    }}
                   />
                   <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
                     km/h
@@ -627,10 +704,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="1"
                     min="0"
-                    value={simulationSettings.trainSpecs.maxCapacity}
+                    pattern="[1-9][0-9]*"
+                    inputMode="numeric"
+                    value={simulationSettings.trainSpecs.maxCapacity || ""}
                     onChange={handleSettingChange}
                     className="pr-16 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
+                    onFocus={(e) => {
+                      // Clear value when focusing if it's 0
+                      if (e.target.value === "0") {
+                        e.target.value = "";
+                      }
+                    }}
                   />
                   <span className="absolute right-0 top-0 bottom-0 flex items-center pr-3 text-sm text-muted-foreground pointer-events-none">
                     pax
@@ -660,82 +745,218 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                       <p className="max-w-[250px]">
                         Define the train service periods throughout the day.
                         Each period has a starting hour and how many trains
-                        should be in service.
+                        should be in service for Regular and Skip-Stop.
                       </p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               </div>
-
-              <div className="border rounded-md">
-                <div className="grid grid-cols-12 gap-4 mb-2 font-medium text-xs sticky top-0 z-10 bg-card px-4 py-2 border-b">
-                  <div className="col-span-6">Period Name</div>
-                  <div className="col-span-3">Start Hour</div>
-                  <div className="col-span-3">Train Count</div>
-                </div>
-                <div className="px-2 pt-2 pb-4 max-h-[250px] overflow-y-auto">
-                  {simulationSettings.servicePeriods &&
-                    simulationSettings.servicePeriods.map((period, index) => (
-                      <div
-                        key={`period-${index}`}
-                        className="grid grid-cols-12 gap-4 items-center mb-2 text-xs"
-                      >
-                        <div className="col-span-6">
-                          <Input
-                            value={period.NAME}
-                            disabled={true}
-                            className="h-7 text-xs"
-                          />
-                        </div>
-                        <div className="col-span-3">
-                          <Input
-                            type="number"
-                            min="0"
-                            max="23"
-                            value={period.START_HOUR}
-                            onChange={(e) => {
-                              const updatedPeriods = [
-                                ...simulationSettings.servicePeriods,
-                              ];
-                              updatedPeriods[index] = {
-                                ...period,
-                                START_HOUR: parseInt(e.target.value, 10) || 0,
-                              };
-                              updateSimulationSetting(
-                                "servicePeriods",
-                                updatedPeriods
-                              );
-                            }}
-                            disabled={isSimulating}
-                            className="h-7 text-xs"
-                          />
-                        </div>
-                        <div className="col-span-3">
-                          <Input
-                            type="number"
-                            min="1"
-                            value={period.TRAIN_COUNT}
-                            onChange={(e) => {
-                              const updatedPeriods = [
-                                ...simulationSettings.servicePeriods,
-                              ];
-                              updatedPeriods[index] = {
-                                ...period,
-                                TRAIN_COUNT: parseInt(e.target.value, 10) || 1,
-                              };
-                              updateSimulationSetting(
-                                "servicePeriods",
-                                updatedPeriods
-                              );
-                            }}
-                            disabled={isSimulating}
-                            className="h-7 text-xs"
-                          />
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
+              <Tabs defaultValue="regular" className="w-full">
+                <TabsList className="mb-2 w-fit">
+                  <TabsTrigger value="regular" disabled={isSimulating}>
+                    Regular
+                  </TabsTrigger>
+                  <TabsTrigger value="skipstop" disabled={isSimulating}>
+                    Skip-Stop
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="regular">
+                  <div className="border rounded-md">
+                    <div className="grid grid-cols-12 gap-4 mb-2 font-medium text-xs sticky top-0 z-10 bg-card px-4 py-2 border-b">
+                      <div className="col-span-6">Period Name</div>
+                      <div className="col-span-3">Start Hour</div>
+                      <div className="col-span-3">Regular Train Count</div>
+                    </div>
+                    <div className="px-2 pt-2 pb-4 max-h-[250px] overflow-y-auto">
+                      {simulationSettings.servicePeriods &&
+                        simulationSettings.servicePeriods.map(
+                          (period, index) => (
+                            <div
+                              key={`period-regular-${index}`}
+                              className="grid grid-cols-12 gap-4 items-center mb-2 text-xs"
+                            >
+                              <div className="col-span-6">
+                                <Input
+                                  value={period.NAME}
+                                  disabled={true}
+                                  className="h-7 text-xs"
+                                />
+                              </div>
+                              <div className="col-span-3">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max="23"
+                                  pattern="[0-9]*"
+                                  inputMode="numeric"
+                                  value={period.START_HOUR || ""}
+                                  onChange={(e) => {
+                                    const updatedPeriods = [
+                                      ...simulationSettings.servicePeriods,
+                                    ];
+                                    const value =
+                                      e.target.value === ""
+                                        ? 0
+                                        : parseInt(e.target.value, 10) || 0;
+                                    updatedPeriods[index] = {
+                                      ...period,
+                                      START_HOUR: value,
+                                    };
+                                    updateSimulationSetting(
+                                      "servicePeriods",
+                                      updatedPeriods
+                                    );
+                                  }}
+                                  onFocus={(e) => {
+                                    if (e.target.value === "0") {
+                                      e.target.value = "";
+                                    }
+                                  }}
+                                  disabled={isSimulating}
+                                  className="h-7 text-xs"
+                                />
+                              </div>
+                              <div className="col-span-3">
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  pattern="[1-9][0-9]*"
+                                  inputMode="numeric"
+                                  value={period.REGULAR_TRAIN_COUNT || ""}
+                                  onChange={(e) => {
+                                    const updatedPeriods = [
+                                      ...simulationSettings.servicePeriods,
+                                    ];
+                                    const value =
+                                      e.target.value === ""
+                                        ? 0
+                                        : Math.max(
+                                            1,
+                                            parseInt(e.target.value, 10) || 1
+                                          );
+                                    updatedPeriods[index] = {
+                                      ...period,
+                                      REGULAR_TRAIN_COUNT: value,
+                                    };
+                                    updateSimulationSetting(
+                                      "servicePeriods",
+                                      updatedPeriods
+                                    );
+                                  }}
+                                  onFocus={(e) => {
+                                    if (e.target.value === "0") {
+                                      e.target.value = "";
+                                    }
+                                  }}
+                                  disabled={isSimulating}
+                                  className="h-7 text-xs"
+                                />
+                              </div>
+                            </div>
+                          )
+                        )}
+                    </div>
+                  </div>
+                </TabsContent>
+                <TabsContent value="skipstop">
+                  <div className="border rounded-md">
+                    <div className="grid grid-cols-12 gap-4 mb-2 font-medium text-xs sticky top-0 z-10 bg-card px-4 py-2 border-b">
+                      <div className="col-span-6">Period Name</div>
+                      <div className="col-span-3">Start Hour</div>
+                      <div className="col-span-3">Skip-Stop Train Count</div>
+                    </div>
+                    <div className="px-2 pt-2 pb-4 max-h-[250px] overflow-y-auto">
+                      {simulationSettings.servicePeriods &&
+                        simulationSettings.servicePeriods.map(
+                          (period, index) => (
+                            <div
+                              key={`period-skipstop-${index}`}
+                              className="grid grid-cols-12 gap-4 items-center mb-2 text-xs"
+                            >
+                              <div className="col-span-6">
+                                <Input
+                                  value={period.NAME}
+                                  disabled={true}
+                                  className="h-7 text-xs"
+                                />
+                              </div>
+                              <div className="col-span-3">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max="23"
+                                  pattern="[0-9]*"
+                                  inputMode="numeric"
+                                  value={period.START_HOUR || ""}
+                                  onChange={(e) => {
+                                    const updatedPeriods = [
+                                      ...simulationSettings.servicePeriods,
+                                    ];
+                                    const value =
+                                      e.target.value === ""
+                                        ? 0
+                                        : parseInt(e.target.value, 10) || 0;
+                                    updatedPeriods[index] = {
+                                      ...period,
+                                      START_HOUR: value,
+                                    };
+                                    updateSimulationSetting(
+                                      "servicePeriods",
+                                      updatedPeriods
+                                    );
+                                  }}
+                                  onFocus={(e) => {
+                                    if (e.target.value === "0") {
+                                      e.target.value = "";
+                                    }
+                                  }}
+                                  disabled={isSimulating}
+                                  className="h-7 text-xs"
+                                />
+                              </div>
+                              <div className="col-span-3">
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  pattern="[1-9][0-9]*"
+                                  inputMode="numeric"
+                                  value={period.SKIP_STOP_TRAIN_COUNT || ""}
+                                  onChange={(e) => {
+                                    const updatedPeriods = [
+                                      ...simulationSettings.servicePeriods,
+                                    ];
+                                    const value =
+                                      e.target.value === ""
+                                        ? 0
+                                        : Math.max(
+                                            1,
+                                            parseInt(e.target.value, 10) || 1
+                                          );
+                                    updatedPeriods[index] = {
+                                      ...period,
+                                      SKIP_STOP_TRAIN_COUNT: value,
+                                    };
+                                    updateSimulationSetting(
+                                      "servicePeriods",
+                                      updatedPeriods
+                                    );
+                                  }}
+                                  onFocus={(e) => {
+                                    if (e.target.value === "0") {
+                                      e.target.value = "";
+                                    }
+                                  }}
+                                  disabled={isSimulating}
+                                  className="h-7 text-xs"
+                                />
+                              </div>
+                            </div>
+                          )
+                        )}
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
             </div>
           </TabsContent>
 
@@ -803,11 +1024,22 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                           type="number"
                           step="0.01"
                           min="0"
-                          value={station.distance}
-                          onChange={(e) =>
-                            updateStationDistance(index, Number(e.target.value))
-                          }
-                          // Disable all distance inputs
+                          pattern="[0-9]*\.?[0-9]*"
+                          inputMode="decimal"
+                          value={station.distance || ""}
+                          onChange={(e) => {
+                            const value =
+                              e.target.value === ""
+                                ? 0
+                                : Number(e.target.value);
+                            updateStationDistance(index, value);
+                          }}
+                          onFocus={(e) => {
+                            // Clear value when focusing if it's 0
+                            if (e.target.value === "0") {
+                              e.target.value = "";
+                            }
+                          }}
                           disabled={true}
                           className="h-7 text-xs"
                         />
