@@ -5,6 +5,9 @@ import {
   useCurrentProcessedMetrics,
 } from "@/store/metricsStore";
 import { usePassengerDemandStore } from "@/store/passengerDemandStore";
+import { Button } from "@/components/ui/button";
+import { IconFileSpreadsheet } from "@tabler/icons-react";
+import * as XLSX from "xlsx";
 
 const MetricsSummaryTab: React.FC = () => {
   const metricsLoading = useMetricsStore((state) => state.isLoading);
@@ -114,11 +117,320 @@ const MetricsSummaryTab: React.FC = () => {
 
   const demandSummaries = calculateDemandSummaries();
 
+  // Export to Excel function
+  const exportToExcel = () => {
+    if (!processedMetrics) return;
+
+    const demandSummaries = calculateDemandSummaries();
+    const workbook = XLSX.utils.book_new();
+
+    // System Performance Comparison worksheet
+    const systemPerformanceData = [
+      ["", "Regular Service", "Skip-Stop Service"],
+      [
+        "Total Passengers",
+        processedMetrics.basicMetrics["Total Passengers"]?.REGULAR || 0,
+        processedMetrics.basicMetrics["Total Passengers"]?.["SKIP-STOP"] || 0,
+      ],
+      [
+        "Average Wait Time (seconds)",
+        processedMetrics.averageMetrics["Average Wait Time per Passenger"]
+          ?.REGULAR || 0,
+        processedMetrics.averageMetrics["Average Wait Time per Passenger"]?.[
+          "SKIP-STOP"
+        ] || 0,
+      ],
+      [
+        "Average Travel Time (seconds)",
+        processedMetrics.averageMetrics["Average Travel Time per Passenger"]
+          ?.REGULAR || 0,
+        processedMetrics.averageMetrics["Average Travel Time per Passenger"]?.[
+          "SKIP-STOP"
+        ] || 0,
+      ],
+      [
+        "Average Journey Time (seconds)",
+        processedMetrics.averageMetrics[
+          "Average Total Journey Time per Passenger"
+        ]?.REGULAR || 0,
+        processedMetrics.averageMetrics[
+          "Average Total Journey Time per Passenger"
+        ]?.["SKIP-STOP"] || 0,
+      ],
+    ];
+
+    // Passenger Demand Breakdown worksheet
+    const demandBreakdownData = [
+      ["", "Regular Service", "Skip-Stop Service"],
+      [
+        "Direct Trips",
+        demandSummaries.directTrips.REGULAR,
+        demandSummaries.directTrips["SKIP-STOP"],
+      ],
+      [
+        "Transfer Trips",
+        demandSummaries.transferTrips.REGULAR,
+        demandSummaries.transferTrips["SKIP-STOP"],
+      ],
+      [
+        "Total Trips",
+        demandSummaries.directTrips.REGULAR +
+          demandSummaries.transferTrips.REGULAR,
+        demandSummaries.directTrips["SKIP-STOP"] +
+          demandSummaries.transferTrips["SKIP-STOP"],
+      ],
+      [
+        "% Transfer Trips",
+        demandSummaries.directTrips.REGULAR +
+          demandSummaries.transferTrips.REGULAR >
+        0
+          ? (demandSummaries.transferTrips.REGULAR /
+              (demandSummaries.directTrips.REGULAR +
+                demandSummaries.transferTrips.REGULAR)) *
+            100
+          : 0,
+        demandSummaries.directTrips["SKIP-STOP"] +
+          demandSummaries.transferTrips["SKIP-STOP"] >
+        0
+          ? (demandSummaries.transferTrips["SKIP-STOP"] /
+              (demandSummaries.directTrips["SKIP-STOP"] +
+                demandSummaries.transferTrips["SKIP-STOP"])) *
+            100
+          : 0,
+      ],
+    ];
+
+    // Time Metrics from Flow worksheet
+    const timeMetricsData = [
+      ["", "Regular Service", "Skip-Stop Service"],
+      [
+        "Average Wait Time (seconds)",
+        demandSummaries.avgWaitTime.REGULAR,
+        demandSummaries.avgWaitTime["SKIP-STOP"],
+      ],
+      [
+        "Average Travel Time (seconds)",
+        demandSummaries.avgTravelTime.REGULAR,
+        demandSummaries.avgTravelTime["SKIP-STOP"],
+      ],
+      [
+        "Total Journey Time (seconds)",
+        demandSummaries.avgWaitTime.REGULAR +
+          demandSummaries.avgTravelTime.REGULAR,
+        demandSummaries.avgWaitTime["SKIP-STOP"] +
+          demandSummaries.avgTravelTime["SKIP-STOP"],
+      ],
+      [
+        "Network Coverage",
+        `${demandSummaries.originDestinationPairs} unique origin-destination pairs`,
+      ],
+    ];
+
+    // Key Findings worksheet
+    const findings = [];
+    const totalJourneyTimeRegular =
+      demandSummaries.avgWaitTime.REGULAR +
+      demandSummaries.avgTravelTime.REGULAR;
+    const totalJourneyTimeSkipStop =
+      demandSummaries.avgWaitTime["SKIP-STOP"] +
+      demandSummaries.avgTravelTime["SKIP-STOP"];
+
+    if (totalJourneyTimeSkipStop < totalJourneyTimeRegular) {
+      const reduction =
+        ((totalJourneyTimeRegular - totalJourneyTimeSkipStop) /
+          totalJourneyTimeRegular) *
+        100;
+      findings.push([
+        "Journey Time",
+        `The Skip-Stop service reduced the average total journey time by ${reduction.toFixed(
+          1
+        )}% compared to the Regular service.`,
+      ]);
+    } else if (totalJourneyTimeRegular < totalJourneyTimeSkipStop) {
+      const increase =
+        ((totalJourneyTimeSkipStop - totalJourneyTimeRegular) /
+          totalJourneyTimeSkipStop) *
+        100;
+      findings.push([
+        "Journey Time",
+        `The Regular all-stop service resulted in a shorter average total journey time by ${increase.toFixed(
+          1
+        )}% compared to the Skip-Stop service.`,
+      ]);
+    }
+
+    if (
+      demandSummaries.avgWaitTime.REGULAR >
+      demandSummaries.avgWaitTime["SKIP-STOP"]
+    ) {
+      const waitReduction =
+        ((demandSummaries.avgWaitTime.REGULAR -
+          demandSummaries.avgWaitTime["SKIP-STOP"]) /
+          demandSummaries.avgWaitTime.REGULAR) *
+        100;
+      if (waitReduction > 1) {
+        findings.push([
+          "Wait Time",
+          `Skip-Stop service demonstrated a lower average passenger wait time, reducing it by ${waitReduction.toFixed(
+            1
+          )}%.`,
+        ]);
+      }
+    } else if (
+      demandSummaries.avgWaitTime["SKIP-STOP"] >
+      demandSummaries.avgWaitTime.REGULAR
+    ) {
+      const waitIncrease =
+        ((demandSummaries.avgWaitTime["SKIP-STOP"] -
+          demandSummaries.avgWaitTime.REGULAR) /
+          demandSummaries.avgWaitTime["SKIP-STOP"]) *
+        100;
+      if (waitIncrease > 1) {
+        findings.push([
+          "Wait Time",
+          `Regular service showed a lower average passenger wait time by ${waitIncrease.toFixed(
+            1
+          )}%.`,
+        ]);
+      }
+    }
+
+    const travelTimeRegular = demandSummaries.avgTravelTime.REGULAR;
+    const travelTimeSkipStop = demandSummaries.avgTravelTime["SKIP-STOP"];
+    if (travelTimeSkipStop < travelTimeRegular) {
+      const travelReduction =
+        ((travelTimeRegular - travelTimeSkipStop) / travelTimeRegular) * 100;
+      findings.push([
+        "Travel Time",
+        `The Skip-Stop service achieved a notable reduction in average in-vehicle travel time by ${travelReduction.toFixed(
+          1
+        )}%.`,
+      ]);
+    } else if (travelTimeRegular < travelTimeSkipStop) {
+      const travelIncrease =
+        ((travelTimeSkipStop - travelTimeRegular) / travelTimeSkipStop) * 100;
+      findings.push([
+        "Travel Time",
+        `Regular service offered slightly shorter average in-vehicle travel times by ${travelIncrease.toFixed(
+          1
+        )}%.`,
+      ]);
+    }
+
+    // Transfer rate finding
+    const totalTripsRegular =
+      demandSummaries.directTrips.REGULAR +
+      demandSummaries.transferTrips.REGULAR;
+    const totalTripsSkipStop =
+      demandSummaries.directTrips["SKIP-STOP"] +
+      demandSummaries.transferTrips["SKIP-STOP"];
+    const transferRateSkipStop =
+      totalTripsSkipStop > 0
+        ? (demandSummaries.transferTrips["SKIP-STOP"] / totalTripsSkipStop) *
+          100
+        : 0;
+
+    if (transferRateSkipStop > 0) {
+      findings.push([
+        "Transfer Rate",
+        `The Skip-Stop service resulted in ${transferRateSkipStop.toFixed(
+          1
+        )}% of trips requiring a train-to-train transfer.`,
+      ]);
+    }
+
+    // Passenger throughput finding
+    const totalPassengersRegular =
+      processedMetrics.basicMetrics["Total Passengers"]?.REGULAR || 0;
+    const totalPassengersSkipStop =
+      processedMetrics.basicMetrics["Total Passengers"]?.["SKIP-STOP"] || 0;
+
+    if (totalPassengersRegular > totalPassengersSkipStop) {
+      const diff =
+        ((totalPassengersRegular - totalPassengersSkipStop) /
+          totalPassengersRegular) *
+        100;
+      if (diff > 1) {
+        findings.push([
+          "Passenger Throughput",
+          `Regular service accommodated ${diff.toFixed(
+            1
+          )}% more completed passenger journeys overall.`,
+        ]);
+      }
+    } else if (totalPassengersSkipStop > totalPassengersRegular) {
+      const diff =
+        ((totalPassengersSkipStop - totalPassengersRegular) /
+          totalPassengersSkipStop) *
+        100;
+      if (diff > 1) {
+        findings.push([
+          "Passenger Throughput",
+          `Skip-Stop service accommodated ${diff.toFixed(
+            1
+          )}% more completed passenger journeys overall.`,
+        ]);
+      }
+    }
+
+    if (findings.length === 0) {
+      findings.push([
+        "Overall",
+        "The simulation data does not indicate a strong overall performance advantage for one service type over the other based on the current primary metrics.",
+      ]);
+    }
+
+    // Create worksheets and add to workbook
+    const systemPerformanceSheet = XLSX.utils.aoa_to_sheet(
+      systemPerformanceData
+    );
+    const demandBreakdownSheet = XLSX.utils.aoa_to_sheet(demandBreakdownData);
+    const timeMetricsSheet = XLSX.utils.aoa_to_sheet(timeMetricsData);
+    const findingsSheet = XLSX.utils.aoa_to_sheet(findings);
+
+    // Apply styles (via column widths)
+    systemPerformanceSheet["!cols"] = [{ wch: 30 }, { wch: 20 }, { wch: 20 }];
+    demandBreakdownSheet["!cols"] = [{ wch: 30 }, { wch: 20 }, { wch: 20 }];
+    timeMetricsSheet["!cols"] = [{ wch: 30 }, { wch: 20 }, { wch: 20 }];
+    findingsSheet["!cols"] = [{ wch: 20 }, { wch: 80 }];
+
+    // Add worksheets to workbook
+    XLSX.utils.book_append_sheet(
+      workbook,
+      systemPerformanceSheet,
+      "System Performance"
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      demandBreakdownSheet,
+      "Passenger Demand"
+    );
+    XLSX.utils.book_append_sheet(workbook, timeMetricsSheet, "Time Metrics");
+    XLSX.utils.book_append_sheet(workbook, findingsSheet, "Key Findings");
+
+    // Generate Excel file and trigger download
+    XLSX.writeFile(workbook, "metrics_summary.xlsx");
+  };
+
   return (
-    <div className="space-y-6 p-4 max-w-4xl mx-auto">
-      <h2 className="text-2xl font-bold text-center">
-        Summary of Key Simulation Metrics
-      </h2>
+    <div className="space-y-6 p-4 max-w-4xl mx-auto metrics-summary-container">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-2xl font-bold">
+          Summary of Key Simulation Metrics
+        </h2>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8"
+            onClick={exportToExcel}
+            title="Download summary as Excel"
+          >
+            <IconFileSpreadsheet className="h-4 w-4 mr-2" />
+            Export to Excel
+          </Button>
+        </div>
+      </div>
 
       {/* System-wide metrics */}
       <Card>

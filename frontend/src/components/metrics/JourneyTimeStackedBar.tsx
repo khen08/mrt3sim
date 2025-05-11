@@ -62,13 +62,14 @@ export const JourneyTimeStackedBar: React.FC<JourneyTimeStackedBarProps> = ({
 
   const option = {
     title: {
-      text: "Journey Time Composition",
+      text: title || "Journey Time Composition",
       left: "center",
       textStyle: {
         color: textColor,
         fontSize: 16,
       },
     },
+    backgroundColor: isDarkMode ? "#000000" : "#ffffff",
     tooltip: {
       trigger: "axis",
       axisPointer: {

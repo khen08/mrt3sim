@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import {
   IconLoader2,
   IconInfoCircle,
   IconSettings,
+  IconDownload,
 } from "@tabler/icons-react";
 import {
   Select,
@@ -51,6 +52,8 @@ import {
 } from "lucide-react";
 import { TextShimmer } from "@/components/motion-primitives/text-shimmer";
 import { Tilt } from "@/components/motion-primitives/tilt";
+import { exportChartAsImage, setupScreenshotStyles } from "@/lib/chartUtils";
+import html2canvas from "html2canvas";
 
 type TimeDistMetricType = "WAIT_TIME" | "TRAVEL_TIME";
 type TimeDistBreakdownType = "SCHEME_TYPE" | "TRIP_TYPE";
@@ -150,6 +153,8 @@ const MetricsTab: React.FC = () => {
 
   const isLoading = metricsLoading || demandLoading;
   const error = metricsError || demandError;
+
+  const chartRefs = useRef<Record<string, React.RefObject<HTMLDivElement>>>({});
 
   const chartGalleryItems = useMemo<ChartGalleryItem[]>(
     () => [
@@ -371,15 +376,16 @@ const MetricsTab: React.FC = () => {
       {selectedChart ? (
         <div className="flex flex-col h-full">
           <div className="mb-4 flex items-center justify-between gap-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedChartKey(null)}
-              className="mr-4"
-            >
-              <IconArrowLeft className="mr-2 h-4 w-4" />
-              Back to Gallery
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedChartKey(null)}
+              >
+                <IconArrowLeft className="mr-2 h-4 w-4" />
+                Back to Gallery
+              </Button>
+            </div>
             <div className="flex items-center gap-4">
               {selectedChart.key === "timeDistribution" && (
                 <>
@@ -548,6 +554,55 @@ const MetricsTab: React.FC = () => {
                   </div>
                 </>
               )}
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => {
+                  // Get the chart container element
+                  const chartContainer = document.querySelector(
+                    ".metrics-container .flex-grow"
+                  );
+                  if (!chartContainer) return;
+
+                  // Apply current theme for proper rendering
+                  const isDarkMode =
+                    document.documentElement.classList.contains("dark");
+                  const bgColor = isDarkMode ? "#000000" : "#ffffff";
+
+                  // Setup temporary styles to override oklch colors with RGB equivalents
+                  const removeStyles = setupScreenshotStyles();
+
+                  // Use html2canvas to capture the chart
+                  html2canvas(chartContainer as HTMLElement, {
+                    background: bgColor,
+                    logging: false,
+                    allowTaint: true,
+                    useCORS: true,
+                  })
+                    .then((canvas) => {
+                      // Create download link
+                      const link = document.createElement("a");
+                      link.download = `${selectedChart?.title || "chart"}.png`;
+                      link.href = canvas.toDataURL("image/png");
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+
+                      // Remove temporary styles
+                      removeStyles();
+                    })
+                    .catch((error) => {
+                      console.error("Error capturing chart:", error);
+                      // Make sure to remove styles even if there's an error
+                      removeStyles();
+                    });
+                }}
+                title="Download chart as image"
+              >
+                <IconDownload className="h-4 w-4" />
+              </Button>
             </div>
           </div>
           <div className="flex-grow overflow-y-auto pt-0">

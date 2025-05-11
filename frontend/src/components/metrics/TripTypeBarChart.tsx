@@ -195,6 +195,7 @@ export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
           fontSize: 16,
         },
       },
+      backgroundColor: isDarkMode ? "#000000" : "#ffffff",
       tooltip: {
         trigger: "axis",
         axisPointer: {

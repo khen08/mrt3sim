@@ -83,6 +83,10 @@ export const columns = (
         onCheckedChange={(value) => row.toggleSelected(!!value)}
         aria-label="Select row"
         className="mx-auto"
+        onClick={(e) => {
+          // Stop propagation to prevent row selection
+          e.stopPropagation();
+        }}
       />
     ),
     enableSorting: false,

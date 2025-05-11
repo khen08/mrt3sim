@@ -62,6 +62,7 @@ export const PassengerCountsChart: React.FC<PassengerCountsChartProps> = ({
         fontSize: 12,
       },
     },
+    backgroundColor: isDarkMode ? "#000000" : "#ffffff",
     tooltip: {
       trigger: "axis",
       axisPointer: {

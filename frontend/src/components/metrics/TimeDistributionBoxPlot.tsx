@@ -175,6 +175,7 @@ export const TimeDistributionBoxPlot: React.FC<
           fontSize: 16,
         },
       },
+      backgroundColor: isDarkMode ? "#000000" : "#ffffff",
       tooltip: {
         trigger: "item",
         formatter: (params: any) => {

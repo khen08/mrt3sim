@@ -278,6 +278,7 @@ export const PassengerHeatmapChart: React.FC<PassengerHeatmapChartProps> = ({
           top: 5,
           textStyle: { fontSize: 16, fontWeight: "bold", color: textColor },
         },
+        backgroundColor: isDarkMode ? "#000000" : "#ffffff",
         tooltip: {
           position: "top",
           formatter: (params: any) => {

@@ -67,6 +67,7 @@ export const ComparativeBarChart: React.FC<ComparativeBarChartProps> = ({
         fontSize: 16,
       },
     },
+    backgroundColor: isDarkMode ? "#000000" : "#ffffff",
     tooltip: {
       trigger: "axis",
       axisPointer: {

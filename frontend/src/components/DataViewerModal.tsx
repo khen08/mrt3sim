@@ -21,6 +21,7 @@ import {
   IconChartBar,
   IconSearch,
   IconLoader2,
+  IconDownload,
 } from "@tabler/icons-react";
 import {
   RowSelectionState,
@@ -37,6 +38,14 @@ import { useAPIStore } from "@/store/apiStore";
 import { PEAK_HOURS } from "@/lib/constants";
 import { useHasMetrics } from "@/store/metricsStore";
 import { TextShimmer } from "@/components/motion-primitives/text-shimmer";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useToast } from "@/components/ui/use-toast";
+import * as XLSX from "xlsx";
 
 // Custom compact header component for better overflow handling
 const CompactColumnHeader = ({
@@ -308,6 +317,7 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
     pageCount,
     totalItems,
     peakHourFilter,
+    filteredData,
 
     // Actions
     setActiveTabId,
@@ -323,6 +333,9 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
     (state) => state.loadedSimulationId
   );
   const simulationName = useSimulationStore((state) => state.simulationName);
+
+  // Initialize toast
+  const { toast } = useToast();
 
   // Check if we have *any* raw data for the current tab (to distinguish from loading)
   const { rawData } = useModalStore.getState(); // Get raw data directly for check
@@ -449,6 +462,134 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
     }
   }, [activeTabId, hasMetrics, isOpen, setActiveTabId]);
 
+  // Helper function to export table data to Excel with optimal column widths
+  const exportToExcel = (data: any[], fileName: string) => {
+    if (!data || data.length === 0) return;
+
+    // Create a workbook and worksheet
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(data);
+
+    // Get all column keys
+    const columns = Object.keys(data[0]);
+
+    // Calculate maximum width for each column based on content
+    const columnWidths: Record<string, number> = {};
+
+    // Start with column headers
+    columns.forEach((col) => {
+      columnWidths[col] = col.length + 2; // Add padding
+    });
+
+    // Check all data for max width
+    data.forEach((row) => {
+      columns.forEach((col) => {
+        const cellValue = row[col]?.toString() || "";
+        // Set width to max of current width or cell content length plus padding
+        columnWidths[col] = Math.max(columnWidths[col], cellValue.length + 2);
+      });
+    });
+
+    // Define column widths (need to convert to XLSX column width)
+    const wscols = columns.map((col) => ({ wch: columnWidths[col] }));
+
+    // Set column widths in the worksheet
+    worksheet["!cols"] = wscols;
+
+    // Add the worksheet to the workbook
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Timetable");
+
+    // Write to a file and trigger download
+    XLSX.writeFile(workbook, fileName);
+  };
+
+  // Handle export with scheme type filter
+  const handleExportCsv = (schemeType: string) => {
+    // Get raw timetable data directly from the store
+    const { rawData } = useModalStore.getState();
+    const allTimetableData = rawData["timetable"] || [];
+
+    // Debug the data to understand what's available
+    console.log(`Total timetable records: ${allTimetableData.length}`);
+
+    // Exit early if no data at all
+    if (!allTimetableData || allTimetableData.length === 0) {
+      toast({
+        title: "Export Failed",
+        description: "No timetable data available to export",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Check what scheme types actually exist in the data
+    const schemeTypes = new Set<string>();
+    allTimetableData.forEach((row) => {
+      if (row.SCHEME_TYPE) {
+        schemeTypes.add(row.SCHEME_TYPE);
+      }
+    });
+    console.log("Available scheme types:", [...schemeTypes]);
+
+    // Apply scheme type filter if specific type is selected
+    let dataToExport = allTimetableData;
+    if (schemeType !== "ALL") {
+      // Try case-insensitive matching for better results
+      const normalizedSchemeType = schemeType.toLowerCase();
+      dataToExport = allTimetableData.filter(
+        (row) =>
+          row.SCHEME_TYPE &&
+          row.SCHEME_TYPE.toLowerCase() === normalizedSchemeType
+      );
+
+      // If no exact match, try partial match
+      if (dataToExport.length === 0) {
+        dataToExport = allTimetableData.filter(
+          (row) =>
+            row.SCHEME_TYPE &&
+            row.SCHEME_TYPE.toLowerCase().includes(normalizedSchemeType)
+        );
+      }
+
+      // If still empty, try matching on different fields
+      if (dataToExport.length === 0) {
+        dataToExport = allTimetableData.filter(
+          (row) =>
+            row.TRAIN_SERVICE_TYPE &&
+            row.TRAIN_SERVICE_TYPE.toLowerCase().includes(normalizedSchemeType)
+        );
+      }
+
+      // If filtered data is empty, show a specific error
+      if (dataToExport.length === 0) {
+        toast({
+          title: "Export Failed",
+          description: `No ${schemeType} scheme data found. Available types: ${
+            [...schemeTypes].join(", ") || "none"
+          }`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    // Generate filename with scheme type and date
+    const date = new Date().toISOString().split("T")[0];
+    const filename = `timetable_${schemeType.toLowerCase()}_${date}.xlsx`;
+
+    // Log export information
+    console.log(`Exporting ${dataToExport.length} records to ${filename}`);
+
+    // Export to Excel
+    exportToExcel(dataToExport, filename);
+
+    toast({
+      title: "Export Successful",
+      description: `${dataToExport.length} records exported to ${filename}`,
+      variant: "default",
+    });
+  };
+
   return (
     // Use store action for closing
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -562,6 +703,50 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
                     Reset Sort
                   </Button>
                 )}
+
+                {/* Download Dropdown Button */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 ml-2 flex-shrink-0"
+                    >
+                      <IconDownload className="h-4 w-4 mr-1" />
+                      Export to Excel
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleExportCsv("ALL")}>
+                      All Timetable Data
+                    </DropdownMenuItem>
+
+                    {/* Dynamic menu items based on available scheme types */}
+                    {(() => {
+                      // Get raw timetable data directly from the store
+                      const { rawData } = useModalStore.getState();
+                      const allTimetableData = rawData["timetable"] || [];
+
+                      // Find unique scheme types
+                      const schemeTypes = new Set<string>();
+                      allTimetableData.forEach((row) => {
+                        if (row.SCHEME_TYPE) {
+                          schemeTypes.add(row.SCHEME_TYPE);
+                        }
+                      });
+
+                      // Generate menu items for each scheme type
+                      return [...schemeTypes].map((type) => (
+                        <DropdownMenuItem
+                          key={type}
+                          onClick={() => handleExportCsv(type)}
+                        >
+                          {type} Scheme
+                        </DropdownMenuItem>
+                      ));
+                    })()}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             )}
 
