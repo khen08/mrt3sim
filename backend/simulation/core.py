@@ -1627,8 +1627,8 @@ class Simulation:
         scheme_type_underscore = scheme_type.replace("-", "_")
         
         for i, period in enumerate(self.service_periods):
-            #period["HEADWAY"] = custom_round(loop_time / period["TRAIN_COUNT"])
-            period[f"{scheme_type_underscore}_HEADWAY"] = custom_round(loop_time / period["TRAIN_COUNT"])
+            # Calculate headway using scheme-specific train count
+            period[f"{scheme_type_underscore}_HEADWAY"] = custom_round(loop_time / period[f"{scheme_type_underscore}_TRAIN_COUNT"])
             period[f"{scheme_type_underscore}_LOOP_TIME_MINUTES"] = loop_time
             
             # Schedule service period start event
@@ -1653,8 +1653,8 @@ class Simulation:
             [
                 {
                     "NAME": period["NAME"],
-                    "TRAIN_COUNT": period["TRAIN_COUNT"],
-                    f"{scheme_type_underscore}_HEADWAY": period[f"{scheme_type_underscore}_HEADWAY"], # Use underscore key
+                    "TRAIN_COUNT": period[f"{scheme_type_underscore}_TRAIN_COUNT"],
+                    f"{scheme_type_underscore}_HEADWAY": period[f"{scheme_type_underscore}_HEADWAY"],
                 }
                 for period in self.service_periods
             ]

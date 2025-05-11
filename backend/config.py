@@ -52,7 +52,7 @@ DEFAULT_SERVICE_PERIODS = [
     {
         'NAME': 'BASE',
         'REGULAR_TRAIN_COUNT': 14,
-        'SKIP_STOP_TRAIN_COUNT': 14,
+        'SKIP_STOP_TRAIN_COUNT': 12,
         'START_HOUR': 10
     },
     {
