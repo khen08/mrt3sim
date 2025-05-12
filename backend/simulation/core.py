@@ -1492,7 +1492,7 @@ class Simulation:
         base_date = self.get_datetime_from_csv() if self.passenger_data_file else datetime.now()
         if base_date:
             self.start_time = datetime.combine(base_date, time(hour=5, minute=0))
-            self.end_time = datetime.combine(base_date, time(hour=22, minute=0))
+            self.end_time = datetime.combine(base_date, time(hour=23, minute=0))
         else:
             print("  [CSV:GET DATETIME] COULD NOT DETERMINE BASE DATE. ABORTING INITIALIZATION.")
             return None
