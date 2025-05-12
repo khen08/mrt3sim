@@ -88,9 +88,9 @@ const LoadingPlaceholder: React.FC<LoadingPlaceholderProps> = ({
   message = "Loading...",
 }) => {
   // Create a more descriptive message for loading simulations
-  const detailMessage = message.includes("Running")
-    ? "Please wait while we generate the simulation..."
-    : message.includes("Processing")
+  const detailMessage = message.includes("Creating new")
+    ? "Please wait while we generate a new simulation with your settings..."
+    : message.includes("Running") || message.includes("Processing")
     ? "Please wait while we process the simulation data..."
     : message.includes("Loading existing")
     ? "Please wait while we restore the selected simulation..."
@@ -649,14 +649,16 @@ export default function Home() {
     // Show different loading messages based on the loading state
     let loadingMessage = "Loading...";
 
-    // Make the conditions completely separate to avoid any potential nesting issues
-    if (
+    // Use the API store's operation flag as the definitive source of truth
+    if (useAPIStore.getState()._isCreatingNewSimulation) {
+      loadingMessage = "Creating new simulation...";
+    } else if (
       loadedSimulationId &&
       (isSimulating || useSimulationStore.getState().isSimulating)
     ) {
       loadingMessage = "Loading existing simulation...";
     } else if (isSimulating || useSimulationStore.getState().isSimulating) {
-      loadingMessage = "Running simulation...";
+      loadingMessage = "Processing simulation...";
     } else if (isMapLoading || useSimulationStore.getState().isMapLoading) {
       loadingMessage = "Processing simulation data...";
     }

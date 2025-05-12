@@ -785,6 +785,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     type="number"
                     step="1"
                     min="0"
+                    max="60"
                     pattern="[1-9][0-9]*"
                     inputMode="numeric"
                     value={simulationSettings.trainSpecs.cruisingSpeed || ""}
