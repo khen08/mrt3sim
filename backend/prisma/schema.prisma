@@ -19,10 +19,6 @@ model SIMULATIONS {
   SIMULATION_ID       Int      @id @default(autoincrement())
   NAME                String   @db.VarChar(255)
   CONFIG              Json     @db.Json // Contains all infrastructure data (stations, tracks, trains, specs)
-  START_TIME          DateTime @db.DateTime
-  END_TIME            DateTime @db.DateTime
-  DWELL_TIME          Int
-  TURNAROUND_TIME     Int
   SERVICE_PERIODS     Json     @db.Json // Assumes appropriate JSON structure
   PASSENGER_DATA_FILE String?   @db.VarChar(255)
   TOTAL_RUN_TIME_SECONDS Float @default(0) // RUN TIME (overall execution time of simulation.run())

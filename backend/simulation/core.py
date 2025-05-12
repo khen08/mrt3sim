@@ -1499,10 +1499,6 @@ class Simulation:
                 data={
                     "NAME": self.simulation_name,
                     "CONFIG": json.dumps(self.config),
-                    "START_TIME": self.start_time,
-                    "END_TIME": self.end_time,
-                    "DWELL_TIME": self.dwell_time,
-                    "TURNAROUND_TIME": self.turnaround_time,
                     "SERVICE_PERIODS": json.dumps(self.service_periods),
                     "PASSENGER_DATA_FILE": self.passenger_data_file if self.passenger_data_file else None
                 }
