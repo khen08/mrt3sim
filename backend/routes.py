@@ -4,6 +4,7 @@ from flask import request, jsonify, Blueprint
 from werkzeug.utils import secure_filename
 from prisma import Prisma
 import datetime
+import pytz # Added for timezone conversion
 
 # Import configuration and database logic
 from config import DEFAULT_SETTINGS, UPLOAD_FOLDER
@@ -238,7 +239,27 @@ def get_simulations():
             for entry in history_entries:
                 entry_dict = entry.dict()
                 # Safely format dates, handling potential None values
-                entry_dict['CREATED_AT'] = format_time(entry_dict.get('CREATED_AT'), '%Y-%m-%d %H:%M:%S') if entry_dict.get('CREATED_AT') else None
+                # Convert CREATED_AT to Philippines timezone
+                created_at_val = entry_dict.get('CREATED_AT')
+                if created_at_val:
+                    if isinstance(created_at_val, datetime.datetime):
+                        # Assume created_at_val from Prisma is UTC.
+                        # If naive, localize to UTC. If aware, ensure it's UTC.
+                        if created_at_val.tzinfo is None or created_at_val.tzinfo.utcoffset(created_at_val) is None:
+                            utc_created_at = pytz.utc.localize(created_at_val)
+                        else:
+                            utc_created_at = created_at_val.astimezone(pytz.utc)
+                        
+                        ph_tz = pytz.timezone('Asia/Manila')
+                        ph_created_at = utc_created_at.astimezone(ph_tz)
+                        # Format to string, maintaining the previous style
+                        entry_dict['CREATED_AT'] = ph_created_at.strftime('%Y-%m-%d %H:%M:%S')
+                    else:
+                        # Fallback for non-datetime types (e.g., if already a string)
+                        # using the existing format_time function
+                        entry_dict['CREATED_AT'] = format_time(created_at_val, '%Y-%m-%d %H:%M:%S')
+                else:
+                    entry_dict['CREATED_AT'] = None
                 
                 # Attempt to parse JSON fields if they are strings
                 for key in ['CONFIG', 'STATION_CAPACITIES', 'SERVICE_PERIODS', 'PERFORMANCE_METRICS']:
