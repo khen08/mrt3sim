@@ -26,6 +26,7 @@ import {
 import { useToast } from "@/lib/toast"; // Import custom toast hook
 import { useAPIStore } from "@/store/apiStore"; // Import the API store
 import { useUIStore, initialHistorySorting } from "@/store/uiStore"; // Import the UI store and initialHistorySorting
+import { useSimulationStore } from "@/store/simulationStore"; // Import the simulation store
 
 interface SimulationHistoryModalProps {
   isOpen: boolean;
@@ -151,6 +152,12 @@ export function SimulationHistoryModal({
       return;
     }
 
+    // Check if the loaded simulation is being deleted
+    const isDeletingLoadedSimulation =
+      loadedSimulationId !== null &&
+      loadedSimulationId !== undefined &&
+      selectedIds.includes(loadedSimulationId);
+
     setIsDeleting(true);
     toast({
       title: "Deleting Simulations...",
@@ -169,6 +176,22 @@ export function SimulationHistoryModal({
       });
       // Clear selection using uiStore action
       setHistoryRowSelection({});
+
+      // Reset system state if the loaded simulation was deleted
+      if (isDeletingLoadedSimulation) {
+        // Import the required store actions
+        const { resetSimulation } = useSimulationStore.getState();
+
+        // Reset to default state
+        resetSimulation();
+
+        toast({
+          title: "Simulation Reset",
+          description:
+            "Loaded simulation was deleted. System has been reset to default state.",
+          variant: "info",
+        });
+      }
     } else {
       toast({
         title: "Deletion Failed",
@@ -194,9 +217,9 @@ export function SimulationHistoryModal({
         }
       }}
     >
-      <DialogContent className="!max-w-fit max-h-[80vh] flex flex-col">
+      <DialogContent className="!max-w-fit min-w-[700px] max-h-[80vh] flex flex-col">
         {" "}
-        {/* Adjusted width and height */}
+        {/* Use fit-content with a minimum width */}
         <DialogHeader>
           <DialogTitle>Simulation History</DialogTitle>
           <DialogDescription>

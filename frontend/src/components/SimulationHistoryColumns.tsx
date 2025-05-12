@@ -29,13 +29,7 @@ const CompactColumnHeader = ({
   return (
     <div
       onClick={column.getToggleSortingHandler()}
-      className={`flex items-center font-medium cursor-pointer w-full select-none ${
-        alignment === "right"
-          ? "justify-end"
-          : alignment === "center"
-          ? "justify-center"
-          : "justify-start"
-      }`}
+      className="flex items-center font-medium cursor-pointer w-full select-none justify-center"
     >
       <div className="flex items-center whitespace-nowrap">
         <span>{title}</span>
@@ -67,15 +61,17 @@ export const columns = (
   {
     id: "select",
     header: ({ table }) => (
-      <Checkbox
-        checked={
-          table.getIsAllPageRowsSelected() ||
-          (table.getIsSomePageRowsSelected() && "indeterminate")
-        }
-        onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-        aria-label="Select all"
-        className="mx-auto"
-      />
+      <div className="text-center">
+        <Checkbox
+          checked={
+            table.getIsAllPageRowsSelected() ||
+            (table.getIsSomePageRowsSelected() && "indeterminate")
+          }
+          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+          aria-label="Select all"
+          className="mx-auto"
+        />
+      </div>
     ),
     cell: ({ row }) => (
       <Checkbox
@@ -91,9 +87,10 @@ export const columns = (
     ),
     enableSorting: false,
     enableHiding: false,
-    size: 40,
+    enableResizing: true,
     minSize: 40,
-    maxSize: 40,
+    size: 40,
+    maxSize: 60,
     meta: {
       alignment: "center",
     },
@@ -102,14 +99,17 @@ export const columns = (
   {
     accessorKey: "SIMULATION_ID",
     header: ({ column }) => (
-      <CompactColumnHeader column={column} title="ID" alignment="center" />
+      <div className="text-center">
+        <CompactColumnHeader column={column} title="ID" alignment="center" />
+      </div>
     ),
     cell: ({ row }) => (
       <div className="text-center">{row.getValue("SIMULATION_ID")}</div>
     ),
+    enableResizing: true,
+    minSize: 40,
     size: 60,
-    minSize: 60,
-    maxSize: 60,
+    maxSize: 80,
     meta: {
       alignment: "center",
     },
@@ -117,13 +117,15 @@ export const columns = (
   {
     accessorKey: "NAME",
     header: ({ column }) => (
-      <CompactColumnHeader column={column} title="Name" alignment="left" />
+      <div className="text-center">
+        <CompactColumnHeader column={column} title="Name" alignment="center" />
+      </div>
     ),
     cell: ({ row }) => {
       const name = row.getValue("NAME") as string | null;
       return (
         <div
-          className="truncate font-medium text-left"
+          className="truncate font-medium text-center"
           title={name ?? "Unnamed"}
         >
           {name || (
@@ -132,17 +134,23 @@ export const columns = (
         </div>
       );
     },
+    enableResizing: true,
     size: 180,
-    minSize: 180,
-    maxSize: 180,
+    minSize: 120,
     meta: {
-      alignment: "left",
+      alignment: "center",
     },
   },
   {
     accessorKey: "CREATED_AT",
     header: ({ column }) => (
-      <CompactColumnHeader column={column} title="Created" alignment="center" />
+      <div className="text-center">
+        <CompactColumnHeader
+          column={column}
+          title="Created"
+          alignment="center"
+        />
+      </div>
     ),
     cell: ({ row }) => {
       const dateStr = row.getValue("CREATED_AT") as string;
@@ -159,9 +167,9 @@ export const columns = (
       } catch (e) {}
       return <div className="text-center">{formattedDate}</div>;
     },
+    enableResizing: true,
     size: 170,
-    minSize: 170,
-    maxSize: 170,
+    minSize: 150,
     meta: {
       alignment: "center",
     },
@@ -169,74 +177,34 @@ export const columns = (
   {
     accessorKey: "PASSENGER_DATA_FILE",
     header: ({ column }) => (
-      <CompactColumnHeader
-        column={column}
-        title="Input File"
-        alignment="left"
-      />
+      <div className="text-center">
+        <CompactColumnHeader
+          column={column}
+          title="Input File"
+          alignment="center"
+        />
+      </div>
     ),
     cell: ({ row }) => {
       const filename = row.getValue("PASSENGER_DATA_FILE") as string | null;
       if (filename) {
         const displayFilename = formatFileName(filename);
         return (
-          <div className="truncate text-left" title={filename}>
+          <div className="truncate text-center" title={filename}>
             {displayFilename}
           </div>
         );
       } else {
         return (
-          <span className="text-xs text-muted-foreground italic text-left">
+          <span className="text-xs text-muted-foreground italic text-center">
             N/A (Train Only)
           </span>
         );
       }
     },
+    enableResizing: true,
     size: 200,
-    minSize: 200,
-    maxSize: 200,
-    meta: {
-      alignment: "left",
-    },
-  },
-  {
-    accessorKey: "START_TIME",
-    header: ({ column }) => (
-      <CompactColumnHeader
-        column={column}
-        title="Simulation Start"
-        alignment="center"
-      />
-    ),
-    cell: ({ row }) => {
-      const dateTimeStr = row.getValue("START_TIME") as string;
-      const timePart = dateTimeStr.split(" ")[1] || "--:--:--";
-      return <div className="text-center font-mono">{timePart}</div>;
-    },
-    size: 140,
-    minSize: 140,
-    maxSize: 140,
-    meta: {
-      alignment: "center",
-    },
-  },
-  {
-    accessorKey: "END_TIME",
-    header: ({ column }) => (
-      <CompactColumnHeader
-        column={column}
-        title="Simulation End"
-        alignment="center"
-      />
-    ),
-    cell: ({ row }) => {
-      const dateTimeStr = row.getValue("END_TIME") as string;
-      const timePart = dateTimeStr.split(" ")[1] || "--:--:--";
-      return <div className="text-center font-mono">{timePart}</div>;
-    },
-    size: 140,
-    minSize: 140,
-    maxSize: 140,
+    minSize: 150,
     meta: {
       alignment: "center",
     },
@@ -244,18 +212,24 @@ export const columns = (
   {
     accessorKey: "TOTAL_RUN_TIME_SECONDS",
     header: ({ column }) => (
-      <CompactColumnHeader column={column} title="Duration" alignment="right" />
+      <div className="text-center">
+        <CompactColumnHeader
+          column={column}
+          title="Duration"
+          alignment="center"
+        />
+      </div>
     ),
     cell: ({ row }) => {
       const amount = parseFloat(row.getValue("TOTAL_RUN_TIME_SECONDS"));
       const formatted = amount.toFixed(2) + "s";
-      return <div className="text-right font-medium">{formatted}</div>;
+      return <div className="text-center font-medium">{formatted}</div>;
     },
+    enableResizing: true,
     size: 100,
-    minSize: 100,
-    maxSize: 100,
+    minSize: 80,
     meta: {
-      alignment: "right",
+      alignment: "center",
     },
   },
   // Actions Column (Load Button)
@@ -318,7 +292,7 @@ export const columns = (
               handleShowConfig();
             }}
             disabled={isCurrentlyLoaded || isSimulating}
-            className={isSimulating ? "relative" : ""}
+            className={`${isSimulating ? "relative" : ""} min-w-[85px]`}
           >
             {isSimulating ? (
               <div className="absolute inset-0 flex items-center justify-center bg-mrt-blue/20 backdrop-blur-[1px] rounded-md">
@@ -342,9 +316,9 @@ export const columns = (
         </div>
       );
     },
-    size: 80,
-    minSize: 80,
-    maxSize: 80,
+    enableResizing: true,
+    size: 100,
+    minSize: 90,
     meta: {
       alignment: "center",
     },
@@ -354,10 +328,8 @@ export const columns = (
 // Also update the SimulationHistoryEntry interface if NAME is not already there
 export interface SimulationHistoryEntry {
   SIMULATION_ID: number;
-  NAME?: string | null; // Add NAME property
+  NAME?: string | null;
   CREATED_AT: string;
-  PASSENGER_DATA_FILE: string;
-  START_TIME: string;
-  END_TIME: string;
+  PASSENGER_DATA_FILE: string | null;
   TOTAL_RUN_TIME_SECONDS: number;
 }

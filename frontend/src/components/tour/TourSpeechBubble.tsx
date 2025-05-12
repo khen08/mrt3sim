@@ -51,71 +51,119 @@ const TourSpeechBubble = () => {
     const speechBubble = speechBubbleRef.current;
     const mascot = mascotRef.current;
 
-    // Default positioning (center of screen) for steps without a target
-    let bubbleTop = window.innerHeight / 2 - 100;
-    let bubbleLeft = window.innerWidth / 2 - 175;
-    let mascotTop = bubbleTop + 20; // Default position for welcome step
-    let mascotLeft = bubbleLeft - 150; // Always position mascot to the left of bubble
+    // Get viewport dimensions
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    // Set base positioning - will be overridden by specific cases
+    let bubbleTop = viewportHeight / 2 - 100;
+    let bubbleLeft = viewportWidth / 2 - 175;
+    let mascotTop = bubbleTop + 20;
+    let mascotLeft = bubbleLeft - 150;
+    let tailPosition = "tail-left"; // Default tail position
+
+    // Special handling for Section 1 Step 2 (data-input)
+    const isDataInputStep = currentSection === 1 && currentStepIndex === 1;
 
     if (currentStep.target) {
       const targetElement = document.querySelector(
         currentStep.target
       ) as HTMLElement | null;
+
       if (targetElement) {
         const targetRect = targetElement.getBoundingClientRect();
         const placement = currentStep.placement || "right";
 
-        // Position based on placement but always keep mascot aligned with bubble
+        // Track if we're on a small screen
+        const isSmallScreen = viewportWidth < 768;
+
         switch (placement) {
           case "top":
-            bubbleTop = targetRect.top - 180;
+            // Calculate relative position - percentage of viewport
+            bubbleTop = Math.max(20, targetRect.top - viewportHeight * 0.15);
             bubbleLeft = targetRect.left + targetRect.width / 2 - 150;
-            mascotTop = bubbleTop + 20; // Consistent with welcome step
+            mascotTop = bubbleTop + 20;
             mascotLeft = bubbleLeft - 150;
             break;
+
           case "right":
             bubbleTop = targetRect.top;
-            bubbleLeft = targetRect.right + 120;
-            mascotTop = bubbleTop + 20; // Consistent with welcome step
+            // Use percentage of viewport width for positioning
+            bubbleLeft = Math.min(
+              viewportWidth - 380,
+              targetRect.right + viewportWidth * 0.05
+            );
+            mascotTop = bubbleTop + 20;
             mascotLeft = bubbleLeft - 150;
             break;
+
           case "bottom":
-            bubbleTop = targetRect.bottom + 20;
+            bubbleTop = Math.min(
+              viewportHeight - 280,
+              targetRect.bottom + viewportHeight * 0.05
+            );
             bubbleLeft = targetRect.left + targetRect.width / 2 - 150;
-            mascotTop = bubbleTop + 20; // Consistent with welcome step
+            mascotTop = bubbleTop + 20;
             mascotLeft = bubbleLeft - 150;
             break;
+
           case "left":
-            bubbleTop = targetRect.top;
-            bubbleLeft = targetRect.left - 350;
-            mascotTop = bubbleTop + 20; // Consistent with welcome step
-            mascotLeft = bubbleLeft - 150;
+            if (isDataInputStep) {
+              // Responsive positioning for CSV upload step
+              if (isSmallScreen) {
+                // On small screens, position differently
+                bubbleTop = Math.max(20, targetRect.top - 50);
+                bubbleLeft = Math.max(20, targetRect.left - 320);
+                mascotTop = bubbleTop + 180; // Below bubble on small screens
+                mascotLeft = bubbleLeft + 100;
+                tailPosition = "tail-bottom"; // Point downward to Marty
+              } else {
+                // On larger screens, use fixed positioning relative to viewport and target
+                bubbleTop = Math.max(
+                  20,
+                  targetRect.top + viewportHeight * 0.05
+                );
+                bubbleLeft = Math.max(150, viewportWidth * 0.15);
+
+                // Fix mascot position relative to bubble
+                mascotTop = bubbleTop - viewportHeight * 0.02;
+                mascotLeft = viewportWidth - viewportWidth * 0.18;
+                tailPosition = "tail-right";
+              }
+            } else {
+              // Default left placement for other steps
+              bubbleTop = targetRect.top;
+              bubbleLeft = Math.max(150, targetRect.left - viewportWidth * 0.2);
+              mascotTop = bubbleTop + 20;
+              mascotLeft = bubbleLeft - 150;
+            }
             break;
+
           case "center":
           default:
-            bubbleTop = window.innerHeight / 2 - 100;
-            bubbleLeft = window.innerWidth / 2 - 175;
-            mascotTop = bubbleTop + 20; // Default welcome position
+            // Center positioning is already viewport-relative
+            bubbleTop = viewportHeight / 2 - 100;
+            bubbleLeft = viewportWidth / 2 - 175;
+            mascotTop = bubbleTop + 20;
             mascotLeft = bubbleLeft - 150;
             break;
         }
       }
     }
 
-    // Keep bubble on screen
-    bubbleTop = Math.max(20, Math.min(bubbleTop, window.innerHeight - 280));
-    bubbleLeft = Math.max(150, Math.min(bubbleLeft, window.innerWidth - 370)); // Ensure enough room for mascot on left
+    // Apply safe minimum and maximum bounds to ensure visibility
+    bubbleTop = Math.max(20, Math.min(bubbleTop, viewportHeight - 280));
+    bubbleLeft = Math.max(20, Math.min(bubbleLeft, viewportWidth - 370));
+    mascotTop = Math.max(20, Math.min(mascotTop, viewportHeight - 150));
+    mascotLeft = Math.max(20, Math.min(mascotLeft, viewportWidth - 150));
 
     // Position the elements
     speechBubble.style.top = `${bubbleTop}px`;
     speechBubble.style.left = `${bubbleLeft}px`;
-
-    // Always use tail-left to consistently point to the mascot
-    speechBubble.className = `speech-bubble tail-left`;
-
+    speechBubble.className = `speech-bubble ${tailPosition}`;
     mascot.style.top = `${mascotTop}px`;
     mascot.style.left = `${mascotLeft}px`;
-  }, [isActive, currentStep, currentStepIndex]);
+  }, [isActive, currentStep, currentStepIndex, currentSection]);
 
   // Highlight the target element
   useEffect(() => {
