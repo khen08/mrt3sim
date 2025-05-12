@@ -239,8 +239,6 @@ def get_simulations():
                 entry_dict = entry.dict()
                 # Safely format dates, handling potential None values
                 entry_dict['CREATED_AT'] = format_time(entry_dict.get('CREATED_AT'), '%Y-%m-%d %H:%M:%S') if entry_dict.get('CREATED_AT') else None
-                entry_dict['START_TIME'] = format_time(entry_dict.get('START_TIME'), '%Y-%m-%d %H:%M:%S') if entry_dict.get('START_TIME') else None
-                entry_dict['END_TIME'] = format_time(entry_dict.get('END_TIME'), '%Y-%m-%d %H:%M:%S') if entry_dict.get('END_TIME') else None
                 
                 # Attempt to parse JSON fields if they are strings
                 for key in ['CONFIG', 'STATION_CAPACITIES', 'SERVICE_PERIODS', 'PERFORMANCE_METRICS']:
