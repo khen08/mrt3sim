@@ -32,14 +32,14 @@ DEFAULT_TRAIN_SPECS = {
 
 DEFAULT_SERVICE_PERIODS = [
     {
-        'NAME': 'INITIAL',
-        'REGULAR_TRAIN_COUNT': 13,
+        'NAME': 'MORNING',
+        'REGULAR_TRAIN_COUNT': 14,
         'SKIP_STOP_TRAIN_COUNT': 11,
         'START_HOUR': 5,
     },
     {
         'NAME': 'AM PEAK',
-        'REGULAR_TRAIN_COUNT': 18,
+        'REGULAR_TRAIN_COUNT': 19,
         'SKIP_STOP_TRAIN_COUNT': 14,
         'START_HOUR': 7
     },
@@ -63,15 +63,21 @@ DEFAULT_SERVICE_PERIODS = [
     },
     {
         'NAME': 'PM PEAK',
-        'REGULAR_TRAIN_COUNT': 18,
+        'REGULAR_TRAIN_COUNT': 19,
         'SKIP_STOP_TRAIN_COUNT': 14,
         'START_HOUR': 17
     },
     {
+        'NAME': 'NIGHT',
+        'REGULAR_TRAIN_COUNT': 14,
+        'SKIP_STOP_TRAIN_COUNT': 12,
+        'START_HOUR': 19
+    },
+    {
         'NAME': 'SERVICE END TRANSITION',
-        'REGULAR_TRAIN_COUNT': 11,
-        'SKIP_STOP_TRAIN_COUNT': 11,
-        'START_HOUR': 20
+        'REGULAR_TRAIN_COUNT': 4,
+        'SKIP_STOP_TRAIN_COUNT': 4,
+        'START_HOUR': 21
     }
 ]
 
