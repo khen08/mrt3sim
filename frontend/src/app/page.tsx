@@ -961,6 +961,7 @@ export default function Home() {
                 hasSimulationData={hasResults}
                 hasResults={hasResults}
                 handleFileSelect={handleFileSelect}
+                onRunSimulation={runSimulation}
               />
 
               {apiError && !simulationSettings && (

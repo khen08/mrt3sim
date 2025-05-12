@@ -182,6 +182,12 @@ export const useAPIStore = create<APIState>((set, get) => ({
       return;
     }
 
+    // Add validation for service periods
+    if (simStore.validateServicePeriods && !simStore.validateServicePeriods()) {
+      // The validator function itself will show error messages via toast
+      return;
+    }
+
     simStore.setApiError(null);
     console.log("Opening simulation name dialog...");
     set({ _isCreatingNewSimulation: true });

@@ -27,6 +27,8 @@ import {
   IconReplace,
   IconRotateClockwise,
   IconLoader2,
+  IconTrash,
+  IconPlus,
 } from "@tabler/icons-react";
 import {
   Tooltip,
@@ -42,6 +44,15 @@ import { useFileStore } from "@/store/fileStore";
 import { useAPIStore } from "@/store/apiStore";
 import { toast } from "@/components/ui/use-toast";
 import { TextShimmer } from "@/components/motion-primitives/text-shimmer";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 // Define SimulationSettings type locally (copied from page.tsx)
 interface SimulationSettings {
@@ -83,6 +94,7 @@ interface SimulationSettingsCardProps {
   hasSimulationData: boolean;
   hasResults: boolean;
   handleFileSelect: (file: File | null, backendFilename: string | null) => void;
+  onRunSimulation: () => void;
 }
 
 const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
@@ -91,6 +103,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
   hasSimulationData,
   hasResults,
   handleFileSelect,
+  onRunSimulation,
 }: SimulationSettingsCardProps) => {
   // Get state from Zustand store
   const simulationSettings = useSimulationStore(
@@ -139,6 +152,9 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
         if (defaults) setDefaultSettings(defaults);
       });
   }, []);
+
+  // Add state for delete confirmation
+  const [periodToDelete, setPeriodToDelete] = useState<number | null>(null);
 
   if (!simulationSettings) {
     // Render nothing or a loading indicator if settings are not yet loaded
@@ -341,6 +357,161 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
     };
     updateSimulationSetting("servicePeriods", updatedPeriods);
   };
+
+  // Add this function to handle period name changes
+  const handlePeriodNameChange = (index: number, newName: string) => {
+    const updatedPeriods = [...simulationSettings.servicePeriods];
+    updatedPeriods[index] = {
+      ...updatedPeriods[index],
+      NAME: newName,
+    };
+    updateSimulationSetting("servicePeriods", updatedPeriods);
+  };
+
+  // Add this function to handle period deletion
+  const handleDeletePeriod = (index: number) => {
+    const updatedPeriods = [...simulationSettings.servicePeriods];
+    updatedPeriods.splice(index, 1);
+    updateSimulationSetting("servicePeriods", updatedPeriods);
+    setPeriodToDelete(null); // Reset the delete state
+  };
+
+  // Add function to handle adding a new period
+  const handleAddPeriod = () => {
+    // Create new period with default values
+    const newPeriod: ServicePeriodConfig = {
+      NAME: `NEW PERIOD ${simulationSettings.servicePeriods.length + 1}`,
+      START_HOUR: 0,
+      REGULAR_TRAIN_COUNT: 0,
+      SKIP_STOP_TRAIN_COUNT: 0,
+    };
+
+    // Add to existing periods
+    const updatedPeriods = [...simulationSettings.servicePeriods, newPeriod];
+    updateSimulationSetting("servicePeriods", updatedPeriods);
+  };
+
+  // Update train count in both tabs unless explicitly changed
+  const updateTrainCount = (
+    index: number,
+    scheme: "REGULAR_TRAIN_COUNT" | "SKIP_STOP_TRAIN_COUNT",
+    value: number
+  ) => {
+    const updatedPeriods = [...simulationSettings.servicePeriods];
+
+    // Update the specified scheme's train count
+    updatedPeriods[index] = {
+      ...updatedPeriods[index],
+      [scheme]: value,
+    };
+
+    // Get the other scheme name
+    const otherScheme =
+      scheme === "REGULAR_TRAIN_COUNT"
+        ? "SKIP_STOP_TRAIN_COUNT"
+        : "REGULAR_TRAIN_COUNT";
+
+    // If the other scheme's count is 0, update it to match this value
+    // This way, we only sync values when the other hasn't been explicitly set
+    if (updatedPeriods[index][otherScheme] === 0) {
+      updatedPeriods[index] = {
+        ...updatedPeriods[index],
+        [otherScheme]: value,
+      };
+    }
+
+    updateSimulationSetting("servicePeriods", updatedPeriods);
+  };
+
+  // Add function to handle resetting all service periods
+  const handleResetAllServicePeriods = (tab: "regular" | "skipstop") => {
+    if (!defaultSettings) return;
+
+    // Create a copy of the default periods
+    const resetPeriods = [...defaultSettings.servicePeriods];
+
+    // Update the periods based on which tab is active
+    updateSimulationSetting("servicePeriods", resetPeriods);
+
+    // Show toast notification
+    toast({
+      title: `Service Periods Reset`,
+      description: `All ${
+        tab === "regular" ? "Regular" : "Skip-Stop"
+      } service periods have been reset to default values.`,
+      variant: "default",
+    });
+  };
+
+  // Add validation function for service periods
+  const validateServicePeriods = (): boolean => {
+    // Check if any service period has invalid values
+    let hasErrors = false;
+    let errorMessage = "";
+
+    for (
+      let index = 0;
+      index < simulationSettings.servicePeriods.length;
+      index++
+    ) {
+      const period = simulationSettings.servicePeriods[index];
+
+      // Check if train counts are set
+      const hasRegularTrains = period.REGULAR_TRAIN_COUNT > 0;
+      const hasSkipStopTrains = period.SKIP_STOP_TRAIN_COUNT > 0;
+
+      // At least one train count must be set
+      if (!hasRegularTrains && !hasSkipStopTrains) {
+        hasErrors = true;
+        errorMessage = `Service period "${period.NAME}" has no train counts set. Please set at least one train count.`;
+        break;
+      }
+
+      // Check if start hour is valid
+      if (period.START_HOUR < 5 || period.START_HOUR > 23) {
+        hasErrors = true;
+        errorMessage = `Service period "${period.NAME}" has an invalid start hour. It must be between 5 and 23.`;
+        break;
+      }
+
+      // Check if this period's start hour is greater than the previous period
+      if (index > 0) {
+        const prevPeriod = simulationSettings.servicePeriods[index - 1];
+        if (period.START_HOUR <= prevPeriod.START_HOUR) {
+          hasErrors = true;
+          errorMessage = `Service period "${period.NAME}" has a start hour (${period.START_HOUR}) that is not greater than the previous period's start hour (${prevPeriod.START_HOUR}).`;
+          break;
+        }
+      }
+    }
+
+    if (hasErrors) {
+      toast({
+        title: "Invalid Service Periods",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    return true;
+  };
+
+  // Function to handle run simulation click with validation
+  const handleRunSimulationClick = () => {
+    // Validate service periods before allowing simulation to run
+    if (!validateServicePeriods()) {
+      return;
+    }
+
+    // If validation passes, proceed with simulation
+    onRunSimulation();
+  };
+
+  // Export for parent component
+  useSimulationStore
+    .getState()
+    .setValidateServicePeriods(validateServicePeriods);
 
   return (
     <Card className="simulation-settings mb-4 relative">
@@ -877,7 +1048,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                       />
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p className="max-w-[250px]">
+                      <p className="max-w-[250px] text-xs">
                         Define the train service periods throughout the day.
                         Each period has a starting hour and how many trains
                         should be in service for Regular and Skip-Stop.
@@ -886,41 +1057,81 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   </Tooltip>
                 </TooltipProvider>
               </div>
+
+              {/* Add a note about shared periods */}
+              <div className="bg-muted/50 text-xs rounded-md p-2 mb-2 text-muted-foreground">
+                <span className="font-medium">Note:</span> Service periods are
+                shared between Regular and Skip-Stop tabs. Adding or deleting
+                periods will affect both service types. However, train counts
+                can be set independently for each service type once a period is
+                created.
+              </div>
+
               <Tabs defaultValue="regular" className="w-full">
                 <TabsList className="mb-2 w-fit">
-                  <TabsTrigger value="regular" disabled={isSimulating}>
+                  <TabsTrigger
+                    value="regular"
+                    disabled={isSimulating}
+                    className="text-xs"
+                  >
                     Regular
                   </TabsTrigger>
-                  <TabsTrigger value="skipstop" disabled={isSimulating}>
+                  <TabsTrigger
+                    value="skipstop"
+                    disabled={isSimulating}
+                    className="text-xs"
+                  >
                     Skip-Stop
                   </TabsTrigger>
                 </TabsList>
                 <TabsContent value="regular">
                   <div className="border rounded-md">
-                    <div className="grid grid-cols-12 gap-4 mb-2 font-medium text-xs sticky top-0 z-10 bg-card px-4 py-2 border-b">
+                    <div className="grid grid-cols-13 gap-4 mb-2 font-medium text-xs sticky top-0 z-10 bg-card px-4 py-2 border-b">
                       <div className="col-span-6">Period Name</div>
                       <div className="col-span-3">Start Hour</div>
-                      <div className="col-span-3">Regular Train Count</div>
+                      <div className="col-span-3">Train Count</div>
+                      <div className="col-span-1"></div>
                     </div>
-                    <div className="px-2 pt-2 pb-4 max-h-[250px] overflow-y-auto">
+                    {/* Add Reset Button for Regular tab */}
+                    <div className="px-4 py-2 border-b flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="text-xs h-7"
+                        onClick={() => handleResetAllServicePeriods("regular")}
+                        disabled={isSimulating || !defaultSettings}
+                      >
+                        <IconRotateClockwise size={12} className="mr-1" /> Reset
+                        All Periods
+                      </Button>
+                    </div>
+                    <div className="px-2 pt-2 pb-4 max-h-[250px] overflow-y-auto text-xs">
                       {simulationSettings.servicePeriods &&
                         simulationSettings.servicePeriods.map(
                           (period, index) => (
                             <div
                               key={`period-regular-${index}`}
-                              className="grid grid-cols-12 gap-4 items-center mb-2 text-xs"
+                              className="grid grid-cols-13 gap-4 items-center mb-2 text-xs"
                             >
                               <div className="col-span-6">
                                 <Input
                                   value={period.NAME}
-                                  disabled={true}
-                                  className="h-7 text-xs"
+                                  disabled={isSimulating}
+                                  className="h-7 text-xs placeholder:text-xs"
+                                  placeholder="Enter period name"
+                                  onChange={(e) =>
+                                    handlePeriodNameChange(
+                                      index,
+                                      e.target.value
+                                    )
+                                  }
                                 />
                               </div>
                               <div className="col-span-3 relative">
                                 <Input
                                   type="number"
-                                  min="0"
+                                  min="5"
                                   max="23"
                                   pattern="[0-9]*"
                                   inputMode="numeric"
@@ -929,10 +1140,81 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                                     const updatedPeriods = [
                                       ...simulationSettings.servicePeriods,
                                     ];
-                                    const value =
-                                      e.target.value === ""
-                                        ? 0
-                                        : parseInt(e.target.value, 10) || 0;
+
+                                    // Only parse and validate once we have an actual input value
+                                    let value;
+                                    if (e.target.value === "") {
+                                      value = 0; // Allow empty/0 during typing
+                                    } else {
+                                      // Parse the number
+                                      const inputValue = parseInt(
+                                        e.target.value,
+                                        10
+                                      );
+
+                                      // Only apply min/max constraints when input is complete
+                                      if (
+                                        e.target.value.length < 2 ||
+                                        !isNaN(inputValue)
+                                      ) {
+                                        value = inputValue;
+                                      } else {
+                                        value = period.START_HOUR; // Keep previous value if invalid
+                                      }
+                                    }
+
+                                    // Check if this value is greater than the previous period's start hour
+                                    if (index > 0) {
+                                      const prevPeriod =
+                                        simulationSettings.servicePeriods[
+                                          index - 1
+                                        ];
+                                      // Only enforce during blur, not during typing
+                                    }
+
+                                    updatedPeriods[index] = {
+                                      ...period,
+                                      START_HOUR: value,
+                                    };
+                                    updateSimulationSetting(
+                                      "servicePeriods",
+                                      updatedPeriods
+                                    );
+                                  }}
+                                  onBlur={(e) => {
+                                    // Apply min/max constraints when user finishes typing
+                                    const updatedPeriods = [
+                                      ...simulationSettings.servicePeriods,
+                                    ];
+
+                                    let value = period.START_HOUR;
+
+                                    // Enforce min/max range
+                                    if (value < 5) value = 5;
+                                    if (value > 23) value = 23;
+
+                                    // Check if this value is greater than the previous period's start hour
+                                    if (index > 0) {
+                                      const prevPeriod =
+                                        simulationSettings.servicePeriods[
+                                          index - 1
+                                        ];
+                                      if (value <= prevPeriod.START_HOUR) {
+                                        // Set to previous hour + 1, ensuring it doesn't exceed max
+                                        value = Math.min(
+                                          23,
+                                          prevPeriod.START_HOUR + 1
+                                        );
+
+                                        // Show toast notification about the adjustment
+                                        toast({
+                                          title: "Start Hour Adjusted",
+                                          description: `Start hour must be greater than the previous period (${prevPeriod.START_HOUR}). Adjusted to ${value}.`,
+                                          variant: "destructive",
+                                        });
+                                      }
+                                    }
+
                                     updatedPeriods[index] = {
                                       ...period,
                                       START_HOUR: value,
@@ -948,22 +1230,8 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                                     }
                                   }}
                                   disabled={isSimulating}
-                                  className="h-7 text-xs pr-10"
+                                  className="h-7 text-xs pr-2"
                                 />
-                                <Button
-                                  type="button"
-                                  size="icon"
-                                  variant="ghost"
-                                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1"
-                                  onClick={() =>
-                                    handleResetServicePeriodStartHour(index)
-                                  }
-                                  disabled={isSimulating || !defaultSettings}
-                                  tabIndex={-1}
-                                  aria-label="Reset to default"
-                                >
-                                  <IconRotateClockwise size={14} />
-                                </Button>
                               </div>
                               <div className="col-span-3 relative">
                                 <Input
@@ -973,23 +1241,19 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                                   inputMode="numeric"
                                   value={period.REGULAR_TRAIN_COUNT || ""}
                                   onChange={(e) => {
-                                    const updatedPeriods = [
-                                      ...simulationSettings.servicePeriods,
-                                    ];
                                     const value =
                                       e.target.value === ""
                                         ? 0
                                         : Math.max(
-                                            1,
-                                            parseInt(e.target.value, 10) || 1
+                                            0,
+                                            parseInt(e.target.value, 10) || 0
                                           );
-                                    updatedPeriods[index] = {
-                                      ...period,
-                                      REGULAR_TRAIN_COUNT: value,
-                                    };
-                                    updateSimulationSetting(
-                                      "servicePeriods",
-                                      updatedPeriods
+
+                                    // Use the new helper function to update both counts
+                                    updateTrainCount(
+                                      index,
+                                      "REGULAR_TRAIN_COUNT",
+                                      value
                                     );
                                   }}
                                   onFocus={(e) => {
@@ -998,58 +1262,136 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                                     }
                                   }}
                                   disabled={isSimulating}
-                                  className="h-7 text-xs pr-10"
+                                  className="h-7 text-xs pr-2"
                                 />
-                                <Button
-                                  type="button"
-                                  size="icon"
-                                  variant="ghost"
-                                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1"
-                                  onClick={() =>
-                                    handleResetServicePeriodField(
-                                      index,
-                                      "REGULAR_TRAIN_COUNT"
-                                    )
+                              </div>
+                              <div className="col-span-1 flex justify-center">
+                                <Dialog
+                                  open={periodToDelete === index}
+                                  onOpenChange={(open) =>
+                                    !open && setPeriodToDelete(null)
                                   }
-                                  disabled={isSimulating || !defaultSettings}
-                                  tabIndex={-1}
-                                  aria-label="Reset to default"
                                 >
-                                  <IconRotateClockwise size={14} />
-                                </Button>
+                                  <DialogTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-7 w-7"
+                                      onClick={() => setPeriodToDelete(index)}
+                                      disabled={
+                                        isSimulating ||
+                                        simulationSettings.servicePeriods
+                                          .length <= 1
+                                      }
+                                    >
+                                      <IconTrash
+                                        size={14}
+                                        className="text-destructive"
+                                      />
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent className="sm:max-w-md">
+                                    <DialogHeader>
+                                      <DialogTitle className="text-sm">
+                                        Delete Service Period
+                                      </DialogTitle>
+                                      <DialogDescription className="text-xs">
+                                        Are you sure you want to delete the "
+                                        {period.NAME}" service period? This
+                                        action cannot be undone.
+                                      </DialogDescription>
+                                    </DialogHeader>
+                                    <DialogFooter className="flex space-x-2 justify-end">
+                                      <Button
+                                        variant="outline"
+                                        onClick={() => setPeriodToDelete(null)}
+                                        className="text-xs h-8"
+                                      >
+                                        Cancel
+                                      </Button>
+                                      <Button
+                                        variant="destructive"
+                                        onClick={() =>
+                                          handleDeletePeriod(index)
+                                        }
+                                        className="text-xs h-8"
+                                      >
+                                        Delete
+                                      </Button>
+                                    </DialogFooter>
+                                  </DialogContent>
+                                </Dialog>
                               </div>
                             </div>
                           )
                         )}
+
+                      {/* Add new period button */}
+                      <div className="flex justify-center mt-3 mb-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleAddPeriod}
+                          disabled={isSimulating}
+                          className="text-xs h-7"
+                        >
+                          <IconPlus size={12} className="mr-1" /> Add Service
+                          Period
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </TabsContent>
                 <TabsContent value="skipstop">
                   <div className="border rounded-md">
-                    <div className="grid grid-cols-12 gap-4 mb-2 font-medium text-xs sticky top-0 z-10 bg-card px-4 py-2 border-b">
+                    <div className="grid grid-cols-13 gap-4 mb-2 font-medium text-xs sticky top-0 z-10 bg-card px-4 py-2 border-b">
                       <div className="col-span-6">Period Name</div>
                       <div className="col-span-3">Start Hour</div>
-                      <div className="col-span-3">Skip-Stop Train Count</div>
+                      <div className="col-span-3">Train Count</div>
+                      <div className="col-span-1"></div>
                     </div>
-                    <div className="px-2 pt-2 pb-4 max-h-[250px] overflow-y-auto">
+                    {/* Add Reset Button for Skip-Stop tab */}
+                    <div className="px-4 py-2 border-b flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="text-xs h-7"
+                        onClick={() => handleResetAllServicePeriods("skipstop")}
+                        disabled={isSimulating || !defaultSettings}
+                      >
+                        <IconRotateClockwise size={12} className="mr-1" /> Reset
+                        All Periods
+                      </Button>
+                    </div>
+                    <div className="px-2 pt-2 pb-4 max-h-[250px] overflow-y-auto text-xs">
                       {simulationSettings.servicePeriods &&
                         simulationSettings.servicePeriods.map(
                           (period, index) => (
                             <div
                               key={`period-skipstop-${index}`}
-                              className="grid grid-cols-12 gap-4 items-center mb-2 text-xs"
+                              className="grid grid-cols-13 gap-4 items-center mb-2 text-xs"
                             >
                               <div className="col-span-6">
                                 <Input
                                   value={period.NAME}
-                                  disabled={true}
-                                  className="h-7 text-xs"
+                                  disabled={isSimulating}
+                                  className="h-7 text-xs placeholder:text-xs"
+                                  placeholder="Enter period name"
+                                  onChange={(e) =>
+                                    handlePeriodNameChange(
+                                      index,
+                                      e.target.value
+                                    )
+                                  }
                                 />
                               </div>
                               <div className="col-span-3 relative">
                                 <Input
                                   type="number"
-                                  min="0"
+                                  min="5"
                                   max="23"
                                   pattern="[0-9]*"
                                   inputMode="numeric"
@@ -1058,10 +1400,81 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                                     const updatedPeriods = [
                                       ...simulationSettings.servicePeriods,
                                     ];
-                                    const value =
-                                      e.target.value === ""
-                                        ? 0
-                                        : parseInt(e.target.value, 10) || 0;
+
+                                    // Only parse and validate once we have an actual input value
+                                    let value;
+                                    if (e.target.value === "") {
+                                      value = 0; // Allow empty/0 during typing
+                                    } else {
+                                      // Parse the number
+                                      const inputValue = parseInt(
+                                        e.target.value,
+                                        10
+                                      );
+
+                                      // Only apply min/max constraints when input is complete
+                                      if (
+                                        e.target.value.length < 2 ||
+                                        !isNaN(inputValue)
+                                      ) {
+                                        value = inputValue;
+                                      } else {
+                                        value = period.START_HOUR; // Keep previous value if invalid
+                                      }
+                                    }
+
+                                    // Check if this value is greater than the previous period's start hour
+                                    if (index > 0) {
+                                      const prevPeriod =
+                                        simulationSettings.servicePeriods[
+                                          index - 1
+                                        ];
+                                      // Only enforce during blur, not during typing
+                                    }
+
+                                    updatedPeriods[index] = {
+                                      ...period,
+                                      START_HOUR: value,
+                                    };
+                                    updateSimulationSetting(
+                                      "servicePeriods",
+                                      updatedPeriods
+                                    );
+                                  }}
+                                  onBlur={(e) => {
+                                    // Apply min/max constraints when user finishes typing
+                                    const updatedPeriods = [
+                                      ...simulationSettings.servicePeriods,
+                                    ];
+
+                                    let value = period.START_HOUR;
+
+                                    // Enforce min/max range
+                                    if (value < 5) value = 5;
+                                    if (value > 23) value = 23;
+
+                                    // Check if this value is greater than the previous period's start hour
+                                    if (index > 0) {
+                                      const prevPeriod =
+                                        simulationSettings.servicePeriods[
+                                          index - 1
+                                        ];
+                                      if (value <= prevPeriod.START_HOUR) {
+                                        // Set to previous hour + 1, ensuring it doesn't exceed max
+                                        value = Math.min(
+                                          23,
+                                          prevPeriod.START_HOUR + 1
+                                        );
+
+                                        // Show toast notification about the adjustment
+                                        toast({
+                                          title: "Start Hour Adjusted",
+                                          description: `Start hour must be greater than the previous period (${prevPeriod.START_HOUR}). Adjusted to ${value}.`,
+                                          variant: "destructive",
+                                        });
+                                      }
+                                    }
+
                                     updatedPeriods[index] = {
                                       ...period,
                                       START_HOUR: value,
@@ -1077,22 +1490,8 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                                     }
                                   }}
                                   disabled={isSimulating}
-                                  className="h-7 text-xs pr-10"
+                                  className="h-7 text-xs pr-2"
                                 />
-                                <Button
-                                  type="button"
-                                  size="icon"
-                                  variant="ghost"
-                                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1"
-                                  onClick={() =>
-                                    handleResetServicePeriodStartHour(index)
-                                  }
-                                  disabled={isSimulating || !defaultSettings}
-                                  tabIndex={-1}
-                                  aria-label="Reset to default"
-                                >
-                                  <IconRotateClockwise size={14} />
-                                </Button>
                               </div>
                               <div className="col-span-3 relative">
                                 <Input
@@ -1102,23 +1501,19 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                                   inputMode="numeric"
                                   value={period.SKIP_STOP_TRAIN_COUNT || ""}
                                   onChange={(e) => {
-                                    const updatedPeriods = [
-                                      ...simulationSettings.servicePeriods,
-                                    ];
                                     const value =
                                       e.target.value === ""
                                         ? 0
                                         : Math.max(
-                                            1,
-                                            parseInt(e.target.value, 10) || 1
+                                            0,
+                                            parseInt(e.target.value, 10) || 0
                                           );
-                                    updatedPeriods[index] = {
-                                      ...period,
-                                      SKIP_STOP_TRAIN_COUNT: value,
-                                    };
-                                    updateSimulationSetting(
-                                      "servicePeriods",
-                                      updatedPeriods
+
+                                    // Use the new helper function to update both counts
+                                    updateTrainCount(
+                                      index,
+                                      "SKIP_STOP_TRAIN_COUNT",
+                                      value
                                     );
                                   }}
                                   onFocus={(e) => {
@@ -1127,29 +1522,85 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                                     }
                                   }}
                                   disabled={isSimulating}
-                                  className="h-7 text-xs pr-10"
+                                  className="h-7 text-xs pr-2"
                                 />
-                                <Button
-                                  type="button"
-                                  size="icon"
-                                  variant="ghost"
-                                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1"
-                                  onClick={() =>
-                                    handleResetServicePeriodField(
-                                      index,
-                                      "SKIP_STOP_TRAIN_COUNT"
-                                    )
+                              </div>
+                              <div className="col-span-1 flex justify-center">
+                                <Dialog
+                                  open={periodToDelete === index}
+                                  onOpenChange={(open) =>
+                                    !open && setPeriodToDelete(null)
                                   }
-                                  disabled={isSimulating || !defaultSettings}
-                                  tabIndex={-1}
-                                  aria-label="Reset to default"
                                 >
-                                  <IconRotateClockwise size={14} />
-                                </Button>
+                                  <DialogTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-7 w-7"
+                                      onClick={() => setPeriodToDelete(index)}
+                                      disabled={
+                                        isSimulating ||
+                                        simulationSettings.servicePeriods
+                                          .length <= 1
+                                      }
+                                    >
+                                      <IconTrash
+                                        size={14}
+                                        className="text-destructive"
+                                      />
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent className="sm:max-w-md">
+                                    <DialogHeader>
+                                      <DialogTitle className="text-sm">
+                                        Delete Service Period
+                                      </DialogTitle>
+                                      <DialogDescription className="text-xs">
+                                        Are you sure you want to delete the "
+                                        {period.NAME}" service period? This
+                                        action cannot be undone.
+                                      </DialogDescription>
+                                    </DialogHeader>
+                                    <DialogFooter className="flex space-x-2 justify-end">
+                                      <Button
+                                        variant="outline"
+                                        onClick={() => setPeriodToDelete(null)}
+                                        className="text-xs h-8"
+                                      >
+                                        Cancel
+                                      </Button>
+                                      <Button
+                                        variant="destructive"
+                                        onClick={() =>
+                                          handleDeletePeriod(index)
+                                        }
+                                        className="text-xs h-8"
+                                      >
+                                        Delete
+                                      </Button>
+                                    </DialogFooter>
+                                  </DialogContent>
+                                </Dialog>
                               </div>
                             </div>
                           )
                         )}
+
+                      {/* Add new period button */}
+                      <div className="flex justify-center mt-3 mb-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleAddPeriod}
+                          disabled={isSimulating}
+                          className="text-xs h-7"
+                        >
+                          <IconPlus size={12} className="mr-1" /> Add Service
+                          Period
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </TabsContent>

@@ -74,7 +74,7 @@ DEFAULT_SERVICE_PERIODS = [
         'START_HOUR': 19
     },
     {
-        'NAME': 'SERVICE END TRANSITION',
+        'NAME': 'SERVICE END',
         'REGULAR_TRAIN_COUNT': 4,
         'SKIP_STOP_TRAIN_COUNT': 4,
         'START_HOUR': 21

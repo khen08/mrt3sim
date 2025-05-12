@@ -87,6 +87,9 @@ interface SimulationState {
   simulationName: string;
   isSimulationNameDialogOpen: boolean;
 
+  // Validation
+  validateServicePeriods: (() => boolean) | null;
+
   // Aggregated Passenger Demand
   aggregatedPassengerDemand: AggregatedDemandData | null;
   selectedTimePeriod: TimePeriodFilter;
@@ -121,6 +124,7 @@ interface SimulationState {
   incrementMapRefreshKey: () => void;
   setSimulationName: (name: string) => void;
   setSimulationNameDialogOpen: (isOpen: boolean) => void;
+  setValidateServicePeriods: (validator: (() => boolean) | null) => void;
 
   // Aggregated Passenger Demand Actions
   setAggregatedPassengerDemand: (data: AggregatedDemandData | null) => void;
@@ -193,6 +197,9 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   selectedTimePeriod: "FULL_SERVICE",
   isAggregatedDemandLoading: false,
 
+  // Validation
+  validateServicePeriods: null,
+
   // Basic setters
   setSimulationSettings: (settings) => set({ simulationSettings: settings }),
   setActiveSimulationSettings: (settings) =>
@@ -241,6 +248,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     set({ simulationName: name || "Untitled Simulation" }),
   setSimulationNameDialogOpen: (isOpen) =>
     set({ isSimulationNameDialogOpen: isOpen }),
+  setValidateServicePeriods: (validator) =>
+    set({ validateServicePeriods: validator }),
 
   // Aggregated Passenger Demand Setters
   setAggregatedPassengerDemand: (data) =>
