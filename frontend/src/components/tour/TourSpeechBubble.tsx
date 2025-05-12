@@ -88,8 +88,9 @@ const TourSpeechBubble = () => {
           case "left":
             bubbleTop = targetRect.top;
             bubbleLeft = targetRect.left - 350;
-            mascotTop = bubbleTop + 20; // Consistent with welcome step
-            mascotLeft = bubbleLeft - 150;
+            // For left placement, position Marty below the speech bubble instead of to the left
+            mascotTop = bubbleTop + 180; // Position below the speech bubble
+            mascotLeft = bubbleLeft + 100; // Center Marty horizontally with the speech bubble
             break;
           case "center":
           default:

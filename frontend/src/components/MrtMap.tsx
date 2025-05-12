@@ -1943,7 +1943,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                     {/* Stopped Section */}
                     <div className="ml-2">
                       <div className="text-xs mb-1 text-muted-foreground">
-                        Stopped:
+                        Currently dwelling:
                       </div>
                       <div className="flex items-center">
                         <div
@@ -1992,7 +1992,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
                   {/* Stopped Section */}
                   <div className="pl-2 mt-1">
                     <div className="text-xs mb-1 text-muted-foreground">
-                      Stopped:
+                      Currently dwelling:
                     </div>
                     <div className="flex space-x-4">
                       <div className="flex items-center">

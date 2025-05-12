@@ -48,7 +48,7 @@ const section1Steps: TourStep[] = [
       "If you enable 'Simulate Passenger Flow' in the settings, you'll need to upload passenger demand data for the MRT-3 system. This is optional - you can also run train-only simulations without passenger data. When enabled, the simulator accepts CSV files with time-based passenger counts for each station.",
     image: "/yapping.png",
     target: ".csv-upload-area", // Target the upload component
-    placement: "right",
+    placement: "left",
   },
   {
     id: "simulation-settings",

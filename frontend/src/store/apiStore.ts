@@ -24,10 +24,10 @@ import { usePassengerDemandStore } from "./passengerDemandStore";
 // Define proper type for SimulationHistoryEntry
 export interface SimulationHistoryEntry {
   SIMULATION_ID: number;
-  NAME: string;
+  NAME: string | null;
   CREATED_AT: string;
-  START_TIME?: string;
-  END_TIME?: string;
+  START_TIME?: string | null;
+  END_TIME?: string | null;
   CONFIG?: any;
   STATION_CAPACITIES?: any;
   SERVICE_PERIODS?: any;
@@ -56,6 +56,7 @@ interface APIState {
   ) => Promise<SimulationSettings | null>;
   fetchAggregatedPassengerDemand: (simulationId: number) => Promise<any | null>;
   fetchSimulationMetrics: (simulationId: number) => Promise<void>;
+  _isCreatingNewSimulation: boolean;
 }
 
 export const useAPIStore = create<APIState>((set, get) => ({
@@ -183,6 +184,7 @@ export const useAPIStore = create<APIState>((set, get) => ({
 
     simStore.setApiError(null);
     console.log("Opening simulation name dialog...");
+    set({ _isCreatingNewSimulation: true });
     simStore.setSimulationNameDialogOpen(true);
   },
 
@@ -194,13 +196,15 @@ export const useAPIStore = create<APIState>((set, get) => ({
     const modalStore = useModalStore.getState();
     const uiStore = useUIStore.getState();
 
+    set({ _isCreatingNewSimulation: true });
+
     simStore.setIsSimulating(true);
     simStore.setIsMapLoading(true);
     simStore.setApiError(null);
 
     toast({
       title: "Running Simulation",
-      description: "Generating new timetable...",
+      description: "Creating a new simulation...",
       variant: "default",
     });
 
@@ -242,7 +246,7 @@ export const useAPIStore = create<APIState>((set, get) => ({
       console.log("Backend Simulation Result:", resultData);
       toast({
         title: "Simulation Complete",
-        description: `Simulation ID: ${newSimulationId} created successfully.`,
+        description: `New simulation created with ID: ${newSimulationId}`,
         variant: "default",
       });
 
@@ -298,6 +302,7 @@ export const useAPIStore = create<APIState>((set, get) => ({
         variant: "destructive",
       });
     } finally {
+      set({ _isCreatingNewSimulation: false });
       simStore.setIsSimulating(false);
       simStore.setIsMapLoading(false);
       simStore.setSimulationNameDialogOpen(false);
@@ -305,6 +310,8 @@ export const useAPIStore = create<APIState>((set, get) => ({
   },
 
   loadSimulation: async (simulationId) => {
+    set({ _isCreatingNewSimulation: false });
+
     const simStore = useSimulationStore.getState();
     const fileStore = useFileStore.getState();
     const metricsStore = useMetricsStore.getState();
@@ -325,7 +332,7 @@ export const useAPIStore = create<APIState>((set, get) => ({
 
     toast({
       title: "Loading Simulation",
-      description: "Fetching simulation metadata...",
+      description: "Fetching existing simulation data...",
       variant: "default",
     });
 
@@ -349,7 +356,7 @@ export const useAPIStore = create<APIState>((set, get) => ({
       // 2. Fetch config first
       toast({
         title: "Loading Configuration",
-        description: "Fetching simulation settings...",
+        description: "Fetching simulation settings from existing simulation...",
         variant: "default",
       });
 
@@ -407,7 +414,7 @@ export const useAPIStore = create<APIState>((set, get) => ({
       // 3. Fetch other data
       toast({
         title: "Loading Simulation Data",
-        description: "Fetching timetable and visualization data...",
+        description: "Fetching timetable and data from existing simulation...",
         variant: "default",
       });
 
@@ -419,7 +426,7 @@ export const useAPIStore = create<APIState>((set, get) => ({
 
       toast({
         title: "Simulation Loaded",
-        description: `Successfully loaded simulation: ${simName} (ID: ${simulationId})`,
+        description: `Successfully loaded existing simulation: ${simName} (ID: ${simulationId})`,
         variant: "default",
       });
 
@@ -657,4 +664,6 @@ export const useAPIStore = create<APIState>((set, get) => ({
       modalStore.actions.setError("Failed to load metrics data."); // Use actions
     }
   },
+
+  _isCreatingNewSimulation: false,
 }));
