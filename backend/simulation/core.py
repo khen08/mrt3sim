@@ -1450,7 +1450,13 @@ class Simulation:
 
         self.track_segments = []
         self.passenger_demand = []
-        self.service_periods = DEFAULT_SERVICE_PERIODS
+        
+        # Initialize service_periods from config if available, otherwise use defaults
+        if config and "servicePeriods" in config:
+            self.service_periods = config["servicePeriods"]
+        else:
+            self.service_periods = DEFAULT_SERVICE_PERIODS
+            
         self.loop_times = {}
         self.active_trains = []
         self.active_headway = 0
@@ -1471,15 +1477,15 @@ class Simulation:
 
         self._initialize_stations(scheme_type)
         self._initialize_track_segments() # Track segments are the same for all schemes
-        self._initialize_trains()
-        self._initialize_service_periods(scheme_type)
+        self._initialize_service_periods(scheme_type) # Move this BEFORE _initialize_trains
+        self._initialize_trains() # Now trains will be created based on correct service periods
         
         if self.passenger_data_file:
             self._initialize_passengers_demand()
 
         # Create station map for efficient lookup
         self.station_type_map = {s.station_id: s.station_type for s in self.stations}
-        
+    
     def _create_simulation_entry(self):
         """Create a simulation entry in the database."""
         print("\n[CREATING SIMULATION ENTRY IN DB]")
@@ -1578,7 +1584,7 @@ class Simulation:
         self.trains.clear()
         
         train_count = 0
-        for period in DEFAULT_SERVICE_PERIODS:
+        for period in self.service_periods:  # Use self.service_periods instead of DEFAULT_SERVICE_PERIODS
             # Get the correct train count based on scheme type
             scheme_type_underscore = self.scheme_type.replace("-", "_")
             train_count = max(train_count, period[f'{scheme_type_underscore}_TRAIN_COUNT'])
@@ -1605,6 +1611,11 @@ class Simulation:
 
     def _initialize_service_periods(self, scheme_type):
         print("\n[INITIALIZING SERVICE PERIODS]")
+        
+        # Ensure service_periods is using the user's configuration
+        if self.config and "servicePeriods" in self.config:
+            self.service_periods = self.config["servicePeriods"]
+            
         test_train = Train(
                 train_id=1,
                 train_specs=TrainSpec(
