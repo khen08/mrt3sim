@@ -1021,7 +1021,7 @@ class EventHandler:
             
             #======= BOARD/ALIGHT PASSENGERS =======#
             # For skip-stop schemes, we need to check if the train should stop at the station
-            if station.should_stop(train):
+            if station.should_stop(train) and self.simulation.dwell_time > 0:
                 alighted, boarded = station.process_passenger_exchange(
                     scheme_map=self.simulation.station_type_map, # Pass the map
                     train=train, 
