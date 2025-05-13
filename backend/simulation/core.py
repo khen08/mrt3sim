@@ -629,7 +629,7 @@ class EventHandler:
     
     def _handle_service_period_change(self, event):
         """Adjust the number of active trains based on the service period."""
-        # Immediately activate the new period\'s headway
+        # Immediately activate the new period's headway
         scheme_type_underscore = self.simulation.scheme_type.replace("-", "_") # Get scheme type and convert
         self.simulation.active_headway = event.period[f"{scheme_type_underscore}_HEADWAY"] # Use the converted key
         period = event.period
@@ -637,7 +637,7 @@ class EventHandler:
         active_trains = self.simulation.active_trains
         target_train_count = period[f"{scheme_type_underscore}_TRAIN_COUNT"]
         current_active_count = len(active_trains)
-
+        
         # Deploy trains if needed
         if current_active_count < target_train_count:
             trains_to_deploy = min(
@@ -647,72 +647,34 @@ class EventHandler:
             available_trains = [
                 train for train in trains if train not in active_trains
             ]  # Get reference to trains to deploy.
-
-            # Determine the search window for optimal insertion
-            search_start_time = event.time
-            # Derive the period\'s actual start time to form the end of our search window.
-            try:
-                period_actual_start_time = datetime.combine(
-                    event.time.date(),
-                    time(hour=period["START_HOUR"], minute=0, second=0)
-                )
-            except KeyError:
-                 print(f"Error: START_HOUR key missing in period data: {period}. Using default window.")
-                 period_actual_start_time = event.time + timedelta(minutes=45) # Fallback if key missing
-
-            search_end_time = period_actual_start_time
-
-            # Define insertion parameters (assuming insertion at Station 1 Northbound)
-            insertion_segment = self.simulation.get_segment_by_id((2,1)) # Segment leading to Stn 1
-            first_station = self.simulation.get_station_by_id(1)
-
-            # Estimated time for an inserted train to traverse the insertion segment
-            estimated_insertion_traversal_seconds = 60 # Default 1 minute
-
-            optimal_insertion_time = None # Default to no optimization
-            if insertion_segment and first_station:
-                optimal_insertion_time = self.simulation._find_best_insertion_opportunity(
-                    search_start_time=search_start_time,
-                    search_end_time=search_end_time,
-                    insertion_segment=insertion_segment,
-                    first_station=first_station,
-                    dwell_time_at_first_station=self.simulation.dwell_time,
-                    insertion_segment_traversal_time=estimated_insertion_traversal_seconds
-                )
-            else:
-                print(f"[OPTIMAL INSERTION] Could not find insertion segment (2,1) or station 1. Skipping optimization.")
-
-
-            first_insertion_schedule_time = optimal_insertion_time if optimal_insertion_time else event.time
-            departure_time = first_insertion_schedule_time # Use this as the base for subsequent headways
-
-            metrics = self._calculate_system_congestion_metrics() # Needed for adaptive headway
-
+            
+            # Use our congestion metrics to determine optimal scheduling
+            metrics = self._calculate_system_congestion_metrics()
+            headway_multiplier = metrics["recommended_headway_multiplier"]
+            
+            # Schedule departure event for trains with adaptive headway, starting after initial delay
+            departure_time = event.time
+            
+            # Distribute insertions more evenly across a longer timespan to reduce congestion
+            # Calculate an appropriate spread factor based on how many trains we're adding
+            spread_factor = 1.2 if trains_to_deploy <= 3 else 1.5
+            
             for i in range(trains_to_deploy):
-                train = available_trains[i]
-                train.is_active = True
-                active_trains.append(train)
-
-                current_insertion_schedule_time = first_insertion_schedule_time if i == 0 else departure_time
-
-                if i > 0 : # For trains after the first one
-                    adaptive_headway_for_sequence = self.simulation.active_headway * metrics["recommended_headway_multiplier"]
-                    departure_time += timedelta(minutes=adaptive_headway_for_sequence)
-                    current_insertion_schedule_time = departure_time
-
+                train = available_trains[i]  # get train to deploy
+                train.is_active = True  # Explicitly mark train as active
+                active_trains.append(train)  # add train to active list
+                
+                # Schedule the insertion event
                 self.simulation.schedule_event(
                     Event(
-                        time=current_insertion_schedule_time,
+                        time=departure_time,
                         event_type="train_insertion",
                         train=train,
-                        segment=insertion_segment # Pass the segment used for insertion
+                        segment=self.simulation.get_segment_by_id((2,1))
                     )
                 )
-
-                # Update departure_time for the *next* loop iteration's calculation
-                if i == 0:
-                     departure_time = current_insertion_schedule_time # Base for next train established
-
+                departure_time += timedelta(minutes=self.simulation.active_headway)
+                
         # Withdraw trains if needed
         elif current_active_count > target_train_count:
             trains_to_withdraw = current_active_count - target_train_count
@@ -2250,447 +2212,7 @@ class Simulation:
             print(f"An unexpected error occurred while reading date from '{file_path}': {e}")
             return None
         
-    def _is_segment_free_in_interval(self, segment, start_time, end_time, train_to_ignore=None):
-        """
-        Checks if a given segment is predicted to be free of other trains
-        during the specified time interval using more precise event linking.
-        """
-        if segment is None: return True
-        if start_time >= end_time: return True
-
-        # --- Check Current Occupancy --- 
-        if start_time <= self.current_time:
-            occupying_train = segment.occupied_by
-            if occupying_train and occupying_train != train_to_ignore:
-                # Segment is currently occupied. Find its scheduled exit event.
-                exit_event = next((e for _, e in self.event_queue.queue
-                                  if e.event_type == "segment_exit"
-                                  and e.segment == segment
-                                  and e.train == occupying_train), None)
-                
-                if exit_event:
-                    segment_clear_time = exit_event.time
-                    # If segment clears *after* our interval starts, check for overlap.
-                    if segment_clear_time > start_time:
-                        if segment_clear_time < end_time:
-                            return False # Clears during our interval -> conflict.
-                        elif segment_clear_time >= end_time:
-                            return False # Occupied for the entire interval.
-                else:
-                    # Currently occupied, but no exit event found? Assume conflict.
-                    return False
-
-        # --- Check Future Events for Conflicts --- 
-        for _, event in self.event_queue.queue:
-            # Optimization: Stop checking if event time is past the required interval end
-            if event.time >= end_time:
-                break
-            
-            # Ignore events for the train we are trying to schedule
-            if event.train == train_to_ignore:
-                continue
-            
-            if event.segment == segment: 
-                # CASE 1: Another train ENTERS this segment.
-                if event.event_type == "segment_enter":
-                    enter_time = event.time
-                    entering_train = event.train
-                    
-                    # Find the corresponding exit event for this entering train.
-                    corresponding_exit = next((e_exit for _, e_exit in self.event_queue.queue
-                                                 if e_exit.event_type == "segment_exit"
-                                                 and e_exit.segment == segment
-                                                 and e_exit.train == entering_train
-                                                 and e_exit.time >= enter_time), None)
-                                                 
-                    if corresponding_exit:
-                        exit_time = corresponding_exit.time
-                        # Occupancy interval: [enter_time, exit_time)
-                        # Check for overlap with required interval [start_time, end_time)
-                        if max(start_time, enter_time) < min(end_time, exit_time):
-                            return False # Intervals overlap
-                    else:
-                        # Enter event found, but no exit? Assume conflict if enter is within interval.
-                        if start_time <= enter_time < end_time:
-                            return False
-                            
-                # CASE 2: Another train EXITS this segment.
-                elif event.event_type == "segment_exit":
-                    exit_time = event.time
-                    # An exit implies occupancy *before* this time.
-                    # If the exit happens *after* our interval starts, it was occupied.
-                    if exit_time > start_time:
-                        # Occupied at the start of or during the interval before exiting.
-                        return False 
-                        
-        return True # If no definite conflicts found
-
-
-    def _get_time_of_next_conflict(self, resource_type, resource_object, direction, after_time, lookahead_window_seconds, train_to_ignore=None):
-        """
-        Finds the start time of the earliest predicted conflicting occupancy interval 
-        for a given resource after 'after_time' within a 'lookahead_window'.
-        Returns datetime of conflict start or None.
-        """
-        lookahead_end_time = after_time + timedelta(seconds=lookahead_window_seconds)
-        earliest_conflict_start_time = None
-
-        # Iterate through events that could START an occupancy AFTER after_time
-        for _, event in self.event_queue.queue:
-            # Stop if event is too far in the future
-            if event.time >= lookahead_end_time:
-                break 
-                
-            # Skip events at or before the time we start looking from
-            if event.time <= after_time:
-                continue
-
-            # Ignore events related to the train we are evaluating
-            if event.train == train_to_ignore:
-                continue
-
-            potential_conflict_start = None
-            occupancy_start_time = event.time
-            occupancy_end_time = None # Need to determine this
-
-            # --- Determine Occupancy Interval based on Event --- 
-            
-            if resource_type == "segment":
-                target_segment = resource_object
-                if event.segment == target_segment and event.event_type == "segment_enter":
-                    # Find corresponding exit
-                    corresponding_exit = next((e_exit for _, e_exit in self.event_queue.queue
-                                                 if e_exit.event_type == "segment_exit"
-                                                 and e_exit.segment == target_segment
-                                                 and e_exit.train == event.train
-                                                 and e_exit.time >= occupancy_start_time), None)
-                    if corresponding_exit:
-                        occupancy_end_time = corresponding_exit.time
-                    else:
-                        occupancy_end_time = lookahead_end_time # Assume occupied until end of window if no exit found
-                    
-                    # Conflict starts at occupancy_start_time (event.time)
-                    potential_conflict_start = occupancy_start_time
-
-            elif resource_type == "platform":
-                target_station = resource_object
-                target_direction = direction
-                if event.station == target_station:
-                    # Event: Train Arrival
-                    if event.event_type == "train_arrival" and event.train.direction == target_direction:
-                        # Find departure or turnaround to determine end time
-                        departure_for_arrival = next((e_dep for _, e_dep in self.event_queue.queue
-                                                   if e_dep.event_type == "train_departure"
-                                                   and e_dep.station == target_station
-                                                   and e_dep.train == event.train
-                                                   and e_dep.time >= occupancy_start_time), None)
-                        turnaround_for_arrival = next((e_turn for _, e_turn in self.event_queue.queue
-                                                       if e_turn.event_type == "turnaround"
-                                                       and e_turn.station == target_station
-                                                       and e_turn.train == event.train
-                                                       and e_turn.time >= occupancy_start_time), None)
-                        if departure_for_arrival:
-                            occupancy_end_time = departure_for_arrival.time
-                        elif turnaround_for_arrival:
-                            occupancy_end_time = turnaround_for_arrival.time # Platform free at event time
-                        else:
-                            occupancy_end_time = lookahead_end_time # Assume occupied if no end found
-                        
-                        # Conflict starts at arrival time
-                        potential_conflict_start = occupancy_start_time
-                        
-                    # Event: Turnaround (Affects Departure Platform)
-                    elif event.event_type == "turnaround":
-                         turning_train = event.train
-                         arrival_direction = turning_train.direction
-                         departure_direction = "SOUTHBOUND" if arrival_direction == "NORTHBOUND" else "NORTHBOUND"
-                         # Check if this turnaround affects the platform we care about (departure platform)
-                         if target_direction == departure_direction:
-                             # Find the actual departure after turnaround
-                             actual_departure = next((e_dep for _, e_dep in self.event_queue.queue
-                                                      if e_dep.event_type == "train_departure"
-                                                      and e_dep.station == target_station
-                                                      and e_dep.train == turning_train
-                                                      and e_dep.time >= occupancy_start_time), None)
-                             if actual_departure:
-                                 # Assume conflict starts around event.time (conservative)
-                                 # and ends when the train actually departs.
-                                 potential_conflict_start = occupancy_start_time 
-                                 occupancy_end_time = actual_departure.time 
-                             else:
-                                 # If can't find departure, assume conflict starts now until end of window
-                                 potential_conflict_start = occupancy_start_time
-                                 occupancy_end_time = lookahead_end_time
-            
-            # --- Update Earliest Conflict Time --- 
-            if potential_conflict_start:
-                # Ensure the conflict actually starts AFTER after_time
-                if potential_conflict_start > after_time: 
-                    if earliest_conflict_start_time is None or potential_conflict_start < earliest_conflict_start_time:
-                        earliest_conflict_start_time = potential_conflict_start
-                        # Optimization: If we found a conflict starting right after after_time, 
-                        # we might not need to search further, but let's find the absolute earliest.
         
-        return earliest_conflict_start_time
-
-    def _is_platform_free_in_interval(self, station, direction, start_time, end_time, train_to_ignore=None):
-        """
-        Checks if a given station platform is predicted to be free 
-        during the specified time interval using more precise event linking.
-        """
-        if station is None: return True
-        if start_time >= end_time: return True # Zero or negative interval is always free
-
-        platform_key = direction
-
-        # --- Check Current Occupancy --- 
-        if start_time <= self.current_time:
-            occupying_train = station.platforms.get(platform_key)
-            if occupying_train and occupying_train != train_to_ignore:
-                # Platform is currently occupied. Find its scheduled departure/clear time.
-                departure_event = next((e for _, e in self.event_queue.queue 
-                                        if e.event_type == "train_departure" 
-                                        and e.station == station 
-                                        and e.train == occupying_train), None)
-                
-                turnaround_event_for_occupier = next((e for _, e in self.event_queue.queue
-                                        if e.event_type == "turnaround"
-                                        and e.station == station
-                                        and e.train == occupying_train), None)
-                
-                platform_clear_time = None
-                if departure_event:
-                    platform_clear_time = departure_event.time 
-                elif turnaround_event_for_occupier:
-                    # If currently occupied and a turnaround is scheduled for it,
-                    # the platform (arrival direction) clears AT the turnaround event time.
-                    platform_clear_time = turnaround_event_for_occupier.time
-                
-                if platform_clear_time:
-                    # If the platform clears *after* our required interval starts, it's occupied.
-                    if platform_clear_time > start_time:
-                        # Check if it clears *before* our interval ends.
-                        # If platform_clear_time is within [start_time, end_time), it means partial overlap. Conflict.
-                        if platform_clear_time < end_time:
-                             return False # Occupied during part of the interval.
-                        # If platform clears *after* our interval ends, it's occupied for the whole duration.
-                        elif platform_clear_time >= end_time:
-                             return False # Occupied for the entire interval.
-                else:
-                    # Currently occupied, but no departure/turnaround event found? Assume conflict (conservative).
-                    return False
-        
-        # --- Check Future Events for Conflicts --- 
-        for _, event in self.event_queue.queue:
-            # Optimization: Stop checking if event time is past the required interval end
-            if event.time >= end_time:
-                break
-            
-            # Ignore events completely before the interval (already handled by current check)
-            # Events *at* start_time are relevant.
-            # Note: This might miss occupancy intervals STARTING before start_time but ENDING after start_time.
-            # A full interval check is complex. Let's focus on events *within* the interval for now.
-            # *** A more robust check would find all occupancy intervals and check overlap ***
-            
-            # Ignore events for the train we are trying to schedule
-            if event.train == train_to_ignore:
-                continue
-            
-            if event.station == station:
-                # CASE 1: Another train ARRIVES on this platform.
-                if event.event_type == "train_arrival" and event.train.direction == direction:
-                    # Find when this arriving train will depart to know its occupancy end time.
-                    arriving_train = event.train
-                    arrival_time = event.time
-                    
-                    # Find the departure or turnaround event for this arriving train
-                    departure_for_arrival = next((e_dep for _, e_dep in self.event_queue.queue
-                                                   if e_dep.event_type == "train_departure"
-                                                   and e_dep.station == station
-                                                   and e_dep.train == arriving_train
-                                                   and e_dep.time >= arrival_time), None) # Must be after arrival
-                                                   
-                    turnaround_for_arrival = next((e_turn for _, e_turn in self.event_queue.queue
-                                                   if e_turn.event_type == "turnaround"
-                                                   and e_turn.station == station
-                                                   and e_turn.train == arriving_train
-                                                   and e_turn.time >= arrival_time), None) # Must be after arrival
-                                                   
-                    occupancy_end_time = None
-                    if departure_for_arrival:
-                        occupancy_end_time = departure_for_arrival.time
-                    elif turnaround_for_arrival:
-                        # Arrival platform is occupied until the turnaround EVENT time.
-                        occupancy_end_time = turnaround_for_arrival.time 
-                    
-                    if occupancy_end_time:
-                        # Occupancy interval: [arrival_time, occupancy_end_time)
-                        # Check for overlap with required interval [start_time, end_time)
-                        if max(start_time, arrival_time) < min(end_time, occupancy_end_time):
-                            return False # Intervals overlap
-                    else:
-                        # Arrival event found, but no clear departure/turnaround? Assume conflict.
-                        # Only consider it a conflict if arrival is within our interval, as we don't know end time.
-                        if start_time <= arrival_time < end_time:
-                             return False
-                
-                # CASE 2: Another train DEPARTS this platform.
-                elif event.event_type == "train_departure" and event.train.direction == direction:
-                    # A departure at event.time implies occupancy *before* event.time.
-                    departure_time = event.time
-                    # If the departure happens *after* our interval starts, the platform was occupied.
-                    if departure_time > start_time:
-                        # Does this occupancy period (ending at departure_time) overlap with [start_time, end_time)?
-                        # We don't know when the occupancy started without finding the arrival, but 
-                        # if departure_time > start_time, there's overlap at the beginning of our interval.
-                        return False 
-                        
-                # CASE 3: A turnaround event occurs at this station.
-                elif event.event_type == "turnaround":
-                    turnaround_start_time = event.time
-                    turning_train = event.train
-                    arrival_direction = turning_train.direction # Direction *before* turnaround
-                    departure_direction = "SOUTHBOUND" if arrival_direction == "NORTHBOUND" else "NORTHBOUND"
-                    
-                    # Check conflict for the platform we are interested in (`direction`)
-                    if direction == arrival_direction:
-                        # This is the platform being FREED by the turnaround event.
-                        # Occupancy interval ends at turnaround_start_time.
-                        # If our required interval starts *before* this, it's a conflict.
-                        if start_time < turnaround_start_time:
-                             return False
-                    elif direction == departure_direction:
-                        # This is the platform the train *might* occupy *after* turning.
-                        # Find the actual departure event scheduled after turnaround.
-                        actual_departure_after_turn = next((e_dep for _, e_dep in self.event_queue.queue
-                                                         if e_dep.event_type == "train_departure"
-                                                         and e_dep.station == station
-                                                         and e_dep.train == turning_train 
-                                                         and e_dep.time >= turnaround_start_time), None)
-                        
-                        if actual_departure_after_turn:
-                            # Occupancy starts approx turnaround_start_time + turnaround_time (when it occupies dep platform)
-                            # and ends at actual_departure_after_turn.time
-                            # Simplified: Assume occupancy from turnaround_start_time until actual_departure_after_turn.time
-                            occupancy_start_approx = turnaround_start_time # Overly conservative start
-                            occupancy_end = actual_departure_after_turn.time
-                            if max(start_time, occupancy_start_approx) < min(end_time, occupancy_end):
-                                return False # Overlap
-                        else:
-                            # Turnaround happens, but can't find the final departure?
-                            # Conservative: Assume conflict if turnaround event is within interval.
-                            if start_time <= turnaround_start_time < end_time:
-                                 return False
-
-        return True # If no definite conflicts found
-
-
-    def _find_best_insertion_opportunity(self, search_start_time, search_end_time,
-                                         insertion_segment, first_station,
-                                         dwell_time_at_first_station,
-                                         insertion_segment_traversal_time):
-        """
-        Searches for the best time to insert a train to maximize clearance afterwards.
-        Returns the optimal datetime for insertion_event.time, or None.
-        """
-        best_insertion_start_time = None
-        max_clearance_score = timedelta(seconds=-1) # Use timedelta for comparison
-
-        current_potential_time = search_start_time
-        time_step = timedelta(seconds=15) # Check every 15 seconds
-        
-        # Insertion assumed Northbound into Station 1
-        insertion_direction = "NORTHBOUND" 
-
-        # Determine the onward journey resources (assuming NB from Stn 1)
-        # This should be more dynamic if insertion point changes
-        onward_segment = None
-        next_station_after_insertion = None
-        if first_station.station_id == 1:
-             onward_segment = self.get_segment_by_id((1, 2)) # Stn 1 to Stn 2 (NB segment)
-             next_station_after_insertion = self.get_station_by_id(2)
-        else:
-             # Handle other potential insertion points if necessary
-             print(f"[OPTIMAL INSERTION] Warning: Optimization logic currently assumes insertion at Station 1.")
-
-
-        if not onward_segment or not next_station_after_insertion:
-            print(f"[OPTIMAL INSERTION] Could not determine onward path from first_station {first_station.station_id}. Skipping optimization.")
-            return None
-
-        print(f"[OPTIMAL INSERTION] Searching for best slot between {search_start_time} and {search_end_time}")
-
-        while current_potential_time < search_end_time:
-            t_arrival_at_first = current_potential_time + timedelta(seconds=insertion_segment_traversal_time)
-            t_ready_to_depart_first = t_arrival_at_first + timedelta(seconds=dwell_time_at_first_station)
-
-            # 1. Validity Check for the insertion operation itself
-            segment_clear = self._is_segment_free_in_interval(
-                insertion_segment, current_potential_time, t_arrival_at_first
-            )
-            if not segment_clear:
-                 # print(f"Debug: Slot {current_potential_time}: Insertion segment busy.") # Optional debug
-                 current_potential_time += time_step
-                 continue
-
-            platform_clear = self._is_platform_free_in_interval(
-                first_station, insertion_direction, t_arrival_at_first, t_ready_to_depart_first
-            )
-            if not platform_clear:
-                 # print(f"Debug: Slot {current_potential_time}: First station platform busy.") # Optional debug
-                 current_potential_time += time_step
-                 continue
-
-            # If both checks pass, the insertion time is valid. Now calculate score.
-            # print(f"Debug: Slot {current_potential_time}: Valid for insertion. Calculating score...") # Optional debug
-
-            # 2. Calculate Clearance Score for the onward journey
-            lookahead_window = 900 # Look 15 minutes ahead for conflicts
-
-            # Time of next conflict on the *onward segment* (e.g., Stn1->Stn2 NB)
-            conflict_on_onward_segment_time = self._get_time_of_next_conflict(
-                "segment", onward_segment, insertion_direction,
-                t_ready_to_depart_first, lookahead_window
-            )
-            # Time of next conflict on the *next station\'s platform* (e.g., Stn2 NB)
-            conflict_on_next_station_platform_time = self._get_time_of_next_conflict(
-                "platform", next_station_after_insertion, insertion_direction,
-                t_ready_to_depart_first, lookahead_window
-            )
-
-            # Determine the earliest conflict time on the onward path
-            earliest_onward_conflict_time = None
-            if conflict_on_onward_segment_time and conflict_on_next_station_platform_time:
-                earliest_onward_conflict_time = min(conflict_on_onward_segment_time, conflict_on_next_station_platform_time)
-            elif conflict_on_onward_segment_time:
-                earliest_onward_conflict_time = conflict_on_onward_segment_time
-            elif conflict_on_next_station_platform_time:
-                 earliest_onward_conflict_time = conflict_on_next_station_platform_time
-
-            # Calculate the clearance duration
-            clearance_duration = timedelta(seconds=lookahead_window) # Assume max clearance if no conflict found
-            if earliest_onward_conflict_time:
-                 clearance_duration = earliest_onward_conflict_time - t_ready_to_depart_first
-                 if clearance_duration < timedelta(0): clearance_duration = timedelta(0) # Ensure non-negative
-
-            # print(f"Debug: Slot {current_potential_time}: Score = {clearance_duration.total_seconds()}s") # Optional debug
-
-            # Check if this score is better than the current best
-            if clearance_duration > max_clearance_score:
-                 max_clearance_score = clearance_duration
-                 best_insertion_start_time = current_potential_time
-                 # print(f"Debug: New best time: {best_insertion_start_time}, Score: {max_clearance_score.total_seconds()}s") # Optional debug
-
-
-            current_potential_time += time_step
-
-        if best_insertion_start_time:
-            print(f"[OPTIMAL INSERTION] Found best insertion time: {best_insertion_start_time} with clearance score: {max_clearance_score.total_seconds():.0f}s")
-        else:
-            print(f"[OPTIMAL INSERTION] No suitable insertion slot found in window [{search_start_time} - {search_end_time}]. Using default {search_start_time}.")
-
-        return best_insertion_start_time
-
 if __name__ == "__main__":
     """ Method to run the simulation as a standalone script"""
     sample_config = {
@@ -2840,4 +2362,3 @@ if __name__ == "__main__":
     event_history = instances_to_df(test_sim.event_history)
 
     print("\nSimulation script finished.")
-
