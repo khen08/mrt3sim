@@ -822,12 +822,12 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   <Input
                     id="dwellTime"
                     name="dwellTime"
-                    type="number"
+                    type="text"
                     step="1"
                     min="0"
                     pattern="[1-9][0-9]*"
                     inputMode="numeric"
-                    value={simulationSettings.dwellTime || ""}
+                    value={simulationSettings.dwellTime}
                     onChange={handleSettingChange}
                     className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -863,12 +863,12 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   <Input
                     id="turnaroundTime"
                     name="turnaroundTime"
-                    type="number"
+                    type="text"
                     step="1"
                     min="0"
                     pattern="[1-9][0-9]*"
                     inputMode="numeric"
-                    value={simulationSettings.turnaroundTime || ""}
+                    value={simulationSettings.turnaroundTime ?? ""}
                     onChange={handleSettingChange}
                     className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -908,12 +908,12 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   <Input
                     id="acceleration"
                     name="acceleration"
-                    type="number"
+                    type="text"
                     step="0.01"
                     min="0"
                     pattern="[0-9]*\.?[0-9]*"
                     inputMode="decimal"
-                    value={simulationSettings.trainSpecs.acceleration || ""}
+                    value={simulationSettings.trainSpecs.acceleration ?? ""}
                     onChange={handleSettingChange}
                     className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -946,12 +946,12 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   <Input
                     id="deceleration"
                     name="deceleration"
-                    type="number"
+                    type="text"
                     step="0.01"
                     min="0"
                     pattern="[0-9]*\.?[0-9]*"
                     inputMode="decimal"
-                    value={simulationSettings.trainSpecs.deceleration || ""}
+                    value={simulationSettings.trainSpecs.deceleration ?? ""}
                     onChange={handleSettingChange}
                     className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -984,13 +984,13 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   <Input
                     id="cruisingSpeed"
                     name="cruisingSpeed"
-                    type="number"
+                    type="text"
                     step="1"
                     min="0"
                     max="60"
                     pattern="[1-9][0-9]*"
                     inputMode="numeric"
-                    value={simulationSettings.trainSpecs.cruisingSpeed || ""}
+                    value={simulationSettings.trainSpecs.cruisingSpeed ?? ""}
                     onChange={handleSettingChange}
                     onBlur={(e) => {
                       // Enforce max limit on blur
@@ -1045,12 +1045,12 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   <Input
                     id="maxCapacity"
                     name="maxCapacity"
-                    type="number"
+                    type="text"
                     step="1"
                     min="0"
                     pattern="[1-9][0-9]*"
                     inputMode="numeric"
-                    value={simulationSettings.trainSpecs.maxCapacity || ""}
+                    value={simulationSettings.trainSpecs.maxCapacity ?? ""}
                     onChange={handleSettingChange}
                     className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -1179,12 +1179,12 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                               </div>
                               <div className="col-span-3 relative">
                                 <Input
-                                  type="number"
+                                  type="text"
                                   min="5"
                                   max="23"
                                   pattern="[0-9]*"
                                   inputMode="numeric"
-                                  value={period.START_HOUR || ""}
+                                  value={period.START_HOUR ?? ""}
                                   onChange={(e) => {
                                     const updatedPeriods = [
                                       ...simulationSettings.servicePeriods,
@@ -1284,11 +1284,11 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                               </div>
                               <div className="col-span-3 relative">
                                 <Input
-                                  type="number"
+                                  type="text"
                                   min="1"
                                   pattern="[1-9][0-9]*"
                                   inputMode="numeric"
-                                  value={period.REGULAR_TRAIN_COUNT || ""}
+                                  value={period.REGULAR_TRAIN_COUNT ?? ""}
                                   onChange={(e) => {
                                     const value =
                                       e.target.value === ""
@@ -1439,12 +1439,12 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                               </div>
                               <div className="col-span-3 relative">
                                 <Input
-                                  type="number"
+                                  type="text"
                                   min="5"
                                   max="23"
                                   pattern="[0-9]*"
                                   inputMode="numeric"
-                                  value={period.START_HOUR || ""}
+                                  value={period.START_HOUR ?? ""}
                                   onChange={(e) => {
                                     const updatedPeriods = [
                                       ...simulationSettings.servicePeriods,
@@ -1544,11 +1544,11 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                               </div>
                               <div className="col-span-3 relative">
                                 <Input
-                                  type="number"
+                                  type="text"
                                   min="1"
                                   pattern="[1-9][0-9]*"
                                   inputMode="numeric"
-                                  value={period.SKIP_STOP_TRAIN_COUNT || ""}
+                                  value={period.SKIP_STOP_TRAIN_COUNT ?? ""}
                                   onChange={(e) => {
                                     const value =
                                       e.target.value === ""
@@ -1730,12 +1730,12 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                       </div>
                       <div className="col-span-4">
                         <Input
-                          type="number"
+                          type="text"
                           step="0.01"
                           min="0"
                           pattern="[0-9]*\.?[0-9]*"
                           inputMode="decimal"
-                          value={station.distance || ""}
+                          value={station.distance ?? ""}
                           onChange={(e) => {
                             const value =
                               e.target.value === ""
