@@ -37,7 +37,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, useCallback } from "react";
 import { cn, formatFileName } from "@/lib/utils";
 import { useSimulationStore } from "@/store/simulationStore";
 import { useFileStore } from "@/store/fileStore";
@@ -144,6 +144,75 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
   // Store default settings for per-input reset
   const [defaultSettings, setDefaultSettings] =
     useState<SimulationSettings | null>(null);
+
+  // Add state for delete confirmation
+  const [periodToDelete, setPeriodToDelete] = useState<number | null>(null);
+
+  // Add validation function for service periods
+  const validateServicePeriods = useCallback((): boolean => {
+    // Check if simulationSettings is null
+    if (!simulationSettings) {
+      toast({
+        title: "No Simulation Settings",
+        description: "Cannot validate service periods - settings not loaded.",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    // Check if any service period has invalid values
+    let hasErrors = false;
+    let errorMessage = "";
+
+    for (
+      let index = 0;
+      index < simulationSettings.servicePeriods.length;
+      index++
+    ) {
+      const period = simulationSettings.servicePeriods[index];
+
+      // Check if train counts are set
+      const hasRegularTrains = period.REGULAR_TRAIN_COUNT > 0;
+      const hasSkipStopTrains = period.SKIP_STOP_TRAIN_COUNT > 0;
+
+      // At least one train count must be set
+      if (!hasRegularTrains && !hasSkipStopTrains) {
+        hasErrors = true;
+        errorMessage = `Service period "${period.NAME}" has no train counts set. Please set at least one train count.`;
+        break;
+      }
+
+      // Check if start hour is valid
+      if (period.START_HOUR < 5 || period.START_HOUR > 23) {
+        hasErrors = true;
+        errorMessage = `Service period "${period.NAME}" has an invalid start hour. It must be between 5 and 23.`;
+        break;
+      }
+
+      // Check if this period's start hour is greater than the previous period
+      if (index > 0) {
+        const prevPeriod = simulationSettings.servicePeriods[index - 1];
+        if (period.START_HOUR <= prevPeriod.START_HOUR) {
+          hasErrors = true;
+          errorMessage = `Service period "${period.NAME}" has a start hour (${period.START_HOUR}) that is not greater than the previous period's start hour (${prevPeriod.START_HOUR}).`;
+          break;
+        }
+      }
+    }
+
+    if (hasErrors) {
+      toast({
+        title: "Invalid Service Periods",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    return true;
+  }, [simulationSettings, toast]);
+
+  // Load default settings
   useEffect(() => {
     useAPIStore
       .getState()
@@ -153,8 +222,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
       });
   }, []);
 
-  // Add state for delete confirmation
-  const [periodToDelete, setPeriodToDelete] = useState<number | null>(null);
+  // Register the validation function with the store using useEffect
+  useEffect(() => {
+    // Set the validation function in the store
+    useSimulationStore
+      .getState()
+      .setValidateServicePeriods(validateServicePeriods);
+
+    // Cleanup function to remove the validation when component unmounts
+    return () => {
+      useSimulationStore.getState().setValidateServicePeriods(null);
+    };
+  }, [validateServicePeriods]);
 
   if (!simulationSettings) {
     // Render nothing or a loading indicator if settings are not yet loaded
@@ -443,60 +522,6 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
     });
   };
 
-  // Add validation function for service periods
-  const validateServicePeriods = (): boolean => {
-    // Check if any service period has invalid values
-    let hasErrors = false;
-    let errorMessage = "";
-
-    for (
-      let index = 0;
-      index < simulationSettings.servicePeriods.length;
-      index++
-    ) {
-      const period = simulationSettings.servicePeriods[index];
-
-      // Check if train counts are set
-      const hasRegularTrains = period.REGULAR_TRAIN_COUNT > 0;
-      const hasSkipStopTrains = period.SKIP_STOP_TRAIN_COUNT > 0;
-
-      // At least one train count must be set
-      if (!hasRegularTrains && !hasSkipStopTrains) {
-        hasErrors = true;
-        errorMessage = `Service period "${period.NAME}" has no train counts set. Please set at least one train count.`;
-        break;
-      }
-
-      // Check if start hour is valid
-      if (period.START_HOUR < 5 || period.START_HOUR > 23) {
-        hasErrors = true;
-        errorMessage = `Service period "${period.NAME}" has an invalid start hour. It must be between 5 and 23.`;
-        break;
-      }
-
-      // Check if this period's start hour is greater than the previous period
-      if (index > 0) {
-        const prevPeriod = simulationSettings.servicePeriods[index - 1];
-        if (period.START_HOUR <= prevPeriod.START_HOUR) {
-          hasErrors = true;
-          errorMessage = `Service period "${period.NAME}" has a start hour (${period.START_HOUR}) that is not greater than the previous period's start hour (${prevPeriod.START_HOUR}).`;
-          break;
-        }
-      }
-    }
-
-    if (hasErrors) {
-      toast({
-        title: "Invalid Service Periods",
-        description: errorMessage,
-        variant: "destructive",
-      });
-      return false;
-    }
-
-    return true;
-  };
-
   // Function to handle run simulation click with validation
   const handleRunSimulationClick = () => {
     // Validate service periods before allowing simulation to run
@@ -507,11 +532,6 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
     // If validation passes, proceed with simulation
     onRunSimulation();
   };
-
-  // Export for parent component
-  useSimulationStore
-    .getState()
-    .setValidateServicePeriods(validateServicePeriods);
 
   return (
     <Card className="simulation-settings mb-4 relative">

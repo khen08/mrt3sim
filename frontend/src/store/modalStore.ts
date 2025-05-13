@@ -46,8 +46,8 @@ interface ModalStateProperties {
   isModalOpen: boolean;
   activeTabId: TabId;
   rawData: RawData;
-  isLoading: boolean;
-  error: string | null;
+  isLoading: Record<TabId, boolean>;
+  error: Record<TabId, string | null>;
   // Track state per tab
   tabState: Record<TabId, TabState>;
   lastLoadedSimulationId: number | null; // Track the simulation ID associated with current data
@@ -58,8 +58,8 @@ interface ModalActions {
   closeModal: () => void;
   setActiveTabId: (tabId: TabId) => void;
   setRawData: (tabId: TabId, data: any[]) => void;
-  setIsLoading: (loading: boolean) => void;
-  setError: (error: string | null) => void;
+  setIsLoading: (tabId: TabId, loading: boolean) => void;
+  setError: (tabId: TabId, error: string | null) => void;
   setSearchQuery: (query: string) => void;
   setSorting: (
     sortingUpdater: SortingState | ((old: SortingState) => SortingState)
@@ -105,8 +105,18 @@ const initialStateProperties: ModalStateProperties = {
     metrics: [],
     metricsSummary: [],
   },
-  isLoading: false,
-  error: null,
+  isLoading: {
+    timetable: false,
+    passengerDemand: false,
+    metrics: false,
+    metricsSummary: false,
+  },
+  error: {
+    timetable: null,
+    passengerDemand: null,
+    metrics: null,
+    metricsSummary: null,
+  },
   // Initialize state for each tab
   tabState: {
     timetable: createInitialTabState(),
@@ -131,7 +141,13 @@ export const useModalStore = create<ModalState>((set, get) => ({
         // Only fetch if we don't already have data
         const currentTabData = get().rawData[initialTab] || [];
         if (currentTabData.length === 0) {
-          set({ isLoading: true });
+          // Set loading state for the specific tab
+          set((state) => ({
+            isLoading: {
+              ...state.isLoading,
+              [initialTab]: true,
+            },
+          }));
 
           if (initialTab === "timetable") apiStore.fetchTimetable(simulationId);
           if (initialTab === "passengerDemand")
@@ -146,14 +162,31 @@ export const useModalStore = create<ModalState>((set, get) => ({
       set({ isModalOpen: false });
     },
     setActiveTabId: (tabId: TabId) => {
-      // Just switch active tab without resetting its state
+      // First check if we're already on this tab to avoid unnecessary re-renders
+      if (get().activeTabId === tabId) return;
+
+      // Now switch the active tab
       set({ activeTabId: tabId });
 
       const simulationId = useSimulationStore.getState().loadedSimulationId;
       if (simulationId) {
+        // Check if data already exists for this tab and avoid fetching if it does
         const currentRawData = get().rawData[tabId] || [];
-        if (currentRawData.length === 0 && !get().isLoading) {
-          set({ isLoading: true });
+        const isCurrentlyLoading = get().isLoading[tabId];
+
+        if (currentRawData.length === 0 && !isCurrentlyLoading) {
+          // Only set loading state if we actually need to fetch
+          set((state) => ({
+            isLoading: {
+              ...state.isLoading,
+              [tabId]: true,
+            },
+            error: {
+              ...state.error,
+              [tabId]: null, // Clear any previous errors
+            },
+          }));
+
           const apiStore = useAPIStore.getState();
           if (tabId === "timetable") apiStore.fetchTimetable(simulationId);
           if (tabId === "passengerDemand")
@@ -163,14 +196,42 @@ export const useModalStore = create<ModalState>((set, get) => ({
         }
       }
     },
-    setRawData: (tabId: TabId, data: any[]) =>
+    setRawData: (tabId: TabId, data: any[]) => {
+      // Update data and clear loading/error state for this specific tab
       set((state) => ({
         rawData: { ...state.rawData, [tabId]: data },
-        isLoading: false,
-        error: null,
-      })),
-    setIsLoading: (loading: boolean) => set({ isLoading: loading }),
-    setError: (error: string | null) => set({ error, isLoading: false }),
+        isLoading: {
+          ...state.isLoading,
+          [tabId]: false,
+        },
+        error: {
+          ...state.error,
+          [tabId]: null,
+        },
+      }));
+    },
+    setIsLoading: (tabId: TabId, loading: boolean) => {
+      // Set loading state for a specific tab
+      set((state) => ({
+        isLoading: {
+          ...state.isLoading,
+          [tabId]: loading,
+        },
+      }));
+    },
+    setError: (tabId: TabId, error: string | null) => {
+      // Set error state for a specific tab and clear its loading state
+      set((state) => ({
+        error: {
+          ...state.error,
+          [tabId]: error,
+        },
+        isLoading: {
+          ...state.isLoading,
+          [tabId]: false,
+        },
+      }));
+    },
     setSearchQuery: (query: string) =>
       set((state) => {
         const activeTabId = state.activeTabId;
@@ -250,8 +311,11 @@ export const useModalStore = create<ModalState>((set, get) => ({
           ...state.tabState,
           [activeTabId]: createInitialTabState(),
         },
-        error: null,
-        isLoading: false,
+        // Clear error but NOT loading state for the active tab
+        error: {
+          ...state.error,
+          [activeTabId]: null,
+        },
       }));
     },
     resetData: () => {
@@ -269,8 +333,18 @@ export const useModalStore = create<ModalState>((set, get) => ({
           metrics: createInitialTabState(),
           metricsSummary: createInitialTabState(),
         },
-        error: null,
-        isLoading: false,
+        isLoading: {
+          timetable: false,
+          passengerDemand: false,
+          metrics: false,
+          metricsSummary: false,
+        },
+        error: {
+          timetable: null,
+          passengerDemand: null,
+          metrics: null,
+          metricsSummary: null,
+        },
       });
     },
     setLastLoadedSimulationId: (id: number | null) => {
@@ -306,66 +380,65 @@ const filterByPeakHours = (data: any[], peakFilter: PeakHourFilter): any[] => {
 
 // --- Custom hook for convenience ---
 export const useDataViewer = () => {
-  const store = useModalStore();
-  const actions = store.actions;
+  // Use selectors for better performance
+  const activeTabId = useModalStore((state) => state.activeTabId);
+  const rawData = useModalStore((state) => state.rawData[activeTabId] || []);
+  const isLoading = useModalStore((state) => state.isLoading[activeTabId]);
+  const error = useModalStore((state) => state.error[activeTabId]);
+  const isModalOpen = useModalStore((state) => state.isModalOpen);
+  const tabState = useModalStore((state) => state.tabState[activeTabId]);
+  const actions = useModalStore((state) => state.actions);
 
+  // Memoize filtered and processed data to prevent unnecessary recalculations
   const filteredData = useMemo(() => {
-    // Get the current raw data for the active tab
-    const currentRawData = store.rawData[store.activeTabId] || [];
-    const activeTabState = store.tabState[store.activeTabId];
-
     // Apply peak hour filter to timetable data
     const peakHourFiltered =
-      store.activeTabId === "timetable"
-        ? filterByPeakHours(currentRawData, activeTabState.peakHourFilter)
-        : currentRawData;
+      activeTabId === "timetable"
+        ? filterByPeakHours(rawData, tabState.peakHourFilter)
+        : rawData;
 
     // Then apply search filter
-    if (!activeTabState.searchQuery) return peakHourFiltered;
-    return filter(peakHourFiltered, activeTabState.searchQuery);
-  }, [store.rawData, store.activeTabId, store.tabState]);
+    if (!tabState.searchQuery) return peakHourFiltered;
+    return filter(peakHourFiltered, tabState.searchQuery);
+  }, [rawData, activeTabId, tabState.peakHourFilter, tabState.searchQuery]);
 
   const sortedData = useMemo(() => {
-    const activeTabState = store.tabState[store.activeTabId];
-    return sort(filteredData, activeTabState.sorting);
-  }, [filteredData, store.activeTabId, store.tabState]);
+    return sort(filteredData, tabState.sorting);
+  }, [filteredData, tabState.sorting]);
 
   const currentPageData = useMemo(() => {
-    const activeTabState = store.tabState[store.activeTabId];
     return paginate(
       sortedData,
-      activeTabState.pagination.pageIndex,
-      activeTabState.pagination.pageSize
+      tabState.pagination.pageIndex,
+      tabState.pagination.pageSize
     );
-  }, [sortedData, store.activeTabId, store.tabState]);
+  }, [sortedData, tabState.pagination.pageIndex, tabState.pagination.pageSize]);
 
   const pageCount = useMemo(() => {
-    const activeTabState = store.tabState[store.activeTabId];
-    return Math.ceil(sortedData.length / activeTabState.pagination.pageSize);
-  }, [sortedData, store.activeTabId, store.tabState]);
+    return Math.ceil(sortedData.length / tabState.pagination.pageSize);
+  }, [sortedData.length, tabState.pagination.pageSize]);
 
   const totalItems = useMemo(() => sortedData.length, [sortedData]);
 
-  const activeTabState = store.tabState[store.activeTabId];
-
   return {
     // Base state
-    isModalOpen: store.isModalOpen,
-    activeTabId: store.activeTabId,
-    isLoading: store.isLoading,
-    error: store.error,
+    isModalOpen,
+    activeTabId,
+    isLoading,
+    error,
 
     // Tab-specific state
-    searchQuery: activeTabState.searchQuery,
-    sorting: activeTabState.sorting,
-    pagination: activeTabState.pagination,
-    peakHourFilter: activeTabState.peakHourFilter,
+    searchQuery: tabState.searchQuery,
+    sorting: tabState.sorting,
+    pagination: tabState.pagination,
+    peakHourFilter: tabState.peakHourFilter,
 
     // Computed data
     currentPageData,
     pageCount,
     totalItems,
     filteredData,
+    hasData: rawData.length > 0,
 
     // Actions
     ...actions,

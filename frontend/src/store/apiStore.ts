@@ -464,7 +464,8 @@ export const useAPIStore = create<APIState>((set, get) => ({
     const simStore = useSimulationStore.getState();
     const modalStore = useModalStore.getState();
 
-    // No separate loading state here, assuming loadSimulation/runSimulation handles it
+    // Set loading state for timetable tab specifically
+    modalStore.actions.setIsLoading("timetable", true);
     simStore.setApiError(null);
 
     try {
@@ -480,7 +481,7 @@ export const useAPIStore = create<APIState>((set, get) => ({
       if (data && data.timetable) {
         simStore.setSimulationResult(data.timetable);
         simStore.setLoadedServicePeriodsData(data.service_periods);
-        modalStore.actions.setRawData("timetable", data.timetable); // Use actions
+        modalStore.actions.setRawData("timetable", data.timetable); // This will also clear loading state
       } else {
         throw new Error("Invalid timetable data structure received.");
       }
@@ -488,16 +489,21 @@ export const useAPIStore = create<APIState>((set, get) => ({
       console.error("Failed to fetch timetable:", error);
       simStore.setApiError(`Failed to fetch timetable: ${error.message}`);
       simStore.setSimulationResult(null);
-      modalStore.actions.setError("Failed to load timetable data."); // Use actions
-    } finally {
-      // Loading state managed by caller (loadSimulation/_executeRunSimulation)
+      modalStore.actions.setError(
+        "timetable",
+        "Failed to load timetable data."
+      );
     }
   },
 
   fetchPassengerDemand: async (simulationId) => {
     if (!simulationId) return;
+
     const passengerDemandStore = usePassengerDemandStore.getState();
     const modalStore = useModalStore.getState();
+
+    // Set loading state for passenger demand tab specifically
+    modalStore.actions.setIsLoading("passengerDemand", true);
 
     try {
       await passengerDemandStore.actions.fetchPassengerDemand(
@@ -507,7 +513,7 @@ export const useAPIStore = create<APIState>((set, get) => ({
       modalStore.actions.setRawData(
         "passengerDemand",
         passengerDemandStore.passengerDemand
-      ); // Use actions
+      );
     } catch (error: any) {
       console.error("Error triggering passenger demand fetch:", error);
       toast({
@@ -515,7 +521,10 @@ export const useAPIStore = create<APIState>((set, get) => ({
         description: error.message || "An unexpected error occurred.",
         variant: "destructive",
       });
-      modalStore.actions.setError("Failed to load passenger demand data."); // Use actions
+      modalStore.actions.setError(
+        "passengerDemand",
+        "Failed to load passenger demand data."
+      );
     }
   },
 
@@ -653,13 +662,21 @@ export const useAPIStore = create<APIState>((set, get) => ({
 
   fetchSimulationMetrics: async (simulationId) => {
     if (!simulationId) return;
+
     const metricsStore = useMetricsStore.getState();
     const modalStore = useModalStore.getState();
+
+    // Set loading state for metrics tabs specifically
+    modalStore.actions.setIsLoading("metrics", true);
+    modalStore.actions.setIsLoading("metricsSummary", true);
 
     try {
       await metricsStore.fetchMetrics(simulationId, true);
       const rawData = metricsStore.rawMetricsData[simulationId] || [];
-      modalStore.actions.setRawData("metrics", rawData); // Use actions
+
+      // Update both metrics tabs data
+      modalStore.actions.setRawData("metrics", rawData);
+      modalStore.actions.setRawData("metricsSummary", rawData);
     } catch (error: any) {
       console.error("Error triggering metrics fetch:", error);
       toast({
@@ -667,7 +684,12 @@ export const useAPIStore = create<APIState>((set, get) => ({
         description: error.message || "An unexpected error occurred.",
         variant: "destructive",
       });
-      modalStore.actions.setError("Failed to load metrics data."); // Use actions
+      // Set error for both metrics tabs
+      modalStore.actions.setError("metrics", "Failed to load metrics data.");
+      modalStore.actions.setError(
+        "metricsSummary",
+        "Failed to load metrics data."
+      );
     }
   },
 

@@ -1,5 +1,4 @@
-import { useEffect, useMemo } from "react";
-import * as React from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -318,6 +317,7 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
     totalItems,
     peakHourFilter,
     filteredData,
+    hasData, // Use the hasData property
 
     // Actions
     setActiveTabId,
@@ -338,11 +338,7 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
   const { toast } = useToast();
 
   // Check if we have *any* raw data for the current tab (to distinguish from loading)
-  const { rawData } = useModalStore.getState(); // Get raw data directly for check
-  const hasAnyDataForTab = useMemo(() => {
-    const currentRawData = rawData[activeTabId] || [];
-    return currentRawData.length > 0;
-  }, [activeTabId, rawData]);
+  const hasAnyDataForTab = hasData; // Use hasData from useDataViewer hook
 
   // Check if we have data to display (based on computed page data)
   const hasDisplayData = useMemo(
@@ -396,6 +392,8 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
 
   // --- Re-add local state for row selection ---
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [exportSchemeType, setExportSchemeType] = useState<string>("ALL");
 
   // Memoized column definitions
   const memoizedTimetableColumns = useMemo(
@@ -434,9 +432,8 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
         return;
       }
 
-      const currentMetricsData = rawData["metrics"] || [];
-      if (currentMetricsData.length === 0 && !isLoading) {
-        // Only fetch if we don't have data and aren't already loading
+      // Only fetch if we don't have data and aren't already loading
+      if (!hasData && !isLoading) {
         fetchSimulationMetrics(loadedSimulationId);
       }
     }
@@ -444,11 +441,11 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
     isOpen,
     activeTabId,
     loadedSimulationId,
-    rawData,
     isLoading,
     fetchSimulationMetrics,
     simulatePassengers,
     hasMetrics,
+    hasData,
   ]);
 
   // If metrics tabs are selected but we know there are no metrics, switch to timetable tab
@@ -501,6 +498,18 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
 
     // Write to a file and trigger download
     XLSX.writeFile(workbook, fileName);
+  };
+
+  // Handle export with confirmation dialog
+  const handleExportSelection = (schemeType: string) => {
+    setExportSchemeType(schemeType);
+    setIsExportDialogOpen(true);
+  };
+
+  // Handle actual export after confirmation
+  const handleConfirmedExport = () => {
+    handleExportCsv(exportSchemeType);
+    setIsExportDialogOpen(false);
   };
 
   // Handle export with scheme type filter
@@ -594,6 +603,30 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
     // Use store action for closing
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="!max-w-fit w-[90vw] max-h-[90vh] flex flex-col">
+        {/* Export Confirmation Dialog */}
+        <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Export Data</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to export the{" "}
+                {exportSchemeType === "ALL" ? "entire" : exportSchemeType}{" "}
+                timetable data to Excel?
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="mt-4 sm:justify-between">
+              <DialogClose asChild>
+                <Button variant="outline" type="button">
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button type="button" onClick={handleConfirmedExport}>
+                Export
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <DialogHeader>
           <DialogTitle>Simulation Data Viewer</DialogTitle>
           <DialogDescription>
@@ -717,7 +750,9 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleExportCsv("ALL")}>
+                    <DropdownMenuItem
+                      onClick={() => handleExportSelection("ALL")}
+                    >
                       All Timetable Data
                     </DropdownMenuItem>
 
@@ -739,7 +774,7 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
                       return [...schemeTypes].map((type) => (
                         <DropdownMenuItem
                           key={type}
-                          onClick={() => handleExportCsv(type)}
+                          onClick={() => handleExportSelection(type)}
                         >
                           {type} Scheme
                         </DropdownMenuItem>
@@ -772,7 +807,7 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
                 className="pt-2 flex-1 overflow-hidden flex flex-col h-full mt-0"
               >
                 {isLoading ? (
-                  // Use placeholder div while loading overlay is active, instead of skeleton
+                  // Use placeholder div while loading overlay is active
                   <div className="flex-1 flex items-center justify-center">
                     {/* Spinner is now in the overlay */}
                   </div>
@@ -802,9 +837,7 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
                     {" "}
                     {/* Allow table to grow */}
                     <div className="relative flex-1 overflow-hidden">
-                      {isLoading && !hasAnyDataForTab ? (
-                        renderSkeleton
-                      ) : hasDisplayData ? (
+                      {hasDisplayData ? (
                         <>
                           <DataTable
                             columns={memoizedTimetableColumns}
@@ -849,14 +882,32 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
                 value="metrics"
                 className="pt-2 flex-1 overflow-hidden flex flex-col h-full mt-0"
               >
-                <MetricsTab />
+                {isLoading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+                    <TextShimmer as="span" className="ml-3" duration={1.8}>
+                      Loading metrics data...
+                    </TextShimmer>
+                  </div>
+                ) : (
+                  <MetricsTab />
+                )}
               </TabsContent>
 
               <TabsContent
                 value="metricsSummary"
                 className="pt-2 flex-1 overflow-auto h-full mt-0"
               >
-                <MetricsSummaryTab />
+                {isLoading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+                    <TextShimmer as="span" className="ml-3" duration={1.8}>
+                      Loading metrics summary...
+                    </TextShimmer>
+                  </div>
+                ) : (
+                  <MetricsSummaryTab />
+                )}
               </TabsContent>
             </div>
           </Tabs>
