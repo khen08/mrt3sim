@@ -62,6 +62,10 @@ export function SimulationHistoryModal({
   );
 
   const [isDeleting, setIsDeleting] = React.useState(false);
+  const [deleteProgress, setDeleteProgress] = React.useState({
+    current: 0,
+    total: 0,
+  });
   const { toast } = useToast();
   const { deleteSimulations } = useAPIStore(); // Get the delete action from the store
 
@@ -119,7 +123,7 @@ export function SimulationHistoryModal({
     handleDeleteSelectedSimulations();
   };
 
-  // Function to handle the delete API call - Refactored to use apiStore
+  // Function to handle the delete API call with batching
   const handleDeleteSelectedSimulations = async () => {
     const selectedIndices = Object.keys(historyRowSelection);
 
@@ -159,21 +163,73 @@ export function SimulationHistoryModal({
       selectedIds.includes(loadedSimulationId);
 
     setIsDeleting(true);
+    setDeleteProgress({ current: 0, total: selectedIds.length });
+
     toast({
       title: "Deleting Simulations...",
-      description: `Attempting to delete ${selectedIds.length} selected simulation(s).`,
+      description: `Attempting to delete ${selectedIds.length} selected simulation(s). This may take a moment.`,
       variant: "default", // Use default variant while processing
     });
 
-    // Call the action from the apiStore
-    const result = await deleteSimulations(selectedIds);
+    let successCount = 0;
+    let failCount = 0;
+    let errorMessage = "";
 
-    if (result.success) {
-      toast({
-        title: "Deletion Successful",
-        description: result.message,
-        variant: "success",
-      });
+    // Process in batches of 3 to avoid timeout
+    const BATCH_SIZE = 3;
+
+    try {
+      // Split selectedIds into batches
+      for (let i = 0; i < selectedIds.length; i += BATCH_SIZE) {
+        const batch = selectedIds.slice(i, i + BATCH_SIZE);
+        setDeleteProgress({
+          current: i,
+          total: selectedIds.length,
+        });
+
+        // Show progress toast for longer operations
+        if (selectedIds.length > BATCH_SIZE && i > 0) {
+          toast({
+            title: "Deletion in Progress",
+            description: `Deleting batch ${
+              Math.floor(i / BATCH_SIZE) + 1
+            } of ${Math.ceil(selectedIds.length / BATCH_SIZE)}...`,
+            variant: "default",
+          });
+        }
+
+        // Call the API to delete this batch
+        const result = await deleteSimulations(batch);
+
+        if (result.success) {
+          successCount += batch.length;
+        } else {
+          failCount += batch.length;
+          errorMessage = result.message;
+        }
+      }
+
+      // Show final result toast
+      if (failCount === 0) {
+        toast({
+          title: "Deletion Successful",
+          description: `Successfully deleted ${successCount} simulation(s).`,
+          variant: "success",
+        });
+      } else if (successCount === 0) {
+        toast({
+          title: "Deletion Failed",
+          description: errorMessage || "Failed to delete simulations.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Partial Deletion",
+          description: `Deleted ${successCount} simulation(s), but failed to delete ${failCount} simulation(s).`,
+          variant: "warning",
+        });
+      }
+
       // Clear selection using uiStore action
       setHistoryRowSelection({});
 
@@ -192,15 +248,25 @@ export function SimulationHistoryModal({
           variant: "info",
         });
       }
-    } else {
+
+      // Trigger a refresh after deletion
+      if (onRefreshHistory) {
+        onRefreshHistory();
+      }
+    } catch (error) {
+      console.error("Error during simulation deletion:", error);
       toast({
-        title: "Deletion Failed",
-        description: result.message,
+        title: "Deletion Error",
+        description:
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred during deletion.",
         variant: "destructive",
       });
+    } finally {
+      setIsDeleting(false);
+      setDeleteProgress({ current: 0, total: 0 });
     }
-
-    setIsDeleting(false);
   };
 
   return (
@@ -211,9 +277,6 @@ export function SimulationHistoryModal({
           // Reset selection using uiStore action when closing
           setHistoryRowSelection({});
           onClose();
-        } else {
-          // Dialog handles its own opening state based on the isOpen prop
-          // No need to explicitly call onClose() here when opening
         }
       }}
     >
@@ -286,11 +349,18 @@ export function SimulationHistoryModal({
                 }
               >
                 {isDeleting ? (
-                  <IconLoader className="mr-2 h-4 w-4 animate-spin" />
+                  <>
+                    <IconLoader className="mr-2 h-4 w-4 animate-spin" />
+                    {deleteProgress.total > 0
+                      ? `Deleting (${deleteProgress.current}/${deleteProgress.total})`
+                      : `Deleting (${selectedRowCount})`}
+                  </>
                 ) : (
-                  <IconTrash className="mr-2 h-4 w-4" />
+                  <>
+                    <IconTrash className="mr-2 h-4 w-4" />
+                    Delete ({selectedRowCount})
+                  </>
                 )}
-                Delete ({selectedRowCount})
               </Button>
             )}
           </div>
@@ -301,17 +371,17 @@ export function SimulationHistoryModal({
               <Button
                 variant="outline"
                 onClick={onRefreshHistory}
-                disabled={isLoading || isSimulating}
+                disabled={isLoading || isSimulating || isDeleting}
               >
-                <IconLoader className="h-4 w-4" />
-                Refresh History
+                <IconLoader
+                  className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+                />
+                <span className="ml-2">Refresh History</span>
               </Button>
             )}
             {/* Right side for Close button */}
             <DialogClose asChild>
-              <Button variant="outline">
-                {" "}
-                {/* Removed onClick={onClose} as DialogClose handles it */}
+              <Button variant="outline" disabled={isDeleting}>
                 Close
               </Button>
             </DialogClose>

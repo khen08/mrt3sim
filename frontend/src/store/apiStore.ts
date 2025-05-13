@@ -528,7 +528,9 @@ export const useAPIStore = create<APIState>((set, get) => ({
     }
   },
 
-  deleteSimulations: async (simulationIds) => {
+  deleteSimulations: async (
+    simulationIds: number | number[]
+  ): Promise<{ success: boolean; message: string }> => {
     const simStore = useSimulationStore.getState();
     const uiStore = useUIStore.getState();
     let url: string;
@@ -544,40 +546,36 @@ export const useAPIStore = create<APIState>((set, get) => ({
 
     simStore.setApiError(null);
 
-    try {
-      const response = await fetch(url, {
-        method: method,
-        headers: {
-          "Content-Type": "application/json",
-        },
-        ...(body && { body: body }),
-      });
+    // If deleting a single simulation or a very small batch, use regular fetch
+    if (!Array.isArray(simulationIds) || simulationIds.length <= 1) {
+      return makeDeleteRequest(url, method, body);
+    }
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP error ${response.status}`);
+    // For larger batches, try with longer timeout
+    try {
+      return await makeDeleteRequest(url, method, body, 30000); // 30 second timeout for bulk operations
+    } catch (error: any) {
+      console.error("Initial delete attempt failed:", error);
+
+      // If first attempt failed with timeout, try again with even longer timeout
+      if (error.name === "AbortError" || error.message.includes("timeout")) {
+        console.log("Retrying with longer timeout...");
+        try {
+          return await makeDeleteRequest(url, method, body, 60000); // 60 second retry timeout
+        } catch (retryError: any) {
+          return {
+            success: false,
+            message:
+              "Delete operation timed out even with extended timeout. The server may be processing a large transaction.",
+          };
+        }
       }
 
-      const result = await response.json();
-      console.log("Deletion successful:", result?.message);
-      toast({
-        title: "Deletion Successful",
-        description: result?.message || "Selected simulations deleted.",
-        variant: "default",
-      });
-
-      await get().fetchSimulationHistory(true); // Force refresh history
-
-      return { success: true, message: result?.message };
-    } catch (error: any) {
-      console.error("Failed to delete simulation(s):", error);
-      simStore.setApiError(`Failed to delete simulation(s): ${error.message}`);
-      toast({
-        title: "Deletion Failed",
-        description: error.message || "Could not delete simulation(s).",
-        variant: "destructive",
-      });
-      return { success: false, message: error.message };
+      // For other errors, return the error message
+      return {
+        success: false,
+        message: error.message || "Failed to delete simulation(s).",
+      };
     }
   },
 
@@ -695,3 +693,88 @@ export const useAPIStore = create<APIState>((set, get) => ({
 
   _isCreatingNewSimulation: false,
 }));
+
+// Helper function to make delete requests with proper timeout handling
+function makeDeleteRequest(
+  url: string,
+  method: string,
+  body: any,
+  timeoutMs: number = 15000
+): Promise<{ success: boolean; message: string }> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Set up AbortController with timeout
+      const controller = new AbortController();
+      const { signal } = controller;
+
+      // Create a timeout that will abort the request if it takes too long
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, timeoutMs);
+
+      try {
+        const response = await fetch(url, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+          },
+          ...(body && { body }),
+          signal,
+        });
+
+        // Clear the timeout since we got a response
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `HTTP error ${response.status}`);
+        }
+
+        const result = await response.json();
+        resolve({
+          success: true,
+          message: result?.message || "Deleted successfully",
+        });
+      } catch (error: any) {
+        // Clear timeout if there was an error
+        clearTimeout(timeoutId);
+
+        // Handle abort errors specially
+        if (error.name === "AbortError") {
+          reject(
+            new Error(
+              "The delete operation timed out. The server may still be processing your request."
+            )
+          );
+        } else {
+          reject(error);
+        }
+      }
+    } catch (error: any) {
+      // Catch any errors in the overall promise execution
+      console.error("Error in makeDeleteRequest:", error);
+
+      if (error.name === "AbortError") {
+        resolve({
+          success: false,
+          message:
+            "The delete operation timed out. The server may still be processing your request.",
+        });
+      } else if (
+        error.name === "TypeError" &&
+        error.message.includes("NetworkError")
+      ) {
+        resolve({
+          success: false,
+          message:
+            "Network error occurred. Please check your connection and try again.",
+        });
+      } else {
+        resolve({
+          success: false,
+          message: error.message || "Could not delete simulation(s).",
+        });
+      }
+    }
+  });
+}
