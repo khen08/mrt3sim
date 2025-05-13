@@ -18,6 +18,15 @@ import { TimeDistributionBoxPlot } from "./TimeDistributionBoxPlot";
 import { TimeSeriesPlot } from "./TimeSeriesPlot";
 import { TripTypeBarChart } from "./TripTypeBarChart";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
+import {
   IconChartBar,
   IconChartLine,
   IconChartDots3,
@@ -109,6 +118,7 @@ const MetricsTab: React.FC = () => {
     useState<HeatmapMetricType>("PASSENGER_COUNT");
   const [selectedHeatmapScheme, setSelectedHeatmapScheme] =
     useState<PassengerDemandSchemeType>("REGULAR");
+  const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false);
 
   // Get necessary state/setters from simulationStore for the heatmap selector
   const selectedTimePeriod = useSimulationStore(
@@ -371,8 +381,80 @@ const MetricsTab: React.FC = () => {
     );
   }
 
+  // Function to download the chart
+  const downloadChart = () => {
+    // Get the chart container element
+    const chartContainer = document.querySelector(
+      ".metrics-container .flex-grow"
+    );
+    if (!chartContainer) return;
+
+    // Apply current theme for proper rendering
+    const isDarkMode = document.documentElement.classList.contains("dark");
+    const bgColor = isDarkMode ? "#000000" : "#ffffff";
+
+    // Setup temporary styles to override oklch colors with RGB equivalents
+    const removeStyles = setupScreenshotStyles();
+
+    // Use html2canvas to capture the chart
+    html2canvas(chartContainer as HTMLElement, {
+      background: bgColor,
+      logging: false,
+      allowTaint: true,
+      useCORS: true,
+    })
+      .then((canvas) => {
+        // Create download link
+        const link = document.createElement("a");
+        link.download = `${selectedChart?.title || "chart"}.png`;
+        link.href = canvas.toDataURL("image/png");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Remove temporary styles
+        removeStyles();
+      })
+      .catch((error) => {
+        console.error("Error capturing chart:", error);
+        // Make sure to remove styles even if there's an error
+        removeStyles();
+      });
+  };
+
   return (
     <div className="h-full flex flex-col overflow-hidden p-4 md:p-6 w-full metrics-container">
+      {/* Download Confirmation Dialog */}
+      <Dialog
+        open={isDownloadDialogOpen}
+        onOpenChange={setIsDownloadDialogOpen}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Download Chart</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to download this chart as an image?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 sm:justify-between">
+            <DialogClose asChild>
+              <Button variant="outline" type="button">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              onClick={() => {
+                downloadChart();
+                setIsDownloadDialogOpen(false);
+              }}
+            >
+              Download
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {selectedChart ? (
         <div className="flex flex-col h-full">
           <div className="mb-4 flex items-center justify-between gap-4">
@@ -559,46 +641,7 @@ const MetricsTab: React.FC = () => {
                 variant="outline"
                 size="sm"
                 className="h-8 w-8 p-0"
-                onClick={() => {
-                  // Get the chart container element
-                  const chartContainer = document.querySelector(
-                    ".metrics-container .flex-grow"
-                  );
-                  if (!chartContainer) return;
-
-                  // Apply current theme for proper rendering
-                  const isDarkMode =
-                    document.documentElement.classList.contains("dark");
-                  const bgColor = isDarkMode ? "#000000" : "#ffffff";
-
-                  // Setup temporary styles to override oklch colors with RGB equivalents
-                  const removeStyles = setupScreenshotStyles();
-
-                  // Use html2canvas to capture the chart
-                  html2canvas(chartContainer as HTMLElement, {
-                    background: bgColor,
-                    logging: false,
-                    allowTaint: true,
-                    useCORS: true,
-                  })
-                    .then((canvas) => {
-                      // Create download link
-                      const link = document.createElement("a");
-                      link.download = `${selectedChart?.title || "chart"}.png`;
-                      link.href = canvas.toDataURL("image/png");
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-
-                      // Remove temporary styles
-                      removeStyles();
-                    })
-                    .catch((error) => {
-                      console.error("Error capturing chart:", error);
-                      // Make sure to remove styles even if there's an error
-                      removeStyles();
-                    });
-                }}
+                onClick={() => setIsDownloadDialogOpen(true)}
                 title="Download chart as image"
               >
                 <IconDownload className="h-4 w-4" />

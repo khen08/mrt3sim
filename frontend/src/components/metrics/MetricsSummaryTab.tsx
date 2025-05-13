@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   useMetricsStore,
@@ -6,6 +6,15 @@ import {
 } from "@/store/metricsStore";
 import { usePassengerDemandStore } from "@/store/passengerDemandStore";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
 import { IconFileSpreadsheet } from "@tabler/icons-react";
 import * as XLSX from "xlsx";
 
@@ -14,6 +23,7 @@ const MetricsSummaryTab: React.FC = () => {
   const processedMetrics = useCurrentProcessedMetrics();
   const { passengerDemand, isLoading: demandLoading } =
     usePassengerDemandStore();
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
 
   const isLoading = metricsLoading || demandLoading;
 
@@ -414,6 +424,35 @@ const MetricsSummaryTab: React.FC = () => {
 
   return (
     <div className="space-y-6 p-4 max-w-4xl mx-auto metrics-summary-container">
+      {/* Export to Excel Dialog */}
+      <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Export to Excel</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to download the metrics summary as an Excel
+              file?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 sm:justify-between">
+            <DialogClose asChild>
+              <Button variant="outline" type="button">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              onClick={() => {
+                exportToExcel();
+                setIsExportDialogOpen(false);
+              }}
+            >
+              Download
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-2xl font-bold">
           Summary of Key Simulation Metrics
@@ -423,7 +462,7 @@ const MetricsSummaryTab: React.FC = () => {
             variant="outline"
             size="sm"
             className="h-8"
-            onClick={exportToExcel}
+            onClick={() => setIsExportDialogOpen(true)}
             title="Download summary as Excel"
           >
             <IconFileSpreadsheet className="h-4 w-4 mr-2" />
