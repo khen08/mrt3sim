@@ -1641,7 +1641,7 @@ class Simulation:
             # Schedule service period start event
             start_datetime = datetime.combine(
                 self.current_time.date(),
-                time(hour=(period["START_HOUR"] - 1), minute=30, second=0),
+                time(hour=(period["START_HOUR"] - 1), minute=15, second=0),
             )  # Set the datetime by the period start hour in config
         
             # Schedule Start of Event
