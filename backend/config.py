@@ -83,7 +83,7 @@ DEFAULT_SERVICE_PERIODS = [
 
 DEFAULT_SETTINGS = {
     "dwellTime": 60,
-    "turnaroundTime": 90,
+    "turnaroundTime": 300,
     "schemeType": "REGULAR",
     "servicePeriods": DEFAULT_SERVICE_PERIODS,
     "schemePattern": DEFAULT_SCHEME,
