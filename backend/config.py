@@ -25,7 +25,7 @@ DEFAULT_SCHEME = ['AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', '
 DEFAULT_TRAIN_SPECS = {
     "acceleration": 0.8,
     "deceleration": 0.8,
-    "cruisingSpeed": 60,
+    "cruisingSpeed": 45,
     "passthroughSpeed": 20,
     "maxCapacity": 1182,
 }
