@@ -264,7 +264,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
           // Parse as number and then back to string to remove leading zeros
           const numValue = parseFloat(inputValue);
           if (!isNaN(numValue)) {
-            value = numValue;
+            // Apply max limit for cruisingSpeed
+            if (name === "cruisingSpeed" && numValue > 60) {
+              value = 60;
+              toast({
+                title: "Value Exceeds Maximum",
+                description:
+                  "Max speed cannot exceed 60 km/h. Value has been capped.",
+                variant: "destructive",
+              });
+            } else {
+              value = numValue;
+            }
           } else {
             value = 0;
           }
@@ -981,6 +992,24 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     inputMode="numeric"
                     value={simulationSettings.trainSpecs.cruisingSpeed || ""}
                     onChange={handleSettingChange}
+                    onBlur={(e) => {
+                      // Enforce max limit on blur
+                      const numValue = parseFloat(e.target.value);
+                      if (!isNaN(numValue) && numValue > 60) {
+                        // Update the store with capped value
+                        updateSimulationSetting("trainSpecs", {
+                          ...simulationSettings.trainSpecs,
+                          cruisingSpeed: 60,
+                        });
+                        // Show toast error notification
+                        toast({
+                          title: "Value Exceeds Maximum",
+                          description:
+                            "Max speed cannot exceed 60 km/h. Value has been capped.",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
                     className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
                     onFocus={(e) => {
