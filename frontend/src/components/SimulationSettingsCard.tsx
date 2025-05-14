@@ -257,14 +257,49 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
       name = e.target.name;
       const inputValue = e.target.value;
 
-      // For number inputs, handle them differently
-      if (e.target.type === "number") {
-        // Remove leading zeros by converting to string first
+      // For all numeric inputs (now with type="text")
+      if (
+        e.target.type === "text" &&
+        (e.target.inputMode === "numeric" || e.target.inputMode === "decimal")
+      ) {
+        // Handle empty input
+        if (inputValue === "") {
+          value = 0;
+        } else {
+          // Use parseFloat for decimal inputs, parseInt for numeric inputs
+          if (e.target.inputMode === "decimal") {
+            const numValue = parseFloat(inputValue);
+            if (!isNaN(numValue)) {
+              // Apply max limit for cruisingSpeed
+              if (name === "cruisingSpeed" && numValue > 60) {
+                value = 60;
+                toast({
+                  title: "Value Exceeds Maximum",
+                  description:
+                    "Max speed cannot exceed 60 km/h. Value has been capped.",
+                  variant: "destructive",
+                });
+              } else {
+                value = numValue;
+              }
+            } else {
+              value = 0;
+            }
+          } else {
+            // Use parseInt for integer values
+            const numValue = parseInt(inputValue, 10);
+            if (!isNaN(numValue)) {
+              value = numValue;
+            } else {
+              value = 0;
+            }
+          }
+        }
+      } else if (e.target.type === "number") {
+        // Keep existing number handling for backward compatibility
         if (inputValue !== "") {
-          // Parse as number and then back to string to remove leading zeros
           const numValue = parseFloat(inputValue);
           if (!isNaN(numValue)) {
-            // Apply max limit for cruisingSpeed
             if (name === "cruisingSpeed" && numValue > 60) {
               value = 60;
               toast({
@@ -280,16 +315,15 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
             value = 0;
           }
         } else {
-          // Empty input - use 0 for the model but display empty
           value = 0;
         }
       } else {
         value = inputValue;
       }
 
+      // Special handling for certain fields
       if (["dwellTime", "turnaroundTime"].includes(name)) {
         if (inputValue !== "") {
-          // Parse and remove leading zeros
           const numValue = parseInt(inputValue, 10);
           if (!isNaN(numValue)) {
             value = numValue;
@@ -313,7 +347,6 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
       ) {
         if (name === "maxCapacity") {
           if (inputValue !== "") {
-            // Parse and remove leading zeros
             const numValue = parseInt(inputValue, 10);
             if (!isNaN(numValue)) {
               value = numValue;
@@ -322,6 +355,17 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
             }
           } else {
             value = 0;
+          }
+        }
+
+        // Ensure value is a number before updating
+        if (typeof value === "string") {
+          if (value === "") {
+            value = 0;
+          } else if (name === "maxCapacity") {
+            value = parseInt(value, 10) || 0;
+          } else {
+            value = parseFloat(value) || 0;
           }
         }
 
@@ -337,6 +381,14 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
     }
 
     if (name) {
+      // Ensure the value is a number if it should be
+      if (
+        ["dwellTime", "turnaroundTime"].includes(name) &&
+        typeof value === "string"
+      ) {
+        value = parseInt(value, 10) || 0;
+      }
+
       updateSimulationSetting(name, value);
     }
   };
@@ -485,14 +537,22 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
   const updateTrainCount = (
     index: number,
     scheme: "REGULAR_TRAIN_COUNT" | "SKIP_STOP_TRAIN_COUNT",
-    value: number
+    value: number | string
   ) => {
     const updatedPeriods = [...simulationSettings.servicePeriods];
+
+    // Ensure value is a number
+    const numericValue =
+      typeof value === "string"
+        ? value === ""
+          ? 0
+          : parseInt(value, 10) || 0
+        : value;
 
     // Update the specified scheme's train count
     updatedPeriods[index] = {
       ...updatedPeriods[index],
-      [scheme]: value,
+      [scheme]: numericValue,
     };
 
     // Get the other scheme name
@@ -502,11 +562,10 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
         : "REGULAR_TRAIN_COUNT";
 
     // If the other scheme's count is 0, update it to match this value
-    // This way, we only sync values when the other hasn't been explicitly set
     if (updatedPeriods[index][otherScheme] === 0) {
       updatedPeriods[index] = {
         ...updatedPeriods[index],
-        [otherScheme]: value,
+        [otherScheme]: numericValue,
       };
     }
 
