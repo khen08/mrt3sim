@@ -739,7 +739,7 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
           // Adjust if it's an insertion event from depot
           if (
             firstEvent.TRAIN_STATUS === "INSERTION" &&
-            firstEvent.STATION_ID === 1 && // Assuming North Terminus
+            // firstEvent.STATION_ID === 1 && // Assuming North Terminus
             firstEvent.DIRECTION === "NORTHBOUND"
           ) {
             const insertionLeadTime = firstEvent.TRAVEL_TIME_SECONDS || 60; // Or a default
@@ -880,8 +880,8 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
           const firstEvent = trainSchedule[0];
           if (
             firstEvent.TRAIN_STATUS === "INSERTION" &&
-            firstEvent.DIRECTION === "NORTHBOUND" &&
-            firstEvent.STATION_ID === 1 // Assuming North Terminus
+            firstEvent.DIRECTION === "NORTHBOUND"
+            // Remove the station ID check or make it more flexible
           ) {
             const arrivalAtStation1 = timeToSeconds(firstEvent.ARRIVAL_TIME!);
             const insertionLeadTime = firstEvent.TRAVEL_TIME_SECONDS || 60;
@@ -893,11 +893,15 @@ const MrtMap = forwardRef<MrtMapHandle, MrtMapProps>(
             ) {
               // Calculate position during insertion
               const station1X = stationsById[1]?.x ?? 0;
-              const station2X = stationsById[2]?.x ?? 0; // Get station 2 for midpoint
-              const midPointX = (station1X + station2X) / 2; // Start between Stn 1 and 2
+              const station2X = stationsById[2]?.x ?? 0;
+
+              // ALWAYS start from the midpoint between stations 2 and 1
+              const midPointX = (station1X + station2X) / 2;
+
               const insertionDuration = arrivalAtStation1 - insertionStartTime;
               const timeInInsertion = currentSimSeconds - insertionStartTime;
               const progress = Math.min(1, timeInInsertion / insertionDuration);
+
               // Move from midpoint towards station 1
               const currentX = midPointX + (station1X - midPointX) * progress;
 

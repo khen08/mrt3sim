@@ -6,7 +6,7 @@ export const PEAK_HOURS = {
 };
 
 export const FULL_DAY_HOURS = {
-  start: "04:30:00", // Assuming the earliest possible start based on service periods
+  start: "04:15:00", // Assuming the earliest possible start based on service periods
   end: "23:00:00", // Assuming latest possible end
 };
 
