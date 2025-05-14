@@ -257,82 +257,23 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
       name = e.target.name;
       const inputValue = e.target.value;
 
-      // For all numeric inputs (now with type="text")
-      if (
-        e.target.type === "text" &&
-        (e.target.inputMode === "numeric" || e.target.inputMode === "decimal")
-      ) {
-        // Handle empty input
-        if (inputValue === "") {
-          value = 0;
-        } else {
-          // Use parseFloat for decimal inputs, parseInt for numeric inputs
-          if (e.target.inputMode === "decimal") {
-            const numValue = parseFloat(inputValue);
-            if (!isNaN(numValue)) {
-              // Apply max limit for cruisingSpeed
-              if (name === "cruisingSpeed" && numValue > 60) {
-                value = 60;
-                toast({
-                  title: "Value Exceeds Maximum",
-                  description:
-                    "Max speed cannot exceed 60 km/h. Value has been capped.",
-                  variant: "destructive",
-                });
-              } else {
-                value = numValue;
-              }
-            } else {
-              value = 0;
-            }
-          } else {
-            // Use parseInt for integer values
-            const numValue = parseInt(inputValue, 10);
-            if (!isNaN(numValue)) {
-              value = numValue;
-            } else {
-              value = 0;
-            }
-          }
-        }
-      } else if (e.target.type === "number") {
-        // Keep existing number handling for backward compatibility
-        if (inputValue !== "") {
-          const numValue = parseFloat(inputValue);
-          if (!isNaN(numValue)) {
-            if (name === "cruisingSpeed" && numValue > 60) {
-              value = 60;
-              toast({
-                title: "Value Exceeds Maximum",
-                description:
-                  "Max speed cannot exceed 60 km/h. Value has been capped.",
-                variant: "destructive",
-              });
-            } else {
-              value = numValue;
-            }
-          } else {
-            value = 0;
-          }
-        } else {
-          value = 0;
+      // For number inputs, handle them differently
+      if (e.target.type === "number") {
+        // Parse the value - empty string becomes 0
+        value = inputValue === "" ? 0 : parseFloat(inputValue);
+
+        // Apply max limit for cruisingSpeed
+        if (name === "cruisingSpeed" && value > 60) {
+          value = 60;
+          toast({
+            title: "Value Exceeds Maximum",
+            description:
+              "Max speed cannot exceed 60 km/h. Value has been capped.",
+            variant: "destructive",
+          });
         }
       } else {
         value = inputValue;
-      }
-
-      // Special handling for certain fields
-      if (["dwellTime", "turnaroundTime"].includes(name)) {
-        if (inputValue !== "") {
-          const numValue = parseInt(inputValue, 10);
-          if (!isNaN(numValue)) {
-            value = numValue;
-          } else {
-            value = 0;
-          }
-        } else {
-          value = 0;
-        }
       }
 
       // Handle train specs properties
@@ -346,27 +287,7 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
         ].includes(name)
       ) {
         if (name === "maxCapacity") {
-          if (inputValue !== "") {
-            const numValue = parseInt(inputValue, 10);
-            if (!isNaN(numValue)) {
-              value = numValue;
-            } else {
-              value = 0;
-            }
-          } else {
-            value = 0;
-          }
-        }
-
-        // Ensure value is a number before updating
-        if (typeof value === "string") {
-          if (value === "") {
-            value = 0;
-          } else if (name === "maxCapacity") {
-            value = parseInt(value, 10) || 0;
-          } else {
-            value = parseFloat(value) || 0;
-          }
+          value = inputValue === "" ? 0 : parseInt(inputValue, 10);
         }
 
         // For train specs, update the nested object
@@ -381,14 +302,6 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
     }
 
     if (name) {
-      // Ensure the value is a number if it should be
-      if (
-        ["dwellTime", "turnaroundTime"].includes(name) &&
-        typeof value === "string"
-      ) {
-        value = parseInt(value, 10) || 0;
-      }
-
       updateSimulationSetting(name, value);
     }
   };
@@ -537,22 +450,14 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
   const updateTrainCount = (
     index: number,
     scheme: "REGULAR_TRAIN_COUNT" | "SKIP_STOP_TRAIN_COUNT",
-    value: number | string
+    value: number
   ) => {
     const updatedPeriods = [...simulationSettings.servicePeriods];
-
-    // Ensure value is a number
-    const numericValue =
-      typeof value === "string"
-        ? value === ""
-          ? 0
-          : parseInt(value, 10) || 0
-        : value;
 
     // Update the specified scheme's train count
     updatedPeriods[index] = {
       ...updatedPeriods[index],
-      [scheme]: numericValue,
+      [scheme]: value,
     };
 
     // Get the other scheme name
@@ -562,10 +467,11 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
         : "REGULAR_TRAIN_COUNT";
 
     // If the other scheme's count is 0, update it to match this value
+    // This way, we only sync values when the other hasn't been explicitly set
     if (updatedPeriods[index][otherScheme] === 0) {
       updatedPeriods[index] = {
         ...updatedPeriods[index],
-        [otherScheme]: numericValue,
+        [otherScheme]: value,
       };
     }
 
@@ -631,9 +537,6 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
             variant="outline"
             size="sm"
             onClick={() => {
-              // Reset file upload state and clear selected file
-              useFileStore.getState().resetFileState();
-              handleFileSelect(null, null);
               // Call fetchDefaultSettings and update current settings
               useAPIStore
                 .getState()
@@ -884,12 +787,16 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   <Input
                     id="dwellTime"
                     name="dwellTime"
-                    type="text"
+                    type="number"
                     step="1"
                     min="0"
                     pattern="[1-9][0-9]*"
                     inputMode="numeric"
-                    value={simulationSettings.dwellTime}
+                    value={
+                      simulationSettings.dwellTime
+                        ? Number(simulationSettings.dwellTime).toString()
+                        : ""
+                    }
                     onChange={handleSettingChange}
                     className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -925,12 +832,16 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   <Input
                     id="turnaroundTime"
                     name="turnaroundTime"
-                    type="text"
+                    type="number"
                     step="1"
                     min="0"
                     pattern="[1-9][0-9]*"
                     inputMode="numeric"
-                    value={simulationSettings.turnaroundTime ?? ""}
+                    value={
+                      simulationSettings.turnaroundTime
+                        ? Number(simulationSettings.turnaroundTime).toString()
+                        : ""
+                    }
                     onChange={handleSettingChange}
                     className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -970,12 +881,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   <Input
                     id="acceleration"
                     name="acceleration"
-                    type="text"
+                    type="number"
                     step="0.01"
                     min="0"
                     pattern="[0-9]*\.?[0-9]*"
                     inputMode="decimal"
-                    value={simulationSettings.trainSpecs.acceleration ?? ""}
+                    value={
+                      simulationSettings.trainSpecs.acceleration
+                        ? Number(
+                            simulationSettings.trainSpecs.acceleration
+                          ).toString()
+                        : ""
+                    }
                     onChange={handleSettingChange}
                     className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -1008,12 +925,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   <Input
                     id="deceleration"
                     name="deceleration"
-                    type="text"
+                    type="number"
                     step="0.01"
                     min="0"
                     pattern="[0-9]*\.?[0-9]*"
                     inputMode="decimal"
-                    value={simulationSettings.trainSpecs.deceleration ?? ""}
+                    value={
+                      simulationSettings.trainSpecs.deceleration
+                        ? Number(
+                            simulationSettings.trainSpecs.deceleration
+                          ).toString()
+                        : ""
+                    }
                     onChange={handleSettingChange}
                     className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -1046,13 +969,19 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   <Input
                     id="cruisingSpeed"
                     name="cruisingSpeed"
-                    type="text"
+                    type="number"
                     step="1"
                     min="0"
                     max="60"
                     pattern="[1-9][0-9]*"
                     inputMode="numeric"
-                    value={simulationSettings.trainSpecs.cruisingSpeed ?? ""}
+                    value={
+                      simulationSettings.trainSpecs.cruisingSpeed
+                        ? Number(
+                            simulationSettings.trainSpecs.cruisingSpeed
+                          ).toString()
+                        : ""
+                    }
                     onChange={handleSettingChange}
                     onBlur={(e) => {
                       // Enforce max limit on blur
@@ -1107,12 +1036,18 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                   <Input
                     id="maxCapacity"
                     name="maxCapacity"
-                    type="text"
+                    type="number"
                     step="1"
                     min="0"
                     pattern="[1-9][0-9]*"
                     inputMode="numeric"
-                    value={simulationSettings.trainSpecs.maxCapacity ?? ""}
+                    value={
+                      simulationSettings.trainSpecs.maxCapacity
+                        ? Number(
+                            simulationSettings.trainSpecs.maxCapacity
+                          ).toString()
+                        : ""
+                    }
                     onChange={handleSettingChange}
                     className="pr-20 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSimulating}
@@ -1241,47 +1176,26 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                               </div>
                               <div className="col-span-3 relative">
                                 <Input
-                                  type="text"
+                                  type="number"
                                   min="5"
                                   max="23"
                                   pattern="[0-9]*"
                                   inputMode="numeric"
-                                  value={period.START_HOUR ?? ""}
+                                  value={
+                                    period.START_HOUR
+                                      ? Number(period.START_HOUR).toString()
+                                      : ""
+                                  }
                                   onChange={(e) => {
                                     const updatedPeriods = [
                                       ...simulationSettings.servicePeriods,
                                     ];
 
-                                    // Only parse and validate once we have an actual input value
-                                    let value;
-                                    if (e.target.value === "") {
-                                      value = 0; // Allow empty/0 during typing
-                                    } else {
-                                      // Parse the number
-                                      const inputValue = parseInt(
-                                        e.target.value,
-                                        10
-                                      );
-
-                                      // Only apply min/max constraints when input is complete
-                                      if (
-                                        e.target.value.length < 2 ||
-                                        !isNaN(inputValue)
-                                      ) {
-                                        value = inputValue;
-                                      } else {
-                                        value = period.START_HOUR; // Keep previous value if invalid
-                                      }
-                                    }
-
-                                    // Check if this value is greater than the previous period's start hour
-                                    if (index > 0) {
-                                      const prevPeriod =
-                                        simulationSettings.servicePeriods[
-                                          index - 1
-                                        ];
-                                      // Only enforce during blur, not during typing
-                                    }
+                                    // Parse to number or 0 if empty
+                                    const value =
+                                      e.target.value === ""
+                                        ? 0
+                                        : parseInt(e.target.value, 10);
 
                                     updatedPeriods[index] = {
                                       ...period,
@@ -1346,19 +1260,22 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                               </div>
                               <div className="col-span-3 relative">
                                 <Input
-                                  type="text"
+                                  type="number"
                                   min="1"
                                   pattern="[1-9][0-9]*"
                                   inputMode="numeric"
-                                  value={period.REGULAR_TRAIN_COUNT ?? ""}
+                                  value={
+                                    period.REGULAR_TRAIN_COUNT
+                                      ? Number(
+                                          period.REGULAR_TRAIN_COUNT
+                                        ).toString()
+                                      : ""
+                                  }
                                   onChange={(e) => {
                                     const value =
                                       e.target.value === ""
                                         ? 0
-                                        : Math.max(
-                                            0,
-                                            parseInt(e.target.value, 10) || 0
-                                          );
+                                        : parseInt(e.target.value, 10);
 
                                     // Use the new helper function to update both counts
                                     updateTrainCount(
@@ -1501,47 +1418,26 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                               </div>
                               <div className="col-span-3 relative">
                                 <Input
-                                  type="text"
+                                  type="number"
                                   min="5"
                                   max="23"
                                   pattern="[0-9]*"
                                   inputMode="numeric"
-                                  value={period.START_HOUR ?? ""}
+                                  value={
+                                    period.START_HOUR
+                                      ? Number(period.START_HOUR).toString()
+                                      : ""
+                                  }
                                   onChange={(e) => {
                                     const updatedPeriods = [
                                       ...simulationSettings.servicePeriods,
                                     ];
 
-                                    // Only parse and validate once we have an actual input value
-                                    let value;
-                                    if (e.target.value === "") {
-                                      value = 0; // Allow empty/0 during typing
-                                    } else {
-                                      // Parse the number
-                                      const inputValue = parseInt(
-                                        e.target.value,
-                                        10
-                                      );
-
-                                      // Only apply min/max constraints when input is complete
-                                      if (
-                                        e.target.value.length < 2 ||
-                                        !isNaN(inputValue)
-                                      ) {
-                                        value = inputValue;
-                                      } else {
-                                        value = period.START_HOUR; // Keep previous value if invalid
-                                      }
-                                    }
-
-                                    // Check if this value is greater than the previous period's start hour
-                                    if (index > 0) {
-                                      const prevPeriod =
-                                        simulationSettings.servicePeriods[
-                                          index - 1
-                                        ];
-                                      // Only enforce during blur, not during typing
-                                    }
+                                    // Parse to number or 0 if empty
+                                    const value =
+                                      e.target.value === ""
+                                        ? 0
+                                        : parseInt(e.target.value, 10);
 
                                     updatedPeriods[index] = {
                                       ...period,
@@ -1606,19 +1502,22 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                               </div>
                               <div className="col-span-3 relative">
                                 <Input
-                                  type="text"
+                                  type="number"
                                   min="1"
                                   pattern="[1-9][0-9]*"
                                   inputMode="numeric"
-                                  value={period.SKIP_STOP_TRAIN_COUNT ?? ""}
+                                  value={
+                                    period.SKIP_STOP_TRAIN_COUNT
+                                      ? Number(
+                                          period.SKIP_STOP_TRAIN_COUNT
+                                        ).toString()
+                                      : ""
+                                  }
                                   onChange={(e) => {
                                     const value =
                                       e.target.value === ""
                                         ? 0
-                                        : Math.max(
-                                            0,
-                                            parseInt(e.target.value, 10) || 0
-                                          );
+                                        : parseInt(e.target.value, 10);
 
                                     // Use the new helper function to update both counts
                                     updateTrainCount(
@@ -1792,17 +1691,21 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                       </div>
                       <div className="col-span-4">
                         <Input
-                          type="text"
+                          type="number"
                           step="0.01"
                           min="0"
                           pattern="[0-9]*\.?[0-9]*"
                           inputMode="decimal"
-                          value={station.distance ?? ""}
+                          value={
+                            station.distance
+                              ? Number(station.distance).toString()
+                              : ""
+                          }
                           onChange={(e) => {
                             const value =
                               e.target.value === ""
                                 ? 0
-                                : Number(e.target.value);
+                                : parseFloat(e.target.value);
                             updateStationDistance(index, value);
                           }}
                           onFocus={(e) => {
