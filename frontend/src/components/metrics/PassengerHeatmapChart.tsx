@@ -17,6 +17,7 @@ import { IconLoader2, IconInfoCircle } from "@tabler/icons-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { PEAK_HOURS, FULL_DAY_HOURS } from "@/lib/constants";
 import { parseTime } from "@/lib/timeUtils";
+import DataInterpretation from "./DataInterpretation";
 
 // Register ECharts components
 echarts.use([
@@ -379,6 +380,101 @@ export const PassengerHeatmapChart: React.FC<PassengerHeatmapChartProps> = ({
   ]);
   // --- End ECharts Rendering Logic ---
 
+  // Heatmap interpretation content based on current selections
+  const getHeatmapInterpretation = () => {
+    const timePeriodText =
+      selectedTimePeriod === "AM_PEAK"
+        ? "morning peak (7-9 AM)"
+        : selectedTimePeriod === "PM_PEAK"
+        ? "evening peak (5-7 PM)"
+        : "full service day";
+
+    if (selectedMetric === "PASSENGER_COUNT") {
+      return (
+        <>
+          <p>
+            This heatmap shows the <strong>passenger demand</strong> between
+            each station pair during the {timePeriodText} for the{" "}
+            {selectedScheme.toLowerCase()} service.
+          </p>
+          <ul className="list-disc pl-4 mt-2 space-y-1">
+            <li>
+              Each cell represents passenger volume from origin (y-axis) to
+              destination (x-axis)
+            </li>
+            <li>Darker colors indicate higher passenger volumes</li>
+            <li>Empty cells mean no passengers traveled that route</li>
+            <li>
+              Diagonal is empty as trips must have different origin and
+              destination
+            </li>
+            <li>
+              Identify high-demand corridors to prioritize for service
+              improvements
+            </li>
+            <li>
+              Compare patterns between regular and skip-stop to see travel
+              behavior changes
+            </li>
+          </ul>
+        </>
+      );
+    } else if (selectedMetric === "WAIT_TIME") {
+      return (
+        <>
+          <p>
+            This heatmap shows the <strong>average wait times</strong> (in
+            minutes) between each station pair during the {timePeriodText} for
+            the {selectedScheme.toLowerCase()} service.
+          </p>
+          <ul className="list-disc pl-4 mt-2 space-y-1">
+            <li>
+              Each cell shows average wait time from origin (y-axis) to
+              destination (x-axis)
+            </li>
+            <li>Darker colors indicate longer average wait times</li>
+            <li>Empty cells mean no passengers traveled that route</li>
+            <li>
+              Wait times may be higher for less frequently served stations in
+              skip-stop
+            </li>
+            <li>Patterns reveal which origin stations have scheduling gaps</li>
+            <li>
+              Higher wait times often correlate with peak passenger volumes
+            </li>
+          </ul>
+        </>
+      );
+    } else {
+      return (
+        <>
+          <p>
+            This heatmap shows the <strong>average travel times</strong> (in
+            minutes) between each station pair during the {timePeriodText} for
+            the {selectedScheme.toLowerCase()} service.
+          </p>
+          <ul className="list-disc pl-4 mt-2 space-y-1">
+            <li>
+              Each cell shows average travel time from origin (y-axis) to
+              destination (x-axis)
+            </li>
+            <li>Darker colors indicate longer travel times</li>
+            <li>Empty cells mean no passengers traveled that route</li>
+            <li>Patterns reveal the efficiency of different routes</li>
+            <li>
+              Skip-stop service may show longer travel times for routes
+              requiring transfers
+            </li>
+            <li>
+              Regular service typically has more consistent travel times across
+              all OD pairs
+            </li>
+          </ul>
+        </>
+      );
+    }
+  };
+
   // --- Loading and No Data States ---
   if (isDemandLoading && echartsHeatmapData.length === 0) {
     // Show loader if demand is loading AND no data yet
@@ -439,7 +535,20 @@ export const PassengerHeatmapChart: React.FC<PassengerHeatmapChartProps> = ({
 
   // --- Combined Render ---
   return (
-    <div className="p-2" style={{ width: width, height: height }}>
+    <div className="p-2 relative" style={{ width: width, height: height }}>
+      <div className="absolute top-2 right-2 z-10">
+        <DataInterpretation
+          title={`${
+            selectedMetric === "PASSENGER_COUNT"
+              ? "Passenger Demand"
+              : selectedMetric === "WAIT_TIME"
+              ? "Wait Time"
+              : "Travel Time"
+          } Heatmap`}
+        >
+          {getHeatmapInterpretation()}
+        </DataInterpretation>
+      </div>
       <div
         ref={chartRef}
         style={{ width: "100%", height: "100%" }} // Chart takes full height now

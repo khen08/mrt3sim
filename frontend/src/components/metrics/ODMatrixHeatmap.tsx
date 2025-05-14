@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { usePassengerDemandStore } from "@/store/passengerDemandStore";
+import DataInterpretation from "./DataInterpretation";
 
 type MetricType = "PASSENGER_COUNT" | "WAIT_TIME" | "TRAVEL_TIME";
 
@@ -249,38 +250,128 @@ export const ODMatrixHeatmap: React.FC<ODMatrixHeatmapProps> = ({
     return option;
   };
 
+  const getInterpretationContent = () => {
+    if (selectedMetric === "PASSENGER_COUNT") {
+      return (
+        <>
+          <p>
+            This matrix shows the <strong>passenger flow</strong> between each
+            origin-destination station pair for the{" "}
+            {selectedScheme.toLowerCase()} service.
+          </p>
+          <ul className="list-disc pl-4 mt-2 space-y-1">
+            <li>
+              Each cell represents passenger volume from origin (y-axis) to
+              destination (x-axis)
+            </li>
+            <li>
+              Darker/more intense colors indicate higher passenger volumes
+            </li>
+            <li>Empty cells mean no passengers traveled that route</li>
+            <li>
+              The diagonal would be empty as trips must have different origin
+              and destination
+            </li>
+            <li>Helps identify the most heavily used station pairs</li>
+            <li>
+              Can inform service planning, capacity allocation, and skip-stop
+              patterns
+            </li>
+          </ul>
+        </>
+      );
+    } else if (selectedMetric === "WAIT_TIME") {
+      return (
+        <>
+          <p>
+            This matrix shows the <strong>average wait times</strong> for
+            passengers traveling between each origin-destination station pair
+            for the {selectedScheme.toLowerCase()} service.
+          </p>
+          <ul className="list-disc pl-4 mt-2 space-y-1">
+            <li>
+              Each cell shows average wait time from origin (y-axis) to
+              destination (x-axis)
+            </li>
+            <li>Darker colors indicate longer average wait times</li>
+            <li>Empty cells mean no passengers traveled that route</li>
+            <li>Can identify origins with scheduling or capacity issues</li>
+            <li>
+              Compare patterns between regular and skip-stop to see service
+              impact
+            </li>
+            <li>
+              Focus on high-demand routes with long wait times for improvement
+            </li>
+          </ul>
+        </>
+      );
+    } else {
+      return (
+        <>
+          <p>
+            This matrix shows the <strong>average travel times</strong> for
+            passengers traveling between each origin-destination station pair
+            for the {selectedScheme.toLowerCase()} service.
+          </p>
+          <ul className="list-disc pl-4 mt-2 space-y-1">
+            <li>
+              Each cell shows average travel time from origin (y-axis) to
+              destination (x-axis)
+            </li>
+            <li>Darker colors indicate longer travel times</li>
+            <li>Empty cells mean no passengers traveled that route</li>
+            <li>Travel time increases with distance between stations</li>
+            <li>
+              Skip-stop matrices may show different patterns than regular
+              service
+            </li>
+            <li>Routes requiring transfers will show longer travel times</li>
+          </ul>
+        </>
+      );
+    }
+  };
+
   return (
-    <Card>
+    <Card className="w-full">
       <CardHeader className="pb-2">
-        <CardTitle>Origin-Destination Heatmap</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex space-x-4 mb-4">
-          <div className="w-1/2">
-            <label className="text-sm font-medium mb-1 block">Metric:</label>
+        <div className="flex justify-between items-center">
+          <div className="space-y-1">
+            <CardTitle className="text-lg">Origin-Destination Matrix</CardTitle>
+          </div>
+          <div className="flex items-center space-x-2">
+            <DataInterpretation
+              title={`O-D Matrix (${
+                selectedMetric === "PASSENGER_COUNT"
+                  ? "Passenger Count"
+                  : selectedMetric === "WAIT_TIME"
+                  ? "Wait Time"
+                  : "Travel Time"
+              })`}
+            >
+              {getInterpretationContent()}
+            </DataInterpretation>
             <Select
               value={selectedMetric}
-              onValueChange={(value) => setSelectedMetric(value as MetricType)}
+              onValueChange={(v) => setSelectedMetric(v as MetricType)}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Select metric" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="PASSENGER_COUNT">Passenger Count</SelectItem>
-                <SelectItem value="WAIT_TIME">Average Wait Time</SelectItem>
-                <SelectItem value="TRAVEL_TIME">Average Travel Time</SelectItem>
+                <SelectItem value="WAIT_TIME">Wait Time</SelectItem>
+                <SelectItem value="TRAVEL_TIME">Travel Time</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          <div className="w-1/2">
-            <label className="text-sm font-medium mb-1 block">Scheme:</label>
             <Select
               value={selectedScheme}
-              onValueChange={(value) =>
-                setSelectedScheme(value as "REGULAR" | "SKIP-STOP")
+              onValueChange={(v) =>
+                setSelectedScheme(v as "REGULAR" | "SKIP-STOP")
               }
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-[150px]">
                 <SelectValue placeholder="Select scheme" />
               </SelectTrigger>
               <SelectContent>
@@ -290,6 +381,8 @@ export const ODMatrixHeatmap: React.FC<ODMatrixHeatmapProps> = ({
             </Select>
           </div>
         </div>
+      </CardHeader>
+      <CardContent>
         <ReactECharts option={getOption()} style={{ height }} />
       </CardContent>
     </Card>

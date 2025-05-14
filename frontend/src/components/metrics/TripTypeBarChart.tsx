@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { usePassengerDemandStore } from "@/store/passengerDemandStore";
+import DataInterpretation from "./DataInterpretation";
 
 type MetricType = "PASSENGER_COUNT" | "WAIT_TIME" | "TRAVEL_TIME";
 
@@ -303,5 +304,116 @@ export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
     return option;
   };
 
-  return <ReactECharts option={getOption()} style={{ height, width }} />;
+  const getInterpretationContent = () => {
+    if (selectedMetric === "PASSENGER_COUNT") {
+      return (
+        <>
+          <p>
+            This chart shows the <strong>distribution of passengers</strong>{" "}
+            between direct trips and transfer trips for each scheme type.
+          </p>
+          <ul className="list-disc pl-4 mt-2 space-y-1">
+            <li>
+              <strong>Direct trips:</strong> Passengers travel from origin to
+              destination without transfers.
+            </li>
+            <li>
+              <strong>Transfer trips:</strong> Passengers need to change trains
+              at least once during their journey.
+            </li>
+            <li>
+              Skip-stop service typically shows more transfer trips compared to
+              regular service.
+            </li>
+            <li>
+              The proportion of transfers indicates the trade-off between
+              service coverage and travel time.
+            </li>
+          </ul>
+        </>
+      );
+    } else if (selectedMetric === "WAIT_TIME") {
+      return (
+        <>
+          <p>
+            This chart shows the <strong>average wait times</strong> for direct
+            trips versus transfer trips for each scheme type.
+          </p>
+          <ul className="list-disc pl-4 mt-2 space-y-1">
+            <li>
+              Transfer trips typically have longer average wait times due to
+              connection waiting.
+            </li>
+            <li>
+              The difference between regular and skip-stop wait times indicates
+              service efficiency.
+            </li>
+            <li>
+              Lower wait times suggest better service coordination or frequency.
+            </li>
+            <li>
+              Large disparities between direct and transfer wait times may
+              indicate scheduling issues.
+            </li>
+          </ul>
+        </>
+      );
+    } else {
+      return (
+        <>
+          <p>
+            This chart shows the <strong>average travel times</strong> for
+            direct trips versus transfer trips for each scheme type.
+          </p>
+          <ul className="list-disc pl-4 mt-2 space-y-1">
+            <li>
+              Transfer trips typically have longer travel times due to
+              connections.
+            </li>
+            <li>
+              Skip-stop may show faster travel times for direct trips but longer
+              ones for transfers.
+            </li>
+            <li>
+              The balance between these values indicates overall service
+              efficiency.
+            </li>
+            <li>
+              Large differences suggest potential areas for service
+              optimization.
+            </li>
+          </ul>
+        </>
+      );
+    }
+  };
+
+  return (
+    <div className="relative">
+      <div className="flex justify-between items-center mb-2">
+        <Select value={selectedMetric} onValueChange={onMetricChange}>
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="Select metric" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="PASSENGER_COUNT">Passenger Count</SelectItem>
+            <SelectItem value="WAIT_TIME">Wait Time</SelectItem>
+            <SelectItem value="TRAVEL_TIME">Travel Time</SelectItem>
+          </SelectContent>
+        </Select>
+        <DataInterpretation
+          title={`Trip Type Distribution (${
+            selectedMetric === "PASSENGER_COUNT"
+              ? "Passenger Count"
+              : selectedMetric === "WAIT_TIME"
+              ? "Wait Time"
+              : "Travel Time"
+          })`}
+        >
+          {getInterpretationContent()}
+        </DataInterpretation>
+      </div>
+      <ReactECharts option={getOption()} style={{ height, width }} />
+    </div>
+  );
 };

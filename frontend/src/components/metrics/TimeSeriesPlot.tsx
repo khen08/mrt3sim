@@ -4,6 +4,7 @@ import {
   usePassengerDemandStore,
   PassengerDemandEntry,
 } from "@/store/passengerDemandStore";
+import DataInterpretation from "./DataInterpretation";
 
 type MetricType = "PASSENGER_COUNT" | "WAIT_TIME" | "TRAVEL_TIME";
 
@@ -459,5 +460,104 @@ export const TimeSeriesPlot: React.FC<TimeSeriesPlotProps> = ({
     };
   };
 
-  return <ReactECharts option={getOption()} style={{ height, width }} />;
+  const getInterpretationContent = () => {
+    if (selectedMetric === "PASSENGER_COUNT") {
+      return (
+        <>
+          <p>
+            This time series shows the <strong>hourly passenger counts</strong>{" "}
+            for both regular and skip-stop services.
+          </p>
+          <ul className="list-disc pl-4 mt-2 space-y-1">
+            <li>
+              Higher passenger counts indicate increased demand during those
+              time periods.
+            </li>
+            <li>
+              Comparing regular vs. skip-stop shows which service type handles
+              more passengers.
+            </li>
+            <li>
+              AM and PM peaks typically show the highest passenger volumes.
+            </li>
+            <li>
+              The patterns help identify when system capacity is most utilized.
+            </li>
+          </ul>
+        </>
+      );
+    } else if (selectedMetric === "WAIT_TIME") {
+      return (
+        <>
+          <p>
+            This time series shows the <strong>average wait times</strong> for
+            both regular and skip-stop services.
+          </p>
+          <ul className="list-disc pl-4 mt-2 space-y-1">
+            <li>
+              Longer wait times typically correspond to peak periods with higher
+              passenger volumes.
+            </li>
+            <li>
+              Regular service may show different wait patterns than skip-stop
+              service.
+            </li>
+            <li>
+              Lower wait times indicate more efficient service during those time
+              periods.
+            </li>
+            <li>
+              Sudden peaks may indicate service disruptions or scheduling gaps.
+            </li>
+          </ul>
+        </>
+      );
+    } else {
+      return (
+        <>
+          <p>
+            This time series shows the <strong>average travel times</strong> for
+            both regular and skip-stop services.
+          </p>
+          <ul className="list-disc pl-4 mt-2 space-y-1">
+            <li>
+              Skip-stop service may show longer travel times for passengers
+              requiring transfers.
+            </li>
+            <li>
+              Regular service offers consistent travel times regardless of
+              origin/destination.
+            </li>
+            <li>
+              Travel time variations may indicate congestion during specific
+              periods.
+            </li>
+            <li>
+              Lower travel times indicate more efficient service for those
+              passengers.
+            </li>
+          </ul>
+        </>
+      );
+    }
+  };
+
+  return (
+    <div className="relative">
+      <div className="absolute top-2 right-2 z-10">
+        <DataInterpretation
+          title={`${
+            selectedMetric === "PASSENGER_COUNT"
+              ? "Passenger Count"
+              : selectedMetric === "WAIT_TIME"
+              ? "Wait Time"
+              : "Travel Time"
+          } Interpretation`}
+        >
+          {getInterpretationContent()}
+        </DataInterpretation>
+      </div>
+      <ReactECharts option={getOption()} style={{ height, width }} />
+    </div>
+  );
 };

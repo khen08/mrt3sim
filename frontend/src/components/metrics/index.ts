@@ -8,3 +8,4 @@ export { TimeSeriesPlot } from "./TimeSeriesPlot";
 export { TripTypeBarChart } from "./TripTypeBarChart";
 export { default as MetricsTab } from "./MetricsTab";
 export { default as MetricsSummaryTab } from "./MetricsSummaryTab";
+export { default as DataInterpretation } from "./DataInterpretation";

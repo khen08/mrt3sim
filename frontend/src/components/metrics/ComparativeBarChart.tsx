@@ -4,6 +4,7 @@ import {
   useMetricsStore,
   useCurrentProcessedMetrics,
 } from "@/store/metricsStore";
+import DataInterpretation from "./DataInterpretation";
 
 interface ComparativeBarChartProps {
   title?: string;
@@ -146,5 +147,48 @@ export const ComparativeBarChart: React.FC<ComparativeBarChartProps> = ({
     ],
   };
 
-  return <ReactECharts option={option} style={{ height, width }} />;
+  const schemeComparisonInterpretation = (
+    <>
+      <p>
+        This chart compares key <strong>performance metrics</strong> between
+        regular and skip-stop service schemes.
+      </p>
+      <ul className="list-disc pl-4 mt-2 space-y-1">
+        <li>
+          <strong>Travel Time:</strong> Time passengers spend actually moving in
+          trains
+        </li>
+        <li>
+          <strong>Wait Time:</strong> Time passengers spend waiting for trains
+          at stations
+        </li>
+        <li>
+          <strong>Total Journey Time:</strong> Combined travel and wait times
+        </li>
+        <li>Skip-stop service typically shows:</li>
+        <ul className="list-disc pl-4 mt-1">
+          <li>Potentially faster travel times for some direct routes</li>
+          <li>Often longer wait times due to less frequent service</li>
+          <li>
+            Different total journey time balance depending on implementation
+          </li>
+        </ul>
+        <li>
+          The ideal scheme minimizes total journey time while maintaining
+          capacity
+        </li>
+      </ul>
+    </>
+  );
+
+  return (
+    <div className="relative">
+      <div className="absolute top-2 right-2 z-10">
+        <DataInterpretation title="Scheme Performance Comparison">
+          {schemeComparisonInterpretation}
+        </DataInterpretation>
+      </div>
+      <ReactECharts option={option} style={{ height, width }} />
+    </div>
+  );
 };

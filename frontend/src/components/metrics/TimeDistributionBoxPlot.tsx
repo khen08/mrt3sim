@@ -4,6 +4,7 @@ import {
   usePassengerDemandStore,
   PassengerDemandEntry,
 } from "@/store/passengerDemandStore";
+import DataInterpretation from "./DataInterpretation";
 
 type MetricType = "WAIT_TIME" | "TRAVEL_TIME";
 type BreakdownType = "SCHEME_TYPE" | "TRIP_TYPE";
@@ -235,5 +236,156 @@ export const TimeDistributionBoxPlot: React.FC<
     return option;
   };
 
-  return <ReactECharts option={getOption()} style={{ height, width }} />;
+  const getInterpretationContent = () => {
+    if (selectedMetric === "WAIT_TIME") {
+      if (breakdownBy === "SCHEME_TYPE") {
+        return (
+          <>
+            <p>
+              This box plot shows the{" "}
+              <strong>distribution of wait times</strong> comparing regular
+              service vs. skip-stop service.
+            </p>
+            <ul className="list-disc pl-4 mt-2 space-y-1">
+              <li>
+                The box represents the middle 50% of wait times (from 25th to
+                75th percentile)
+              </li>
+              <li>
+                The line inside the box is the median wait time (50th
+                percentile)
+              </li>
+              <li>
+                Whiskers show the range of typical wait times (excluding extreme
+                outliers)
+              </li>
+              <li>Wider boxes indicate more variability in wait times</li>
+              <li>
+                Skip-stop service may show higher median and wider distribution
+                due to less frequent service at some stations
+              </li>
+            </ul>
+          </>
+        );
+      } else {
+        return (
+          <>
+            <p>
+              This box plot shows the{" "}
+              <strong>distribution of wait times</strong> comparing direct trips
+              vs. transfer trips.
+            </p>
+            <ul className="list-disc pl-4 mt-2 space-y-1">
+              <li>
+                The box represents the middle 50% of wait times (from 25th to
+                75th percentile)
+              </li>
+              <li>
+                The line inside the box is the median wait time (50th
+                percentile)
+              </li>
+              <li>
+                Whiskers show the range of typical wait times (excluding extreme
+                outliers)
+              </li>
+              <li>
+                Transfer trips typically show longer wait times due to transfer
+                connections
+              </li>
+              <li>
+                Wider boxes for transfers indicate more variability in
+                connection times
+              </li>
+            </ul>
+          </>
+        );
+      }
+    } else {
+      if (breakdownBy === "SCHEME_TYPE") {
+        return (
+          <>
+            <p>
+              This box plot shows the{" "}
+              <strong>distribution of travel times</strong> comparing regular
+              service vs. skip-stop service.
+            </p>
+            <ul className="list-disc pl-4 mt-2 space-y-1">
+              <li>
+                The box represents the middle 50% of travel times (from 25th to
+                75th percentile)
+              </li>
+              <li>
+                The line inside the box is the median travel time (50th
+                percentile)
+              </li>
+              <li>
+                Whiskers show the range of typical travel times (excluding
+                extreme outliers)
+              </li>
+              <li>
+                Regular service typically has more predictable/consistent travel
+                times
+              </li>
+              <li>
+                Skip-stop may have a wider distribution due to varied
+                experiences between direct and transfer trips
+              </li>
+            </ul>
+          </>
+        );
+      } else {
+        return (
+          <>
+            <p>
+              This box plot shows the{" "}
+              <strong>distribution of travel times</strong> comparing direct
+              trips vs. transfer trips.
+            </p>
+            <ul className="list-disc pl-4 mt-2 space-y-1">
+              <li>
+                The box represents the middle 50% of travel times (from 25th to
+                75th percentile)
+              </li>
+              <li>
+                The line inside the box is the median travel time (50th
+                percentile)
+              </li>
+              <li>
+                Whiskers show the range of typical travel times (excluding
+                extreme outliers)
+              </li>
+              <li>
+                Direct trips typically have shorter and more consistent travel
+                times
+              </li>
+              <li>
+                Transfer trips show longer travel times due to connections
+                between trains
+              </li>
+              <li>
+                Wider boxes indicate more variability in travel experience
+              </li>
+            </ul>
+          </>
+        );
+      }
+    }
+  };
+
+  return (
+    <div className="relative">
+      <div className="absolute top-2 right-2 z-10">
+        <DataInterpretation
+          title={`${
+            selectedMetric === "WAIT_TIME" ? "Wait Time" : "Travel Time"
+          } Distribution by ${
+            breakdownBy === "SCHEME_TYPE" ? "Scheme Type" : "Trip Type"
+          }`}
+        >
+          {getInterpretationContent()}
+        </DataInterpretation>
+      </div>
+      <ReactECharts option={getOption()} style={{ height, width }} />
+    </div>
+  );
 };

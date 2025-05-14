@@ -4,6 +4,7 @@ import {
   useMetricsStore,
   useCurrentProcessedMetrics,
 } from "@/store/metricsStore";
+import DataInterpretation from "./DataInterpretation";
 
 interface JourneyTimeStackedBarProps {
   title?: string;
@@ -154,5 +155,50 @@ export const JourneyTimeStackedBar: React.FC<JourneyTimeStackedBarProps> = ({
     ],
   };
 
-  return <ReactECharts option={option} style={{ height, width }} />;
+  const journeyTimeInterpretation = (
+    <>
+      <p>
+        This chart breaks down the <strong>total passenger journey time</strong>{" "}
+        into its key components for each service type.
+      </p>
+      <ul className="list-disc pl-4 mt-2 space-y-1">
+        <li>
+          <strong>Wait Time:</strong> Average time passengers spend waiting for
+          trains at stations
+        </li>
+        <li>
+          <strong>Travel Time:</strong> Average time passengers spend on trains
+          in motion between stations
+        </li>
+        <li>
+          Skip-stop service typically shows a different composition than regular
+          service:
+        </li>
+        <ul className="list-disc pl-4 mt-1">
+          <li>
+            Often longer wait times due to less frequent service at some
+            stations
+          </li>
+          <li>Potentially shorter travel times for direct routes (no stops)</li>
+          <li>
+            But longer total journey times for passengers requiring transfers
+          </li>
+        </ul>
+        <li>
+          Comparing the total heights shows overall journey time efficiency
+        </li>
+      </ul>
+    </>
+  );
+
+  return (
+    <div className="relative">
+      <div className="absolute top-2 right-2 z-10">
+        <DataInterpretation title="Journey Time Composition">
+          {journeyTimeInterpretation}
+        </DataInterpretation>
+      </div>
+      <ReactECharts option={option} style={{ height, width }} />
+    </div>
+  );
 };
