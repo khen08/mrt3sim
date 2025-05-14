@@ -4,18 +4,18 @@ import os
 
 DEFAULT_STATIONS = [
     {"name": "North Avenue", "distance": 0.0},
-    {"name": "Quezon Avenue", "distance": 1.2},
-    {"name": "GMA-Kamuning", "distance": 1.1},
-    {"name": "Araneta Cubao", "distance": 1.8},
-    {"name": "Santolan-Annapolis", "distance": 1.5},
-    {"name": "Ortigas", "distance": 1.4},
-    {"name": "Shaw Boulevard", "distance": 0.9},
-    {"name": "Boni Avenue", "distance": 1.0},
-    {"name": "Guadalupe", "distance": 1.1},
-    {"name": "Buendia", "distance": 1.3},
-    {"name": "Ayala", "distance": 1.0},
-    {"name": "Magallanes", "distance": 1.2},
-    {"name": "Taft Avenue", "distance": 1.7},
+    {"name": "Quezon Avenue", "distance": 1.24},
+    {"name": "GMA-Kamuning", "distance": 0.94},
+    {"name": "Araneta Cubao", "distance": 1.86},
+    {"name": "Santolan-Annapolis", "distance": 1.44},
+    {"name": "Ortigas", "distance": 2.31},
+    {"name": "Shaw Boulevard", "distance": 0.79},
+    {"name": "Boni Avenue", "distance": 0.98},
+    {"name": "Guadalupe", "distance": 0.78},
+    {"name": "Buendia", "distance": 1.82},
+    {"name": "Ayala", "distance": 0.88},
+    {"name": "Magallanes", "distance": 1.19},
+    {"name": "Taft Avenue", "distance": 1.86},
 ]
 
 DEFAULT_SCHEME = ['AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB', 'A', 'AB', 'B', 'AB']

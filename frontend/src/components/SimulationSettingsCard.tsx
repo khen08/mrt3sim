@@ -572,6 +572,9 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
             variant="outline"
             size="sm"
             onClick={() => {
+              // Reset file upload state and clear selected file
+              useFileStore.getState().resetFileState();
+              handleFileSelect(null, null);
               // Call fetchDefaultSettings and update current settings
               useAPIStore
                 .getState()
