@@ -222,10 +222,16 @@ const StationInfo = ({
 
   // Prepare data for the bar chart (hourly distribution)
   const chartData = useMemo(() => {
-    return (passengerDistributionData || []).map((item) => ({
+    console.log(
+      "Processing passengerDistributionData in StationInfo:",
+      passengerDistributionData
+    );
+    const result = (passengerDistributionData || []).map((item) => ({
       name: item.hour, // Use the format from the new data
       value: item.count,
     }));
+    console.log("Transformed chart data:", result);
+    return result;
   }, [passengerDistributionData]);
 
   // Determine station type style

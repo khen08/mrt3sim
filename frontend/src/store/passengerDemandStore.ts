@@ -127,7 +127,10 @@ export const usePassengerDemandStore = create<PassengerDemandStoreState>(
         simulationId: number,
         forceRefresh = false
       ) => {
-        if (!simulationId) return;
+        if (!simulationId) {
+          console.warn("fetchPassengerDemand called with no simulationId");
+          return;
+        }
 
         const now = Date.now();
         const lastFetched = get().lastFetched;
@@ -178,6 +181,48 @@ export const usePassengerDemandStore = create<PassengerDemandStoreState>(
             isLoading: false,
             lastFetched: now,
           });
+
+          // Compute hourly distribution and update simulation store
+          const simStore = useSimulationStore.getState();
+          console.log(
+            "Computing hourly distribution from passenger demand data, entries:",
+            transformedData.length
+          );
+
+          // Get the currently selected scheme from simulationStore
+          const selectedScheme = simStore.selectedScheme; // "REGULAR" or "SKIP-STOP"
+          console.log("Filtering distribution data by scheme:", selectedScheme);
+
+          // Filter the data by the selected scheme
+          const filteredData = transformedData.filter(
+            (entry) => entry.SCHEME_TYPE === selectedScheme
+          );
+          console.log(
+            "After filtering by scheme, entries:",
+            filteredData.length
+          );
+
+          // Calculate hourly distribution from filtered data
+          const hourlyMap: Record<string, number> = {};
+          for (const entry of filteredData) {
+            const hourLabel =
+              entry.ARRIVAL_TIME_AT_ORIGIN.slice(0, 2).padStart(2, "0") + ":00";
+            hourlyMap[hourLabel] =
+              (hourlyMap[hourLabel] || 0) + entry.PASSENGER_COUNT;
+          }
+          const distribution = Object.entries(hourlyMap)
+            .map(([hour, count]) => ({ hour, count }))
+            .sort((a, b) => a.hour.localeCompare(b.hour));
+
+          console.log(
+            "Generated distribution data with",
+            distribution.length,
+            "hourly entries for scheme:",
+            selectedScheme
+          );
+
+          // Set the distribution data in the simulation store
+          simStore.setPassengerDistributionData(distribution);
 
           console.log(
             `Transformed ${rawData.length} passenger demand entries for visualization`
@@ -277,6 +322,11 @@ export const usePassengerDemandStore = create<PassengerDemandStoreState>(
           error: null,
           lastFetched: null,
         });
+
+        // Also reset the distribution data in the simulation store
+        // This ensures consistency when passengerDemand is reset
+        const simStore = useSimulationStore.getState();
+        simStore.setPassengerDistributionData(null);
       },
       fetchSimulationMetrics: async (simulationId: number) => {
         // Implementation of fetchSimulationMetrics
@@ -288,10 +338,11 @@ export const usePassengerDemandStore = create<PassengerDemandStoreState>(
 // Subscribe to simulationStore to fetch data when a new simulation is loaded
 // or when station configuration changes (for names)
 useSimulationStore.subscribe((state, prevState) => {
-  const { loadedSimulationId, simulationSettings } = state;
+  const { loadedSimulationId, simulationSettings, selectedScheme } = state;
   const { fetchPassengerDemand, setStationNames, reset } =
     usePassengerDemandStore.getState().actions;
 
+  // Handle simulation loading or station config changes
   if (
     loadedSimulationId &&
     loadedSimulationId !== prevState.loadedSimulationId
@@ -321,6 +372,58 @@ useSimulationStore.subscribe((state, prevState) => {
     // Re-process heatmap data if raw data exists, as station names might have changed labels
     if (usePassengerDemandStore.getState().rawAggregatedData) {
       usePassengerDemandStore.getState().actions.processHeatmapData();
+    }
+  }
+
+  // Handle scheme change to update passenger distribution
+  if (selectedScheme !== prevState.selectedScheme && loadedSimulationId) {
+    console.log(
+      "Scheme changed from",
+      prevState.selectedScheme,
+      "to",
+      selectedScheme
+    );
+    console.log("Recalculating passenger distribution data for new scheme...");
+
+    // Get the current passenger demand data
+    const { passengerDemand } = usePassengerDemandStore.getState();
+
+    if (passengerDemand && passengerDemand.length > 0) {
+      // Filter by the new selected scheme
+      const filteredData = passengerDemand.filter(
+        (entry) => entry.SCHEME_TYPE === selectedScheme
+      );
+      console.log(
+        "Filtered data for scheme",
+        selectedScheme,
+        ":",
+        filteredData.length,
+        "entries"
+      );
+
+      // Recalculate hourly distribution
+      const simStore = useSimulationStore.getState();
+      const hourlyMap: Record<string, number> = {};
+      for (const entry of filteredData) {
+        const hourLabel =
+          entry.ARRIVAL_TIME_AT_ORIGIN.slice(0, 2).padStart(2, "0") + ":00";
+        hourlyMap[hourLabel] =
+          (hourlyMap[hourLabel] || 0) + entry.PASSENGER_COUNT;
+      }
+
+      const distribution = Object.entries(hourlyMap)
+        .map(([hour, count]) => ({ hour, count }))
+        .sort((a, b) => a.hour.localeCompare(b.hour));
+
+      console.log(
+        "Generated new distribution data with",
+        distribution.length,
+        "hourly entries for scheme:",
+        selectedScheme
+      );
+
+      // Update the distribution data in the simulation store
+      simStore.setPassengerDistributionData(distribution);
     }
   }
 });

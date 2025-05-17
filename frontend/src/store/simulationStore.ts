@@ -235,7 +235,13 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     set({ loadedServicePeriodsData: data }),
   setPassengerArrivalData: (data) => set({ passengerArrivalData: data }),
   setPassengerDistributionData: (data) =>
-    set({ passengerDistributionData: data }),
+    set((state) => {
+      console.log(
+        "Setting passengerDistributionData in simulationStore:",
+        data?.length ? data.length + " entries" : "null"
+      );
+      return { passengerDistributionData: data };
+    }),
   setNextRunFilename: (filename) => set({ nextRunFilename: filename }),
   setLoadedSimulationId: (id) => set({ loadedSimulationId: id }),
   setIsLoading: (isLoading) => set({ isLoading }),

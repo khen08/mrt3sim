@@ -37,7 +37,7 @@ const section1Steps: TourStep[] = [
     id: "welcome",
     title: "Welcome to MRT-3 Simulator!",
     content:
-      "Hi there! I'm Marty, your MRT-3 simulation guide! This tool helps you simulate, analyze and optimize Manila's metro rail operations using real system data. Let me show you how to get started!",
+      "Hi there! I'm Marty, your MRT-3 simulation guide! This tool helps you simulate, analyze and optimize Metro Manila's MRT-3 operations using real system data. Let me show you how to get started!",
     image: "/greet.png",
     placement: "center",
   },

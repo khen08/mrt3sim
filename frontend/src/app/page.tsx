@@ -369,7 +369,13 @@ export default function Home() {
     if (selectedStation) {
       // Set passenger distribution data from the store
       if (passengerDistributionData && passengerDistributionData.length > 0) {
+        console.log(
+          "Page setting passengerDistribution from store data:",
+          passengerDistributionData
+        );
         data.passengerDistribution = [...passengerDistributionData];
+      } else {
+        console.log("No passengerDistributionData in store or empty array");
       }
 
       data.waitingPassengers = 0;

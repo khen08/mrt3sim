@@ -549,6 +549,35 @@ const SimulationSettingsCard: React.FC<SimulationSettingsCardProps> = ({
                     useSimulationStore
                       .getState()
                       .setActiveSimulationSettings(defaults);
+
+                    // Reset file upload state
+                    setNextRunFilename(null);
+                    setSimulatePassengers(false);
+
+                    // Reset file store state with proper types
+                    useFileStore.setState({
+                      uploadedFileName: null,
+                      uploadStatus: null,
+                      validationStatus: undefined,
+                      uploadSource: undefined,
+                    });
+
+                    // Clear simulation input and passenger distribution data
+                    useSimulationStore.getState().setSimulationInput({
+                      filename: null,
+                    });
+
+                    // Clear passenger distribution data so chart is reset
+                    useSimulationStore
+                      .getState()
+                      .setPassengerDistributionData(null);
+
+                    toast({
+                      title: "Settings Reset",
+                      description:
+                        "All settings have been reset to defaults, including file uploads.",
+                      variant: "default",
+                    });
                   }
                 });
             }}

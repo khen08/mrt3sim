@@ -862,8 +862,8 @@ export function DataViewerModal({ isOpen, onClose }: DataViewerModalProps) {
                                 {peakHourFilter} Peak Filter Active:
                               </span>{" "}
                               {peakHourFilter === "AM"
-                                ? `Showing ${totalItems} records between ${PEAK_HOURS.AM.start} and ${PEAK_HOURS.AM.end}`
-                                : `Showing ${totalItems} records between ${PEAK_HOURS.PM.start} and ${PEAK_HOURS.PM.end}`}
+                                ? `Showing ${totalItems} records with departure times between ${PEAK_HOURS.AM.start} and ${PEAK_HOURS.AM.end}`
+                                : `Showing ${totalItems} records with departure times between ${PEAK_HOURS.PM.start} and ${PEAK_HOURS.PM.end}`}
                             </div>
                           )}
                         </>

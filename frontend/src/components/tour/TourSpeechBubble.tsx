@@ -37,8 +37,14 @@ const TourSpeechBubble = () => {
   // Check if this is the welcome step (Section 1, Step 1)
   const isWelcomeStep = currentSection === 1 && currentStepIndex === 0;
 
+  // Check if this is data input step (Section 1, Step 2)
+  const isDataInputStep = currentSection === 1 && currentStepIndex === 1;
+
   // Check if current step has no target (needs backdrop)
   const hasNoTarget = !currentStep?.target;
+
+  // Track tail position for speech bubble
+  const [bubbleTailPosition, setBubbleTailPosition] = useState("tail-left");
 
   // Calculate appropriate positions for the speech bubble and mascot relative to the target element
   useEffect(() => {
@@ -109,7 +115,7 @@ const TourSpeechBubble = () => {
 
           case "left":
             if (isDataInputStep) {
-              // Responsive positioning for CSV upload step
+              // Improved positioning for CSV upload step (Section 1, Step 2)
               if (isSmallScreen) {
                 // On small screens, position differently
                 bubbleTop = Math.max(20, targetRect.top - 50);
@@ -118,17 +124,16 @@ const TourSpeechBubble = () => {
                 mascotLeft = bubbleLeft + 100;
                 tailPosition = "tail-bottom"; // Point downward to Marty
               } else {
-                // On larger screens, use fixed positioning relative to viewport and target
-                bubbleTop = Math.max(
-                  20,
-                  targetRect.top + viewportHeight * 0.05
-                );
-                bubbleLeft = Math.max(150, viewportWidth * 0.15);
+                // Fixed positions for Section 1 Step 2 on larger screens
+                // Position speech bubble on the left side with some fixed offsets
+                bubbleTop = Math.max(20, targetRect.top + 150); // Keep bubble vertical position
+                bubbleLeft = Math.max(20, targetRect.left - 300); // Keep bubble horizontal position unchanged
 
-                // Fix mascot position relative to bubble
-                mascotTop = bubbleTop - viewportHeight * 0.02;
-                mascotLeft = viewportWidth - viewportWidth * 0.18;
-                tailPosition = "tail-right";
+                // Position Marty to align exactly with the right tail of the speech bubble
+                // The tail is usually positioned about 1/3 of the way down the bubble
+                mascotTop = bubbleTop - 10; // Keep Marty's vertical position
+                mascotLeft = bubbleLeft + 340; // Move Marty further to the left (was +370)
+                tailPosition = "tail-right"; // Point right towards the upload area
               }
             } else {
               // Default left placement for other steps
@@ -151,6 +156,18 @@ const TourSpeechBubble = () => {
       }
     }
 
+    // Special handling for Section 1 Step 2 (data-input) even if target not found
+    if (isDataInputStep) {
+      // Default positioning for Section 1 Step 2 in case target isn't found
+      bubbleTop = Math.max(20, viewportHeight * 0.35); // Keep bubble vertical position
+      bubbleLeft = Math.max(20, viewportWidth * 0.27); // Keep bubble horizontal position
+
+      // Position Marty to align with the right tail of the speech bubble
+      mascotTop = bubbleTop - 10; // Keep Marty's vertical position
+      mascotLeft = bubbleLeft + 340; // Move Marty further to the left (was +370)
+      tailPosition = "tail-right";
+    }
+
     // Apply safe minimum and maximum bounds to ensure visibility
     bubbleTop = Math.max(20, Math.min(bubbleTop, viewportHeight - 280));
     bubbleLeft = Math.max(20, Math.min(bubbleLeft, viewportWidth - 370));
@@ -161,6 +178,7 @@ const TourSpeechBubble = () => {
     speechBubble.style.top = `${bubbleTop}px`;
     speechBubble.style.left = `${bubbleLeft}px`;
     speechBubble.className = `speech-bubble ${tailPosition}`;
+    setBubbleTailPosition(tailPosition); // Update state with the current tail position
     mascot.style.top = `${mascotTop}px`;
     mascot.style.left = `${mascotLeft}px`;
   }, [isActive, currentStep, currentStepIndex, currentSection]);
@@ -246,7 +264,21 @@ const TourSpeechBubble = () => {
       )}
 
       {/* Speech Bubble - now using theme-aware styles */}
-      <div ref={speechBubbleRef} className="speech-bubble tail-left">
+      <div
+        ref={speechBubbleRef}
+        className={`speech-bubble ${
+          isDataInputStep ? "data-input-step-bubble" : ""
+        } ${bubbleTailPosition}`}
+        style={{
+          ...(isDataInputStep
+            ? {
+                position: "absolute",
+                zIndex: 1001,
+                transformOrigin: "center right",
+              }
+            : {}),
+        }}
+      >
         <div className="flex flex-col">
           {/* Use TextRoll for title with 3D flip animation */}
           <TextRoll
@@ -296,7 +328,21 @@ const TourSpeechBubble = () => {
       </div>
 
       {/* Mascot - increased size */}
-      <div ref={mascotRef} className="mascot-container">
+      <div
+        ref={mascotRef}
+        className={`mascot-container ${
+          isDataInputStep ? "data-input-step-mascot" : ""
+        }`}
+        style={{
+          ...(isDataInputStep
+            ? {
+                position: "absolute",
+                zIndex: 1000,
+                transform: "translateY(-15px)", // Adjust vertical positioning
+              }
+            : {}),
+        }}
+      >
         <div className="w-36 h-36 relative">
           <Image
             src={currentStep.image}

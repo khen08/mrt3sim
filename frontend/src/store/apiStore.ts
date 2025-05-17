@@ -296,6 +296,7 @@ export const useAPIStore = create<APIState>((set, get) => ({
 
       // --- Fetch Data for New Simulation ---
       await get().fetchTimetable(newSimulationId);
+      console.log("Fetching passenger demand for new simulation...");
       await get().fetchPassengerDemand(newSimulationId);
       await get().fetchSimulationMetrics(newSimulationId);
       await get().fetchSimulationHistory(); // Refresh history list
@@ -514,20 +515,8 @@ export const useAPIStore = create<APIState>((set, get) => ({
         "passengerDemand",
         passengerDemandStore.passengerDemand
       );
-      // Compute hourly distribution from passenger demand entries
-      const simStore = useSimulationStore.getState();
-      const demandEntries = passengerDemandStore.passengerDemand || [];
-      const hourlyMap: Record<string, number> = {};
-      for (const entry of demandEntries) {
-        const hourLabel =
-          entry.ARRIVAL_TIME_AT_ORIGIN.slice(0, 2).padStart(2, "0") + ":00";
-        hourlyMap[hourLabel] =
-          (hourlyMap[hourLabel] || 0) + entry.PASSENGER_COUNT;
-      }
-      const distribution = Object.entries(hourlyMap)
-        .map(([hour, count]) => ({ hour, count }))
-        .sort((a, b) => a.hour.localeCompare(b.hour));
-      simStore.setPassengerDistributionData(distribution);
+      // NOTE: We no longer need to compute the distribution here
+      // The passengerDemandStore.actions.fetchPassengerDemand now handles this
     } catch (error: any) {
       console.error("Error triggering passenger demand fetch:", error);
       toast({
@@ -597,33 +586,89 @@ export const useAPIStore = create<APIState>((set, get) => ({
     const simStore = useSimulationStore.getState();
     simStore.setApiError(null);
 
-    try {
-      const response = await fetch(
-        GET_SIMULATION_CONFIG_ENDPOINT(simulationId)
-      );
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          errorData.error || `HTTP error ${response.status} fetching config`
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12 sec timeout
+
+    // Enhanced with retry mechanism
+    const MAX_RETRIES = 2;
+    let currentRetry = 0;
+
+    while (currentRetry <= MAX_RETRIES) {
+      try {
+        if (currentRetry > 0) {
+          console.log(
+            `Retry ${currentRetry}/${MAX_RETRIES} for fetchSimulationConfig ID: ${simulationId}`
+          );
+        }
+
+        const response = await fetch(
+          GET_SIMULATION_CONFIG_ENDPOINT(simulationId),
+          { signal: controller.signal }
         );
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(
+            errorData.error || `HTTP error ${response.status} fetching config`
+          );
+        }
+
+        const configData = await response.json();
+        clearTimeout(timeoutId);
+
+        // Add scheme to stations based on configData.schemePattern
+        if (configData && configData.stations && configData.schemePattern) {
+          const stationsWithScheme = configData.stations.map(
+            (station: any, index: number) => ({
+              ...station,
+              scheme: configData.schemePattern[index] || "AB",
+            })
+          );
+          configData.stations = stationsWithScheme;
+        }
+
+        return configData;
+      } catch (error: any) {
+        currentRetry++;
+
+        // Only log on final attempt or abort
+        if (currentRetry > MAX_RETRIES || error.name === "AbortError") {
+          console.error("Failed to fetch simulation config:", error);
+
+          // Only set error message on final attempt
+          if (currentRetry > MAX_RETRIES) {
+            simStore.setApiError(`Failed to fetch config: ${error.message}`);
+
+            if (error.name === "AbortError") {
+              toast({
+                title: "Request Timeout",
+                description:
+                  "Configuration request timed out. Please try again.",
+                variant: "destructive",
+              });
+            }
+          }
+
+          // If we've exhausted retries or it's an abort, give up
+          if (error.name === "AbortError" || currentRetry > MAX_RETRIES) {
+            clearTimeout(timeoutId);
+            return null;
+          }
+        }
+
+        // Wait before retry with exponential backoff
+        if (currentRetry <= MAX_RETRIES) {
+          await new Promise((r) =>
+            setTimeout(r, 300 * Math.pow(2, currentRetry))
+          );
+        }
       }
-      const configData = await response.json();
-      // Add scheme to stations based on configData.schemePattern
-      if (configData && configData.stations && configData.schemePattern) {
-        const stationsWithScheme = configData.stations.map(
-          (station: any, index: number) => ({
-            ...station,
-            scheme: configData.schemePattern[index] || "AB",
-          })
-        );
-        configData.stations = stationsWithScheme;
-      }
-      return configData;
-    } catch (error: any) {
-      console.error("Failed to fetch simulation config:", error);
-      simStore.setApiError(`Failed to fetch config: ${error.message}`);
-      return null;
     }
+
+    // Shouldn't reach here, but just in case
+    clearTimeout(timeoutId);
+    return null;
   },
 
   fetchAggregatedPassengerDemand: async (simulationId) => {

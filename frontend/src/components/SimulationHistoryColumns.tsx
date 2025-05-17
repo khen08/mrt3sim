@@ -7,11 +7,12 @@ import { ArrowUp, ArrowDown } from "lucide-react";
 import { IconLoader2 } from "@tabler/icons-react";
 import { Badge } from "@/components/ui/badge";
 // import { SimulationRun } from "@/lib/bindings"; // Path will be corrected later
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { SimulationConfigDialog } from "./SimulationConfigDialog";
 import { useAPIStore } from "@/store/apiStore";
 import { formatFileName } from "@/lib/utils";
 import { useSimulationStore } from "@/store/simulationStore";
+import { toast } from "@/components/ui/use-toast";
 
 // Type alias for clarity
 type HistoryEntry = SimulationHistoryEntry;
@@ -245,12 +246,24 @@ export const columns = (
       const apiStore = useAPIStore();
 
       const handleShowConfig = async () => {
-        setShowConfigDialog(true);
+        // If already loading, do nothing
+        if (isLoadingConfig) return;
+
         setIsLoadingConfig(true);
+
         try {
+          // Visual feedback in UI immediately
+          toast({
+            title: "Loading Configuration",
+            description: "Please wait while we prepare the simulation...",
+            variant: "default",
+          });
+
+          // Direct call to API store - now has built-in retries
           const configData = await apiStore.fetchSimulationConfig(
             simulation.SIMULATION_ID
           );
+
           if (configData) {
             setConfig({
               ...configData,
@@ -258,12 +271,18 @@ export const columns = (
               passengerDataFile: simulation.PASSENGER_DATA_FILE,
               simulatePassengers: !!simulation.PASSENGER_DATA_FILE,
             });
+
+            // Only show dialog after successfully loading
+            setShowConfigDialog(true);
           } else {
-            throw new Error("Failed to load configuration");
+            // Error already handled in API store with toast
+            console.log(
+              "Failed to load configuration - error handled in API store"
+            );
           }
-        } catch (error) {
-          console.error("Error loading simulation config:", error);
-          // Show a toast here if needed
+        } catch (error: any) {
+          // Should not reach here since errors are handled in API store
+          console.error("Unexpected error in handleShowConfig:", error);
         } finally {
           setIsLoadingConfig(false);
         }
@@ -275,10 +294,8 @@ export const columns = (
         useSimulationStore.getState().setIsLoading(true);
         useSimulationStore.getState().setIsMapLoading(true);
         useSimulationStore.getState().setIsSimulating(true);
-        // Use a small timeout to ensure React renders the loading state before proceeding
-        setTimeout(() => {
-          onLoadSimulation(simulation.SIMULATION_ID);
-        }, 50);
+        // Immediate call without timeout to avoid issues
+        onLoadSimulation(simulation.SIMULATION_ID);
       };
 
       return (
@@ -291,13 +308,22 @@ export const columns = (
               e.stopPropagation();
               handleShowConfig();
             }}
-            disabled={isCurrentlyLoaded || isSimulating}
-            className={`${isSimulating ? "relative" : ""} min-w-[85px]`}
+            // Ensure the button stays disabled while loading
+            disabled={isCurrentlyLoaded || isSimulating || isLoadingConfig}
+            aria-disabled={isCurrentlyLoaded || isSimulating || isLoadingConfig}
+            className={`${
+              isSimulating || isLoadingConfig ? "relative" : ""
+            } min-w-[85px]`}
           >
             {isSimulating ? (
               <div className="absolute inset-0 flex items-center justify-center bg-mrt-blue/20 backdrop-blur-[1px] rounded-md">
                 <IconLoader2 className="h-3.5 w-3.5 animate-spin mr-1" />
                 <span className="text-xs">Loading...</span>
+              </div>
+            ) : isLoadingConfig ? (
+              <div className="flex items-center justify-center">
+                <IconLoader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                <span>Loading...</span>
               </div>
             ) : isCurrentlyLoaded ? (
               "Loaded"

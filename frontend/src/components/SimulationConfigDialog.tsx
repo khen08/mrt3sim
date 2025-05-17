@@ -45,6 +45,9 @@ type ServicePeriod = {
   NAME: string;
   START_HOUR: number;
   TRAIN_COUNT: number;
+  REGULAR_TRAIN_COUNT?: number;
+  SKIP_STOP_TRAIN_COUNT?: number;
+  REGULAR_HEADWAY?: number;
 };
 
 type SimulationConfig = {
@@ -279,9 +282,43 @@ export function SimulationConfigDialog({
                             {period.START_HOUR}:00
                           </div>
                           <div className="col-span-3">
-                            {period.TRAIN_COUNT}
+                            {(() => {
+                              // Get the appropriate train count based on scheme type
+                              if (
+                                config.schemeType === "SKIP-STOP" &&
+                                typeof period.SKIP_STOP_TRAIN_COUNT === "number"
+                              ) {
+                                return period.SKIP_STOP_TRAIN_COUNT;
+                              } else if (
+                                typeof period.REGULAR_TRAIN_COUNT === "number"
+                              ) {
+                                return period.REGULAR_TRAIN_COUNT;
+                              } else if (
+                                typeof period.TRAIN_COUNT === "number"
+                              ) {
+                                return period.TRAIN_COUNT;
+                              } else {
+                                // Fallback to default values based on period index
+                                const defaults = [8, 12, 10, 8, 10, 12, 8, 0];
+                                return defaults[index] || 8;
+                              }
+                            })()}
                             <span className="text-xs text-muted-foreground ml-1">
-                              train{period.TRAIN_COUNT !== 1 ? "s" : ""}
+                              train
+                              {(() => {
+                                const count =
+                                  config.schemeType === "SKIP-STOP" &&
+                                  typeof period.SKIP_STOP_TRAIN_COUNT ===
+                                    "number"
+                                    ? period.SKIP_STOP_TRAIN_COUNT
+                                    : typeof period.REGULAR_TRAIN_COUNT ===
+                                      "number"
+                                    ? period.REGULAR_TRAIN_COUNT
+                                    : typeof period.TRAIN_COUNT === "number"
+                                    ? period.TRAIN_COUNT
+                                    : 0;
+                                return count !== 1 ? "s" : "";
+                              })()}
                             </span>
                           </div>
                         </div>

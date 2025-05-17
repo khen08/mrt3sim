@@ -368,10 +368,9 @@ const filterByPeakHours = (data: any[], peakFilter: PeakHourFilter): any[] => {
   const endSeconds = parseTime(peakRange.end);
 
   return data.filter((entry) => {
-    // For timetable data, check arrival or departure time
-    if (entry.ARRIVAL_TIME || entry.DEPARTURE_TIME) {
-      const timeToCheck = entry.ARRIVAL_TIME || entry.DEPARTURE_TIME;
-      const entrySeconds = parseTime(timeToCheck);
+    // For timetable data, check DEPARTURE_TIME only
+    if (entry.DEPARTURE_TIME) {
+      const entrySeconds = parseTime(entry.DEPARTURE_TIME);
       return entrySeconds >= startSeconds && entrySeconds <= endSeconds;
     }
     return true; // Include entries without time data
