@@ -143,7 +143,7 @@ const MetricsSummaryTab: React.FC = () => {
         processedMetrics.basicMetrics["Total Passengers"]?.["SKIP-STOP"] || 0,
       ],
       [
-        "Average Wait Time (seconds)",
+        "Avg. Platform Wait Time",
         processedMetrics.averageMetrics["Average Wait Time per Passenger"]
           ?.REGULAR || 0,
         processedMetrics.averageMetrics["Average Wait Time per Passenger"]?.[
@@ -151,7 +151,7 @@ const MetricsSummaryTab: React.FC = () => {
         ] || 0,
       ],
       [
-        "Average Travel Time (seconds)",
+        "Avg. In-Vehicle Travel Time",
         processedMetrics.averageMetrics["Average Travel Time per Passenger"]
           ?.REGULAR || 0,
         processedMetrics.averageMetrics["Average Travel Time per Passenger"]?.[
@@ -159,7 +159,7 @@ const MetricsSummaryTab: React.FC = () => {
         ] || 0,
       ],
       [
-        "Average Journey Time (seconds)",
+        "Avg. Trip Time (Origin – Destination)",
         processedMetrics.averageMetrics[
           "Average Total Journey Time per Passenger"
         ]?.REGULAR || 0,
@@ -214,17 +214,17 @@ const MetricsSummaryTab: React.FC = () => {
     const timeMetricsData = [
       ["", "Regular Service", "Skip-Stop Service"],
       [
-        "Average Wait Time (seconds)",
+        "Avg. Passenger Wait Time (s)",
         demandSummaries.avgWaitTime.REGULAR,
         demandSummaries.avgWaitTime["SKIP-STOP"],
       ],
       [
-        "Average Travel Time (seconds)",
+        "Avg. Passenger Travel Time (s)",
         demandSummaries.avgTravelTime.REGULAR,
         demandSummaries.avgTravelTime["SKIP-STOP"],
       ],
       [
-        "Total Journey Time (seconds)",
+        "Avg. Passenger Journey Time (s)",
         demandSummaries.avgWaitTime.REGULAR +
           demandSummaries.avgTravelTime.REGULAR,
         demandSummaries.avgWaitTime["SKIP-STOP"] +
@@ -494,7 +494,7 @@ const MetricsSummaryTab: React.FC = () => {
               ]?.toLocaleString() || "N/A"}
             </div>
 
-            <div>Average Wait Time</div>
+            <div>Avg. Platform Wait Time</div>
             <div className="text-center">
               {processedMetrics.averageMetrics[
                 "Average Wait Time per Passenger"
@@ -508,7 +508,7 @@ const MetricsSummaryTab: React.FC = () => {
               seconds
             </div>
 
-            <div>Average Travel Time</div>
+            <div>Avg. In-Vehicle Travel Time</div>
             <div className="text-center">
               {processedMetrics.averageMetrics[
                 "Average Travel Time per Passenger"
@@ -522,7 +522,7 @@ const MetricsSummaryTab: React.FC = () => {
               seconds
             </div>
 
-            <div>Average Journey Time</div>
+            <div>Avg. Trip Time (Origin – Destination)</div>
             <div className="text-center">
               {processedMetrics.averageMetrics[
                 "Average Total Journey Time per Passenger"
@@ -622,7 +622,7 @@ const MetricsSummaryTab: React.FC = () => {
             <div className="font-medium text-center">Regular Service</div>
             <div className="font-medium text-center">Skip-Stop Service</div>
 
-            <div>Average Wait Time from Flow</div>
+            <div>Avg. Passenger Wait Time (s)</div>
             <div className="text-center">
               {demandSummaries.avgWaitTime.REGULAR.toFixed(2)} seconds
             </div>
@@ -630,7 +630,7 @@ const MetricsSummaryTab: React.FC = () => {
               {demandSummaries.avgWaitTime["SKIP-STOP"].toFixed(2)} seconds
             </div>
 
-            <div>Average Travel Time from Flow</div>
+            <div>Avg. Passenger Travel Time (s)</div>
             <div className="text-center">
               {demandSummaries.avgTravelTime.REGULAR.toFixed(2)} seconds
             </div>
@@ -638,7 +638,7 @@ const MetricsSummaryTab: React.FC = () => {
               {demandSummaries.avgTravelTime["SKIP-STOP"].toFixed(2)} seconds
             </div>
 
-            <div>Total Journey Time</div>
+            <div>Avg. Passenger Journey Time (s)</div>
             <div className="text-center">
               {(
                 demandSummaries.avgWaitTime.REGULAR +

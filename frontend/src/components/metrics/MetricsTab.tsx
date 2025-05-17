@@ -14,7 +14,6 @@ import { TimePeriodFilter } from "@/store/simulationStore";
 import { JourneyTimeStackedBar } from "./JourneyTimeStackedBar";
 import { PassengerCountsChart } from "./PassengerCountsChart";
 import { PassengerHeatmapChart } from "./PassengerHeatmapChart";
-import { TimeDistributionBoxPlot } from "./TimeDistributionBoxPlot";
 import { TimeSeriesPlot } from "./TimeSeriesPlot";
 import { TripTypeBarChart } from "./TripTypeBarChart";
 import {
@@ -61,11 +60,14 @@ import {
 } from "lucide-react";
 import { TextShimmer } from "@/components/motion-primitives/text-shimmer";
 import { Tilt } from "@/components/motion-primitives/tilt";
-import { exportChartAsImage, setupScreenshotStyles } from "@/lib/chartUtils";
+import {
+  exportChartAsImage,
+  setupScreenshotStyles,
+  directChartExport,
+} from "@/lib/chartUtils";
 import html2canvas from "html2canvas";
+import { useTheme } from "next-themes";
 
-type TimeDistMetricType = "WAIT_TIME" | "TRAVEL_TIME";
-type TimeDistBreakdownType = "SCHEME_TYPE" | "TRIP_TYPE";
 type TimeSeriesMetricType = "PASSENGER_COUNT" | "WAIT_TIME" | "TRAVEL_TIME";
 type TripTypeMetricType = "PASSENGER_COUNT" | "WAIT_TIME" | "TRAVEL_TIME";
 type HeatmapMetricType = "PASSENGER_COUNT" | "WAIT_TIME" | "TRAVEL_TIME";
@@ -106,10 +108,6 @@ const MetricsTab: React.FC = () => {
   } = usePassengerDemandStore();
 
   const [selectedChartKey, setSelectedChartKey] = useState<string | null>(null);
-  const [timeDistMetric, setTimeDistMetric] =
-    useState<TimeDistMetricType>("WAIT_TIME");
-  const [timeDistBreakdown, setTimeDistBreakdown] =
-    useState<TimeDistBreakdownType>("SCHEME_TYPE");
   const [timeSeriesMetric, setTimeSeriesMetric] =
     useState<TimeSeriesMetricType>("PASSENGER_COUNT");
   const [tripTypeMetric, setTripTypeMetric] =
@@ -166,6 +164,90 @@ const MetricsTab: React.FC = () => {
 
   const chartRefs = useRef<Record<string, React.RefObject<HTMLDivElement>>>({});
 
+  // Calculate passenger demand summaries for flow metrics
+  const calculateDemandSummaries = () => {
+    if (!passengerDemand || passengerDemand.length === 0) {
+      return {
+        directTrips: { REGULAR: 0, "SKIP-STOP": 0 },
+        transferTrips: { REGULAR: 0, "SKIP-STOP": 0 },
+        avgWaitTime: { REGULAR: 0, "SKIP-STOP": 0 },
+        avgTravelTime: { REGULAR: 0, "SKIP-STOP": 0 },
+        originDestinationPairs: 0,
+      };
+    }
+
+    // Initialize aggregation objects
+    const counts = {
+      DIRECT: { REGULAR: 0, "SKIP-STOP": 0 },
+      TRANSFER: { REGULAR: 0, "SKIP-STOP": 0 },
+    };
+
+    const waitTimeSums = {
+      REGULAR: { sum: 0, count: 0 },
+      "SKIP-STOP": { sum: 0, count: 0 },
+    };
+
+    const travelTimeSums = {
+      REGULAR: { sum: 0, count: 0 },
+      "SKIP-STOP": { sum: 0, count: 0 },
+    };
+
+    // Set to track unique OD pairs
+    const odPairs = new Set();
+
+    // Process data
+    passengerDemand.forEach((entry) => {
+      const scheme = entry.SCHEME_TYPE;
+      const tripType = entry.TRIP_TYPE;
+
+      // Count passengers by trip type and scheme
+      counts[tripType][scheme] += entry.PASSENGER_COUNT;
+
+      // Track wait and travel times
+      waitTimeSums[scheme].sum += entry.WAIT_TIME * entry.PASSENGER_COUNT;
+      waitTimeSums[scheme].count += entry.PASSENGER_COUNT;
+
+      travelTimeSums[scheme].sum += entry.TRAVEL_TIME * entry.PASSENGER_COUNT;
+      travelTimeSums[scheme].count += entry.PASSENGER_COUNT;
+
+      // Track unique OD pairs
+      odPairs.add(`${entry.ORIGIN_STATION_ID}-${entry.DESTINATION_STATION_ID}`);
+    });
+
+    // Calculate averages
+    const avgWaitTime = {
+      REGULAR:
+        waitTimeSums.REGULAR.count > 0
+          ? waitTimeSums.REGULAR.sum / waitTimeSums.REGULAR.count
+          : 0,
+      "SKIP-STOP":
+        waitTimeSums["SKIP-STOP"].count > 0
+          ? waitTimeSums["SKIP-STOP"].sum / waitTimeSums["SKIP-STOP"].count
+          : 0,
+    };
+
+    const avgTravelTime = {
+      REGULAR:
+        travelTimeSums.REGULAR.count > 0
+          ? travelTimeSums.REGULAR.sum / travelTimeSums.REGULAR.count
+          : 0,
+      "SKIP-STOP":
+        travelTimeSums["SKIP-STOP"].count > 0
+          ? travelTimeSums["SKIP-STOP"].sum / travelTimeSums["SKIP-STOP"].count
+          : 0,
+    };
+
+    return {
+      directTrips: counts.DIRECT,
+      transferTrips: counts.TRANSFER,
+      avgWaitTime,
+      avgTravelTime,
+      originDestinationPairs: odPairs.size,
+    };
+  };
+
+  const demandSummaries = calculateDemandSummaries();
+
   const chartGalleryItems = useMemo<ChartGalleryItem[]>(
     () => [
       {
@@ -183,7 +265,14 @@ const MetricsTab: React.FC = () => {
         description:
           "View the composition of total journey time (wait vs. travel) for each scheme.",
         icon: IconStack2,
-        component: <JourneyTimeStackedBar height={400} width={1000} />,
+        component: (
+          <JourneyTimeStackedBar
+            height={400}
+            width={1000}
+            flowMetrics={demandSummaries}
+            useFlowMetrics={true}
+          />
+        ),
         dataTestId: "journey-composition-card",
       },
       {
@@ -216,24 +305,6 @@ const MetricsTab: React.FC = () => {
           />
         ),
         dataTestId: "od-matrix-card",
-      },
-      {
-        key: "timeDistribution",
-        title: "Time Distribution (Box Plot)",
-        description:
-          "Distribution of wait and travel times by scheme or trip type.",
-        icon: IconBoxMultiple,
-        component: (
-          <TimeDistributionBoxPlot
-            height={400}
-            width={1000}
-            selectedMetric={timeDistMetric}
-            onMetricChange={setTimeDistMetric}
-            breakdownBy={timeDistBreakdown}
-            onBreakdownChange={setTimeDistBreakdown}
-          />
-        ),
-        dataTestId: "time-distribution-card",
       },
       {
         key: "timeSeries",
@@ -270,13 +341,12 @@ const MetricsTab: React.FC = () => {
       },
     ],
     [
-      timeDistMetric,
-      timeDistBreakdown,
       timeSeriesMetric,
       tripTypeMetric,
       selectedHeatmapMetric,
       selectedHeatmapScheme,
       isFullDayView,
+      demandSummaries,
     ]
   );
 
@@ -389,37 +459,88 @@ const MetricsTab: React.FC = () => {
     );
     if (!chartContainer) return;
 
-    // Apply current theme for proper rendering
-    const isDarkMode = document.documentElement.classList.contains("dark");
-    const bgColor = isDarkMode ? "#000000" : "#ffffff";
+    // Define fallback method using html2canvas
+    const fallbackToHtml2Canvas = (element: Element) => {
+      // Apply current theme for proper rendering
+      const isDarkMode = document.documentElement.classList.contains("dark");
+      const bgColor = isDarkMode ? "#000000" : "#ffffff";
 
-    // Setup temporary styles to override oklch colors with RGB equivalents
-    const removeStyles = setupScreenshotStyles();
+      // Apply specific data attribute to target for screenshot
+      element.setAttribute("data-html2canvas-screenshot", "true");
 
-    // Use html2canvas to capture the chart
-    html2canvas(chartContainer as HTMLElement, {
-      background: bgColor,
-      logging: false,
-      allowTaint: true,
-      useCORS: true,
-    })
-      .then((canvas) => {
-        // Create download link
-        const link = document.createElement("a");
-        link.download = `${selectedChart?.title || "chart"}.png`;
-        link.href = canvas.toDataURL("image/png");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+      // Setup temporary styles to override oklch colors with RGB equivalents
+      const removeStyles = setupScreenshotStyles();
 
-        // Remove temporary styles
-        removeStyles();
-      })
-      .catch((error) => {
-        console.error("Error capturing chart:", error);
-        // Make sure to remove styles even if there's an error
-        removeStyles();
-      });
+      // Wait a bit for styles to apply
+      setTimeout(() => {
+        // Use html2canvas with minimal options to avoid compatibility issues
+        html2canvas(element as HTMLElement)
+          .then((canvas) => {
+            // Create download link
+            const link = document.createElement("a");
+            link.download = `${selectedChart?.title || "chart"}.png`;
+            link.href = canvas.toDataURL("image/png");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            // Clean up
+            element.removeAttribute("data-html2canvas-screenshot");
+            removeStyles();
+          })
+          .catch((error: Error) => {
+            console.error("Error capturing chart:", error);
+
+            // Clean up even on error
+            element.removeAttribute("data-html2canvas-screenshot");
+            removeStyles();
+          });
+      }, 100); // Small delay to ensure styles are applied
+    };
+
+    // Check if the current chart is an ECharts component
+    const echartsComponent = chartContainer.querySelector(".echarts-for-react");
+
+    if (echartsComponent) {
+      // For ECharts components, use direct export which bypasses html2canvas
+      try {
+        // Find the ECharts instance
+        const instance = (echartsComponent as any).__echarts_instance__;
+        if (instance) {
+          // Use the backgroundColor based on current theme
+          const isDarkMode =
+            document.documentElement.classList.contains("dark");
+          const bgColor = isDarkMode ? "#000000" : "#ffffff";
+
+          // Export the chart directly from ECharts
+          const dataURL = instance.getDataURL({
+            type: "png",
+            pixelRatio: 2,
+            backgroundColor: bgColor,
+          });
+
+          // Create download link
+          const link = document.createElement("a");
+          link.download = `${selectedChart?.title || "chart"}.png`;
+          link.href = dataURL;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } else {
+          console.warn(
+            "Could not find ECharts instance, falling back to html2canvas"
+          );
+          fallbackToHtml2Canvas(chartContainer);
+        }
+      } catch (error) {
+        console.error("Error with direct ECharts export:", error);
+        // Fallback to html2canvas
+        fallbackToHtml2Canvas(chartContainer);
+      }
+    } else {
+      // For non-ECharts components, use html2canvas
+      fallbackToHtml2Canvas(chartContainer);
+    }
   };
 
   return (
@@ -469,48 +590,6 @@ const MetricsTab: React.FC = () => {
               </Button>
             </div>
             <div className="flex items-center gap-4">
-              {selectedChart.key === "timeDistribution" && (
-                <>
-                  <div className="flex items-center gap-2">
-                    <label className="text-sm font-medium shrink-0">
-                      Metric:
-                    </label>
-                    <Select
-                      value={timeDistMetric}
-                      onValueChange={
-                        setTimeDistMetric as (value: string) => void
-                      }
-                    >
-                      <SelectTrigger className="w-[150px] h-8 text-sm">
-                        <SelectValue placeholder="Select metric" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="WAIT_TIME">Wait Time</SelectItem>
-                        <SelectItem value="TRAVEL_TIME">Travel Time</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-sm font-medium shrink-0">
-                      Breakdown by:
-                    </label>
-                    <Select
-                      value={timeDistBreakdown}
-                      onValueChange={
-                        setTimeDistBreakdown as (value: string) => void
-                      }
-                    >
-                      <SelectTrigger className="w-[150px] h-8 text-sm">
-                        <SelectValue placeholder="Select breakdown" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="SCHEME_TYPE">Scheme Type</SelectItem>
-                        <SelectItem value="TRIP_TYPE">Trip Type</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </>
-              )}
               {selectedChart.key === "timeSeries" && (
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium shrink-0">

@@ -514,6 +514,20 @@ export const useAPIStore = create<APIState>((set, get) => ({
         "passengerDemand",
         passengerDemandStore.passengerDemand
       );
+      // Compute hourly distribution from passenger demand entries
+      const simStore = useSimulationStore.getState();
+      const demandEntries = passengerDemandStore.passengerDemand || [];
+      const hourlyMap: Record<string, number> = {};
+      for (const entry of demandEntries) {
+        const hourLabel =
+          entry.ARRIVAL_TIME_AT_ORIGIN.slice(0, 2).padStart(2, "0") + ":00";
+        hourlyMap[hourLabel] =
+          (hourlyMap[hourLabel] || 0) + entry.PASSENGER_COUNT;
+      }
+      const distribution = Object.entries(hourlyMap)
+        .map(([hour, count]) => ({ hour, count }))
+        .sort((a, b) => a.hour.localeCompare(b.hour));
+      simStore.setPassengerDistributionData(distribution);
     } catch (error: any) {
       console.error("Error triggering passenger demand fetch:", error);
       toast({

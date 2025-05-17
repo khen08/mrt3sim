@@ -257,7 +257,7 @@ export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
         name: metricLabel,
         nameLocation: "middle",
         nameTextStyle: { color: textColor },
-        nameGap: 50,
+        nameGap: 80,
         axisLabel: {
           color: axisColor,
           formatter: (value: number) => {
@@ -390,17 +390,7 @@ export const TripTypeBarChart: React.FC<TripTypeBarChartProps> = ({
 
   return (
     <div className="relative">
-      <div className="flex justify-between items-center mb-2">
-        <Select value={selectedMetric} onValueChange={onMetricChange}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Select metric" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="PASSENGER_COUNT">Passenger Count</SelectItem>
-            <SelectItem value="WAIT_TIME">Wait Time</SelectItem>
-            <SelectItem value="TRAVEL_TIME">Travel Time</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="flex justify-end items-center mb-2">
         <DataInterpretation
           title={`Trip Type Distribution (${
             selectedMetric === "PASSENGER_COUNT"

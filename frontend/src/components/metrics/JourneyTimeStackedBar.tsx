@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react";
 import ReactECharts from "echarts-for-react";
 import {
   useMetricsStore,
@@ -10,15 +10,26 @@ interface JourneyTimeStackedBarProps {
   title?: string;
   height?: number | string;
   width?: number | string;
+  // Optional flow metrics data
+  flowMetrics?: {
+    avgTravelTime: { REGULAR: number; "SKIP-STOP": number };
+    avgWaitTime: { REGULAR: number; "SKIP-STOP": number };
+  };
+  // Flag to determine which metrics to use
+  useFlowMetrics?: boolean;
 }
 
 export const JourneyTimeStackedBar: React.FC<JourneyTimeStackedBarProps> = ({
   title = "Journey Time Composition",
   height = "400px",
   width = "100%",
+  flowMetrics,
+  useFlowMetrics = false,
 }) => {
   const isLoading = useMetricsStore((state) => state.isLoading);
   const processedMetrics = useCurrentProcessedMetrics();
+  // Add a ref to the chart for direct export
+  const chartRef = useRef<ReactECharts>(null);
 
   if (isLoading) {
     return (
@@ -28,7 +39,7 @@ export const JourneyTimeStackedBar: React.FC<JourneyTimeStackedBarProps> = ({
     );
   }
 
-  if (!processedMetrics) {
+  if (!processedMetrics && !flowMetrics) {
     return (
       <div className="text-center text-muted-foreground py-8">
         No metrics data available
@@ -39,19 +50,31 @@ export const JourneyTimeStackedBar: React.FC<JourneyTimeStackedBarProps> = ({
   // Extract data for the stacked bar chart
   const schemes = ["REGULAR", "SKIP-STOP"] as const;
 
-  const travelTimes = schemes.map(
-    (scheme) =>
-      processedMetrics.averageMetrics["Average Travel Time per Passenger"]?.[
-        scheme
-      ] || 0
-  );
+  let travelTimes: number[] = [];
+  let waitTimes: number[] = [];
 
-  const waitTimes = schemes.map(
-    (scheme) =>
-      processedMetrics.averageMetrics["Average Wait Time per Passenger"]?.[
-        scheme
-      ] || 0
-  );
+  // Determine which data source to use
+  if (useFlowMetrics && flowMetrics) {
+    // Use provided flow metrics
+    travelTimes = schemes.map(
+      (scheme) => flowMetrics.avgTravelTime[scheme] || 0
+    );
+    waitTimes = schemes.map((scheme) => flowMetrics.avgWaitTime[scheme] || 0);
+  } else if (processedMetrics) {
+    // Fallback to system metrics
+    travelTimes = schemes.map(
+      (scheme) =>
+        processedMetrics.averageMetrics["Average Travel Time per Passenger"]?.[
+          scheme
+        ] || 0
+    );
+    waitTimes = schemes.map(
+      (scheme) =>
+        processedMetrics.averageMetrics["Average Wait Time per Passenger"]?.[
+          scheme
+        ] || 0
+    );
+  }
 
   // Dynamic text color based on theme
   const isDarkMode =
@@ -198,7 +221,7 @@ export const JourneyTimeStackedBar: React.FC<JourneyTimeStackedBarProps> = ({
           {journeyTimeInterpretation}
         </DataInterpretation>
       </div>
-      <ReactECharts option={option} style={{ height, width }} />
+      <ReactECharts ref={chartRef} option={option} style={{ height, width }} />
     </div>
   );
 };
