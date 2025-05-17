@@ -1629,7 +1629,7 @@ class Simulation:
                 current_station=self.stations[0]
         )
         
-        loop_time = int(self.calculate_loop_time(test_train) / 60)  # Loop Time in minutes
+        loop_time = round(self.calculate_loop_time(test_train) / 60)  # Loop Time in minutes
         
         scheme_type_underscore = scheme_type.replace("-", "_")
         
@@ -2071,7 +2071,7 @@ class Simulation:
                     return segment
             return None
 
-        def calculate_loop_debug(is_debug=False, is_turnaround=False):
+        def calculate_loop_debug(is_debug=True, is_turnaround=False):
             if is_debug:
                 if is_turnaround:
                     print("\n--------------------------------")
@@ -2216,46 +2216,59 @@ class Simulation:
 if __name__ == "__main__":
     """ Method to run the simulation as a standalone script"""
     sample_config = {
-        "dwellTime": 60,
+        "dwellTime": 30,
         "turnaroundTime": 300,
         "schemeType": "REGULAR",
         "servicePeriods": [
         {
-            "NAME": "INITIAL",
-            "START_HOUR": 5,
-            "TRAIN_COUNT": 13
+            'NAME': 'MORNING',
+            'REGULAR_TRAIN_COUNT': 14,
+            'SKIP_STOP_TRAIN_COUNT': 11,
+            'START_HOUR': 5,
         },
         {
-            "NAME": "AM PEAK",
-            "START_HOUR": 7,
-            "TRAIN_COUNT": 18
+            'NAME': 'AM PEAK',
+            'REGULAR_TRAIN_COUNT': 19,
+            'SKIP_STOP_TRAIN_COUNT': 14,
+            'START_HOUR': 7
         },
         {
-            "NAME": "AM TRANSITION",
-            "START_HOUR": 9,
-            "TRAIN_COUNT": 16
+            'NAME': 'AM TRANSITION',
+            'REGULAR_TRAIN_COUNT': 16,
+            'SKIP_STOP_TRAIN_COUNT': 12,
+            'START_HOUR': 9
         },
         {
-            "NAME": "BASE",
-            "START_HOUR": 10,
-            "TRAIN_COUNT": 14
+            'NAME': 'BASE',
+            'REGULAR_TRAIN_COUNT': 14,
+            'SKIP_STOP_TRAIN_COUNT': 12,
+            'START_HOUR': 10
         },
         {
-            "NAME": "PM TRANSITION",
-            "START_HOUR": 16,
-            "TRAIN_COUNT": 16
+            'NAME': 'PM TRANSITION',
+            'REGULAR_TRAIN_COUNT': 16,
+            'SKIP_STOP_TRAIN_COUNT': 12,
+            'START_HOUR': 16
         },
         {
-            "NAME": "PM PEAK",
-            "START_HOUR": 17,
-            "TRAIN_COUNT": 18
+            'NAME': 'PM PEAK',
+            'REGULAR_TRAIN_COUNT': 19,
+            'SKIP_STOP_TRAIN_COUNT': 14,
+            'START_HOUR': 17
         },
         {
-            "NAME": "SERVICE END TRANSITION",
-            "START_HOUR": 20,
-            "TRAIN_COUNT": 11
+            'NAME': 'NIGHT',
+            'REGULAR_TRAIN_COUNT': 14,
+            'SKIP_STOP_TRAIN_COUNT': 12,
+            'START_HOUR': 19
+        },
+        {
+            'NAME': 'SERVICE END',
+            'REGULAR_TRAIN_COUNT': 4,
+            'SKIP_STOP_TRAIN_COUNT': 4,
+            'START_HOUR': 21
         }
-        ],
+    ],
         "schemePattern": [
         "AB",
         "A",
@@ -2278,69 +2291,69 @@ if __name__ == "__main__":
             "scheme": "AB"
         },
         {
-            "distance": 1.2,
+            "distance": 1.24,
             "name": "Quezon Avenue",
             "scheme": "A"
         },
         {
-            "distance": 1.1,
+            "distance": 0.94,
             "name": "GMA-Kamuning",
             "scheme": "AB"
         },
         {
-            "distance": 1.8,
+            "distance": 1.86,
             "name": "Cubao",
             "scheme": "B"
         },
         {
-            "distance": 1.5,
+            "distance": 1.44,
             "name": "Santolan-Annapolis",
             "scheme": "AB"
         },
         {
-            "distance": 1.4,
+            "distance": 2.31,
             "name": "Ortigas",
             "scheme": "A"
         },
         {
-            "distance": 0.9,
+            "distance": 0.79,
             "name": "Shaw Boulevard",
             "scheme": "AB"
         },
         {
-            "distance": 1,
+            "distance": 0.98,
             "name": "Boni Avenue",
             "scheme": "B"
         },
         {
-            "distance": 1.1,
+            "distance": 0.78,
             "name": "Guadalupe",
             "scheme": "AB"
         },
         {
-            "distance": 1.3,
+            "distance": 1.82,
             "name": "Buendia",
             "scheme": "A"
         },
         {
-            "distance": 1,
+            "distance": 0.88,
             "name": "Ayala",
             "scheme": "AB"
         },
         {
-            "distance": 1.2,
+            "distance": 1.19,
             "name": "Magallanes",
             "scheme": "B"
         },
         {
-            "distance": 1.7,
+            "distance": 1.86,
             "name": "Taft Avenue",
             "scheme": "AB"
         }
         ],
         "trainSpecs": {
         "acceleration": 0.8,
-        "cruisingSpeed": 60,
+        "cruisingSpeed": 45,
         "deceleration": 0.8,
         "maxCapacity": 1182,
         "passthroughSpeed": 20
@@ -2352,13 +2365,13 @@ if __name__ == "__main__":
 
     test_sim.run()
 
-    simulation_instance = instance_df(test_sim)
-    stations = instances_to_df(test_sim.stations)
-    track_segments = instances_to_df(test_sim.track_segments)
-    trains = instances_to_df(test_sim.trains)
-    service_periods = test_sim.service_periods
-    passenger_demand = instances_to_df(test_sim.passenger_demand)
-    train_movements = instances_to_df(test_sim.timetables)
-    event_history = instances_to_df(test_sim.event_history)
+    #simulation_instance = instance_df(test_sim)
+    #stations = instances_to_df(test_sim.stations)
+    #track_segments = instances_to_df(test_sim.track_segments)
+    #trains = instances_to_df(test_sim.trains)
+    #service_periods = test_sim.service_periods
+    #passenger_demand = instances_to_df(test_sim.passenger_demand)
+    #train_movements = instances_to_df(test_sim.timetables)
+    #event_history = instances_to_df(test_sim.event_history)
 
     print("\nSimulation script finished.")
